@@ -14,6 +14,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set_property(GLOBAL PROPERTY USE_FOLDERS TRUE)
 
 #-------------------------------------------------------------------------------
+# [Dependency check] [spdlog]
+#-------------------------------------------------------------------------------
+add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/spdlog-v1.15.2)
+include_directories(${CMAKE_SOURCE_DIR}/3rdparty/spdlog-v1.15.2/include)
+set_target_properties(spdlog PROPERTIES FOLDER "3rdparty")
+
+if (MSVC)
+    add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
+endif()
+
+#-------------------------------------------------------------------------------
 # [Dependency check] [google-test]
 #-------------------------------------------------------------------------------
 if (CGL_WITH_TEST)
@@ -36,6 +47,7 @@ file(GLOB_RECURSE LIBRARY_SRC "src/*.cpp")
 
 add_library(cgl ${LIBRARY_SRC})
 set_target_properties(cgl PROPERTIES FOLDER "CGL")
+target_link_libraries(cgl PRIVATE spdlog::spdlog)
 # target_precompile_headers(cgl PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src/utils/pch.h)
 
 set (PROJECT_LIBS ${PROJECT_LIBS} cgl)
