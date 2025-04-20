@@ -116,8 +116,6 @@ cgl::Results SettingsLoader::Impl::load() noexcept {
     // load config via direct assign the value in this moment.
     setting_.crossGateResourceRootDir = "C:\\Users\\Dana\\Downloads\\cg_data\\";
 
-    // assign default path
-
     loaded_ = true;
     return cgl::Results::Success;
 }
