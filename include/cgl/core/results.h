@@ -17,7 +17,9 @@ namespace cgl {
     Results_X(Success)                 \
     Results_X(Fail)                    \
     Results_X(OutOfMemory)             \
+    Results_X(InvalidFile)             \
     Results_X(InvalidArgs)             \
+    Results_X(IndexNotExist)           \
     Results_X(UnknownError)
 
 enum class Results : unsigned int {

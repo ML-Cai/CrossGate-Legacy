@@ -16,4 +16,5 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
     set_target_properties(${EXE_NAME} PROPERTIES FOLDER "tests")
 
     gtest_discover_tests(${EXE_NAME})
+    message(STATUS "Add test ${EXE_NAME}")
 endforeach()

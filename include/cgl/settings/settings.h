@@ -8,21 +8,25 @@
 
 #pragma once
 
-#include <filesystem>
-#include <memory>
+#include <string_view>
+#include "cgl/core/version.h"
 
 namespace cgl {
 
+
 struct Settings {
     /**
-     * @brief This value will pointer to the resource director of Cross Gate
+     * @brief This value will pointer to the resource directory of Cross Gate
      * game, the struct of folder will be :
-     *   crossGateDataRootDir
+     *   crossGateResourceRootDir
      *     |- bin
      *     |- map
      *     | ....
      */
-    std::filesystem::path crossGateDataRootDir;
+    std::string_view crossGateResourceRootDir;
+
+    const cgl::CrossGateResourcePaths& crossGateResourcePath(
+        cgl::CrossGateVersion version) const noexcept;
 };
 
 }   // namespace cgl
