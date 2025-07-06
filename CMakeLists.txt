@@ -13,12 +13,38 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set_property(GLOBAL PROPERTY USE_FOLDERS TRUE)
 
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Choose the type of build." FORCE)
+endif()
+
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+
+#-------------------------------------------------------------------------------
+# Setup requirements
+#-------------------------------------------------------------------------------
+message(STATUS "Setup requirements ...")
+
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+execute_process(
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_LIST_DIR}/setup_requirements.py
+            "${CMAKE_BINARY_DIR}/_deps/" # dependency install path
+            "${CMAKE_BINARY_DIR}/_tmp"   # temp path
+            "${CMAKE_BUILD_TYPE}"        # build type
+    RESULT_VARIABLE DEPS_SETUP_RESULT
+)
+
+if(NOT DEPS_SETUP_RESULT EQUAL 0)
+    message(FATAL_ERROR "setup_requirements.py failed with code ${DEPS_SETUP_RESULT}")
+endif()
+
+set(CMAKE_PREFIX_PATH "${CMAKE_BINARY_DIR}/_deps/${CMAKE_BUILD_TYPE};${CMAKE_PREFIX_PATH}")
+
 #-------------------------------------------------------------------------------
 # [Dependency check] [spdlog]
 #-------------------------------------------------------------------------------
-add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/spdlog-v1.15.2)
-include_directories(${CMAKE_SOURCE_DIR}/3rdparty/spdlog-v1.15.2/include)
-set_target_properties(spdlog PROPERTIES FOLDER "3rdparty")
+find_package(spdlog REQUIRED)
 
 if (MSVC)
     add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
@@ -29,11 +55,8 @@ endif()
 #-------------------------------------------------------------------------------
 if (CGL_WITH_TEST)
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-    add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/googletest-v1.16.x)
-    set_target_properties(gtest PROPERTIES FOLDER "3rdparty/googletest")
-    set_target_properties(gmock PROPERTIES FOLDER "3rdparty/googletest")
-    set_target_properties(gmock_main PROPERTIES FOLDER "3rdparty/googletest")
-    set_target_properties(gtest_main PROPERTIES FOLDER "3rdparty/googletest")
+    find_package(gtest REQUIRED)
+
     enable_testing()
 endif()
 
