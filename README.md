@@ -8,7 +8,8 @@ Reference : https://cgsword.com/filesystem_graphicmap.htm
 
 See following commands to build the project
 
-      $> git submodule update --recursive --init
-      $> cmake ..
-      $> make -j8
+    $> mkdir build
+    $> cd build
+    $> cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+    $> cmake --build . --config RelWithDebInfo
 
