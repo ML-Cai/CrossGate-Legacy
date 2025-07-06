@@ -12,7 +12,7 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
 
     # Create an executable for each .cpp file
     add_executable(${EXE_NAME} ${TEST_SOURCE})
-    target_link_libraries(${EXE_NAME} PRIVATE gtest gmock cgl)
+    target_link_libraries(${EXE_NAME} PRIVATE GTest::gtest_main cgl)
     set_target_properties(${EXE_NAME} PROPERTIES FOLDER "tests")
 
     gtest_discover_tests(${EXE_NAME})
