@@ -8,6 +8,7 @@
 
 #include "cgl/core/results.h"
 #include "cgl/core/version.h"
+#include "cgl/resources/resource_types.h"
 #include "cgl/utils/enum_string_helper.h"
 
 // -----------------------------------------------------------------------------
@@ -31,6 +32,19 @@ const char* cgl::GetString(const cgl::CrossGateVersion& type) {
         CrossGateVersion_ENUM_LIST
 
 #undef CrossGateVersion_X
+    default:
+        return "Unknown";
+    }
+}
+
+// -----------------------------------------------------------------------------
+const char* cgl::GetString(const cgl::GraphicsResourceIndexTypes& type) {
+    switch (type) {
+#define CGL_X(name) case cgl::GraphicsResourceIndexTypes::name: return #name;
+
+        GraphicsResourceIndexTypes_ENUM_LIST
+
+#undef CGL_X
     default:
         return "Unknown";
     }
