@@ -85,7 +85,7 @@ TEST_F(IGraphicsResourceFileInfoReaderTest, LoadData) {
     EXPECT_EQ(result, cgl::Results::Success);
     EXPECT_EQ(info.gfxBasedsIdx, idx);
     EXPECT_EQ(info.width, 64);      // resource width in classic always be 64
-    EXPECT_EQ(info.height, 47);     // resource width in classic always be 47
+    EXPECT_EQ(info.height, 47);     // resource height in classic always be 47
 }
 
 // -----------------------------------------------------------------------------
