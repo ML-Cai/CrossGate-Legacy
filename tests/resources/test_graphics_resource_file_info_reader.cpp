@@ -62,19 +62,30 @@ TEST_F(IGraphicsResourceFileInfoReaderTest, ReaderInit) {
 }
 
 // -----------------------------------------------------------------------------
-TEST_F(IGraphicsResourceFileInfoReaderTest,  LoadData) {
+TEST_F(IGraphicsResourceFileInfoReaderTest, LoadData) {
     auto reader = cgl::IGraphicsResourceFileInfoReader::create({
       .pSettings = pSettings_,
-      .version   = cgl::CrossGateVersion::CG_VERSION_PUK1
+      .version   = cgl::CrossGateVersion::CG_VERSION_Classic
     });
     EXPECT_NE(reader, nullptr);
 
     // Try to load the version data.
     cgl::Results result = reader->load();
-
-    // should not preload if not read any data
     EXPECT_EQ(result, cgl::Results::Success);
     EXPECT_GE(reader->infoCount(), 0);
+
+    // Try to query data
+    cgl::GraphicsResourceIndex idx {
+        .type    = cgl::GraphicsResourceIndexTypes::GraphicsBasedIndex,
+        .version = cgl::CrossGateVersion::CG_VERSION_Classic,
+        .value   = 0
+    };
+    cgl::GraphicsResourceInfo info;
+    result = reader->query(idx, &info);
+    EXPECT_EQ(result, cgl::Results::Success);
+    EXPECT_EQ(info.gfxBasedsIdx, idx);
+    EXPECT_EQ(info.width, 64);      // resource width in classic always be 64
+    EXPECT_EQ(info.height, 47);     // resource width in classic always be 47
 }
 
 // -----------------------------------------------------------------------------

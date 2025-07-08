@@ -9,74 +9,66 @@
 #pragma once
 
 #include <stdint.h>
-#include <string_view>
 #include "cgl/core/version.h"
 
 namespace cgl {
 
+
+// -----------------------------------------------------------------------------
+// GraphicsResourceIndexTypes
+// -----------------------------------------------------------------------------
+#define GraphicsResourceIndexTypes_ENUM_LIST    \
+    CGL_X(GraphicsBasedIndex)           \
+    CGL_X(MapBasedIndex)                \
+
+enum class GraphicsResourceIndexTypes : uint8_t {
+#define CGL_X(name) name,
+    GraphicsResourceIndexTypes_ENUM_LIST
+#undef CGL_X
+};
+
 // -----------------------------------------------------------------------------
 // Graphic Index/Data related section
 // -----------------------------------------------------------------------------
-struct GraphicsBasedIndex {
+struct GraphicsResourceIndex {
     using Key = uint64_t;
 
-    int32_t value;
+    cgl::GraphicsResourceIndexTypes type;
     cgl::CrossGateVersion version;
+    int32_t value;
 
-    bool operator==(const cgl::GraphicsBasedIndex& other) const {
-        return value == other.value && version == other.version;
+    bool operator==(const cgl::GraphicsResourceIndex& other) const {
+        return (type == other.type) &&
+               (value == other.value) &&
+               (version == other.version);
     }
 
-    bool operator!=(const cgl::GraphicsBasedIndex& other) const {
-        return value != other.value || version != other.version;
+    bool operator!=(const cgl::GraphicsResourceIndex& other) const {
+        return (type != other.type) ||
+               (value != other.value) ||
+               (version != other.version);
     }
 
-    bool operator<(const cgl::GraphicsBasedIndex& other) const {
+    bool operator<(const cgl::GraphicsResourceIndex& other) const {
+        if (this->type != other.type) {
+            return false;
+        }
         return key() < other.key();
     }
 
-    GraphicsBasedIndex::Key key() const noexcept {
+    GraphicsResourceIndex::Key key() const noexcept {
         return static_cast<uint64_t>(version) * INT32_MAX +
                static_cast<uint64_t>(value);
     }
 };
 
 // -----------------------------------------------------------------------------
-// Map Index/Data related section
-// -----------------------------------------------------------------------------
-struct MapBasedIndex {
-    using Key = uint64_t;
-
-    int32_t value;
-    cgl::CrossGateVersion version;
-
-    bool operator==(const cgl::MapBasedIndex& other) const {
-        return value == other.value && version == other.version;
-    }
-
-    bool operator!=(const cgl::MapBasedIndex& other) const {
-        return value != other.value || version != other.version;
-    }
-
-    bool operator<(const cgl::MapBasedIndex& other) const {
-        return key() < other.key();
-    }
-
-    MapBasedIndex::Key key() const noexcept {
-        // TODO(Miles) : The key of map index might be unique in map layout in
-        // current version
-        return static_cast<uint64_t>(value);
-    }
-};
-
-
-// -----------------------------------------------------------------------------
 // Graphic resource info
 // -----------------------------------------------------------------------------
 struct GraphicsResourceInfo {
     cgl::CrossGateVersion version;
-    cgl::GraphicsBasedIndex graphicsIdx;
-    cgl::MapBasedIndex mapIdx;
+    cgl::GraphicsResourceIndex gfxBasedsIdx;
+    cgl::GraphicsResourceIndex mapBasedsIdx;
     uint32_t dataOffset;
     uint32_t dataSize;
     int32_t offsetX;

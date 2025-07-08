@@ -17,6 +17,9 @@
 
 using cgl::IGraphicsResourceFileInfoReader;
 
+// -----------------------------------------------------------------------------
+// anonymouse namespace
+// -----------------------------------------------------------------------------
 namespace {
 
 #pragma pack(1)
@@ -42,14 +45,23 @@ struct DataRange {
     int32_t max;
 };
 
+
 inline cgl::GraphicsResourceInfo retile(
-    cgl::CrossGateVersion  version,
-    GraphicInfoEntry* pCtx
+    cgl::CrossGateVersion version,
+    GraphicInfoEntry*     pCtx
 ) noexcept {
     cgl::GraphicsResourceInfo ret(
         version,
-        cgl::GraphicsBasedIndex{pCtx->graphicindex, version},
-        cgl::MapBasedIndex{pCtx->mapIndex, version},
+        cgl::GraphicsResourceIndex{
+            cgl::GraphicsResourceIndexTypes::GraphicsBasedIndex,
+            version,
+            pCtx->graphicindex
+        },
+        cgl::GraphicsResourceIndex{
+            cgl::GraphicsResourceIndexTypes::MapBasedIndex,
+            version,
+            pCtx->mapIndex
+        },
         pCtx->dataOffset,
         pCtx->dataSize,
         pCtx->offsetX,
@@ -67,6 +79,8 @@ inline cgl::GraphicsResourceInfo retile(
 // -----------------------------------------------------------------------------
 namespace {
 
+using GraphicInfoEntryMap = std::unordered_map<int32_t, GraphicInfoEntry*>;
+
 class GraphicIndexReaderImpl : public cgl::IGraphicsResourceFileInfoReader {
  public:
     explicit GraphicIndexReaderImpl(
@@ -79,19 +93,11 @@ class GraphicIndexReaderImpl : public cgl::IGraphicsResourceFileInfoReader {
     size_t infoCount() const noexcept override;
 
     bool mightContain(
-        const cgl::MapBasedIndex& mapIndex) const noexcept override;
-
-    bool mightContain(
-        const cgl::GraphicsBasedIndex& mapIndex) const noexcept override;
+        const cgl::GraphicsResourceIndex& mapIndex) const noexcept override;
 
     cgl::Results query(
-        const cgl::MapBasedIndex&  index,
-        cgl::GraphicsResourceInfo*   pGfxFileHeader) const override;
-
-    cgl::Results query(
-        const cgl::GraphicsBasedIndex& index,
-        cgl::GraphicsResourceInfo*       pGfxFileHeader) const override;
-
+        const cgl::GraphicsResourceIndex& index,
+        cgl::GraphicsResourceInfo*        pGfxResInfo) const noexcept override;
 
  private:
     void destroy();
@@ -104,10 +110,8 @@ class GraphicIndexReaderImpl : public cgl::IGraphicsResourceFileInfoReader {
     cgl::FileOpenInfo fileOpenInfo_;
     std::unique_ptr<uint8_t[]> pBuffer_;
 
-    std::unordered_map<int32_t,
-                       GraphicInfoEntry*> mapIdxMap_;
-    std::unordered_map<int32_t,
-                       GraphicInfoEntry*> graphicsIdxMap_;
+    GraphicInfoEntryMap mapIdxMap_;
+    GraphicInfoEntryMap graphicsIdxMap_;
 };
 
 }  // namespace
@@ -128,8 +132,8 @@ GraphicIndexReaderImpl::~GraphicIndexReaderImpl() {
 // -----------------------------------------------------------------------------
 void GraphicIndexReaderImpl::destroy() {
     if ((fileOpenInfo_.stream.has_value()) &&
-        (fileOpenInfo_.stream.value().is_open())) {
-        fileOpenInfo_.stream.value().close();
+        (fileOpenInfo_.stream->is_open())) {
+        fileOpenInfo_.stream->close();
     }
 
     pBuffer_ = nullptr;
@@ -147,6 +151,12 @@ cgl::Results GraphicIndexReaderImpl::load() {
         return cgl::Results::Fail;
     }
 
+    // prevent load multiple times.
+    if (!graphicsIdxMap_.empty() || !mapIdxMap_.empty()) {
+        LOGW("Skip load() since the reader had been loaded");
+        return cgl::Results::Success;
+    }
+
     // close previous data first.
     if (cgl::IsFileOpen(fileOpenInfo_)) {
         LOGW("The graphic index reader has already opened a file. Release the"
@@ -158,6 +168,7 @@ cgl::Results GraphicIndexReaderImpl::load() {
     std::filesystem::path fullPath =
         std::filesystem::path(pSettings->crossGateResourceRootDir) /
         std::filesystem::path(resPath.graphicsInfoSubPath);
+    LOGD("Load graphics index from file `{}`", fullPath.string());
 
     fileOpenInfo_ = cgl::TryOpenBinaryFile(fullPath);
     if (fileOpenInfo_.result != cgl::Results::Success) {
@@ -214,19 +225,19 @@ bool GraphicIndexReaderImpl::preLoad(size_t bufferSize) {
         graphicsIdxMap_.emplace(entry.graphicindex, pEntries + i);
 
         // debug purpose
-        // if (pBuf[i].mapIndex == 2) {
-        //     LOGI("[{} / {}] width {}, height {}, offsetX {}, offsetY {},"
-        //         "grid_E {}, grid_N {}, flag {}",
-        //         pBuf[i].graphicindex,
-        //         pBuf[i].mapIndex,
-        //         pBuf[i].width,
-        //         pBuf[i].height,
-        //         pBuf[i].offsetX,
-        //         pBuf[i].offsetY,
-        //         pBuf[i].grid_E,
-        //         pBuf[i].grid_N,
-        //         static_cast<int>(pBuf[i].mapFlags.raw));
-        // }
+        if (false) {
+            LOGI("[{} / {}] width {}, height {}, offsetX {}, offsetY {},"
+                "tileX {}, tileY {}, flag {}",
+                pEntries[i].graphicindex,
+                pEntries[i].mapIndex,
+                pEntries[i].width,
+                pEntries[i].height,
+                pEntries[i].offsetX,
+                pEntries[i].offsetY,
+                pEntries[i].tileX,
+                pEntries[i].tileY,
+                static_cast<int>(pEntries[i].passableFlag));
+        }
     }
 
     return true;
@@ -234,58 +245,55 @@ bool GraphicIndexReaderImpl::preLoad(size_t bufferSize) {
 
 // -----------------------------------------------------------------------------
 bool GraphicIndexReaderImpl::mightContain(
-    const cgl::MapBasedIndex& idx
+    const cgl::GraphicsResourceIndex& idx
 ) const noexcept {
-    return (idx.value >= mapIdxRange_.min) && (idx.value <= mapIdxRange_.max);
-}
+    switch (idx.type) {
+    case cgl::GraphicsResourceIndexTypes::GraphicsBasedIndex:
+        return (gfxIdxRange_.min <= idx.value) &&
+               (idx.value <= gfxIdxRange_.max);
 
-// -----------------------------------------------------------------------------
-bool GraphicIndexReaderImpl::mightContain(
-    const cgl::GraphicsBasedIndex& idx
-) const noexcept {
-    return (idx.value >= gfxIdxRange_.min) && (idx.value <= gfxIdxRange_.max);
+    case cgl::GraphicsResourceIndexTypes::MapBasedIndex:
+        return (mapIdxRange_.min <= idx.value) &&
+               (idx.value <= mapIdxRange_.max);
+
+    default:
+        assert(false && "Unknown GraphicsResourceIndexTypes value");
+        return false;
+    }
 }
 
 // -----------------------------------------------------------------------------
 cgl::Results GraphicIndexReaderImpl::query(
-    const cgl::MapBasedIndex&  index,
-    cgl::GraphicsResourceInfo* pGfxResInfo
-) const {
-    if (this->mightContain(index) == false) {
+    const cgl::GraphicsResourceIndex& idx,
+    cgl::GraphicsResourceInfo*        pGfxResInfo
+) const noexcept {
+    if (this->mightContain(idx) == false) {
         return cgl::Results::IndexNotExist;
     }
 
+    const GraphicInfoEntryMap *pEntryMap = nullptr;
+    switch (idx.type) {
+    case cgl::GraphicsResourceIndexTypes::GraphicsBasedIndex:
+        pEntryMap = &graphicsIdxMap_;
+        break;
+
+    case cgl::GraphicsResourceIndexTypes::MapBasedIndex:
+        pEntryMap = &mapIdxMap_;
+        break;
+
+    default:
+        assert(false && "Unknown GraphicsResourceIndexTypes value");
+        return cgl::Results::InvalidArgs;
+    }
+
     // lookup the data
-    auto iter = mapIdxMap_.find(index.value);
-    if (iter == mapIdxMap_.end()) {
+    auto iter = pEntryMap->find(idx.value);
+    if (iter == pEntryMap->end()) {
         return cgl::Results::IndexNotExist;
     }
 
     // retile data to resource
     *pGfxResInfo = retile(createInfo().version, iter->second);
-    assert(index.value == pGfxResInfo->mapIdx.value);
-    // assert(index.version == pGfxResInfo->mapBasedIdx().version);
-
-    return cgl::Results::Success;
-}
-
-// -----------------------------------------------------------------------------
-cgl::Results GraphicIndexReaderImpl::query(
-    const cgl::GraphicsBasedIndex& index,
-    cgl::GraphicsResourceInfo*     pGfxResInfo
-) const {
-    if (this->mightContain(index) == false) {
-        return cgl::Results::IndexNotExist;
-    }
-
-    auto iter = graphicsIdxMap_.find(index.value);
-    if (iter == graphicsIdxMap_.end()) {
-        return cgl::Results::IndexNotExist;
-    }
-
-    *pGfxResInfo = retile(createInfo().version, iter->second);
-    assert(index.value == pGfxResInfo->graphicsIdx.value);
-    // assert(index.version == pGfxResInfo->mapBasedIdx().version);
 
     return cgl::Results::Success;
 }

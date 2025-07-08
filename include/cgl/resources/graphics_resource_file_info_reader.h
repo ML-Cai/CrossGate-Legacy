@@ -45,18 +45,11 @@ class IGraphicsResourceFileInfoReader {
     virtual size_t infoCount() const noexcept = 0;
 
     virtual bool mightContain(
-        const cgl::MapBasedIndex& index) const noexcept = 0;
-
-    virtual bool mightContain(
-        const cgl::GraphicsBasedIndex& index) const noexcept = 0;
+        const cgl::GraphicsResourceIndex& index) const noexcept = 0;
 
     virtual cgl::Results query(
-        const cgl::MapBasedIndex&  index,
-        cgl::GraphicsResourceInfo* pGfxResInfo) const = 0;
-
-    virtual cgl::Results query(
-        const cgl::GraphicsBasedIndex& index,
-        cgl::GraphicsResourceInfo*     pGfxResInfo) const = 0;
+        const cgl::GraphicsResourceIndex& index,
+        cgl::GraphicsResourceInfo*        pGfxResInfo) const noexcept = 0;
 
  private:
     const CreateInfo createInfo_;
