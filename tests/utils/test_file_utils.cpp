@@ -50,7 +50,9 @@ TEST_F(FileUtilsTest, FileBlockCacheTest) {
     cgl::FileBlockCache cache;
 
     // open cache test
+    ASSERT_FALSE(cache.isStreamReady());
     ASSERT_EQ(cache.open(testFilePath), cgl::Results::Success);
+    ASSERT_TRUE(cache.isStreamReady());
 
     // verify data
     constexpr size_t DATA_LENGTH = DATA_COUNT * sizeof(DATA_TYPE);
@@ -61,6 +63,10 @@ TEST_F(FileUtilsTest, FileBlockCacheTest) {
     for (size_t i = 0 ; i < DATA_COUNT ; i++) {
         ASSERT_EQ(pReadedData[i], i);
     }
+
+
+    // verify file length
+    ASSERT_EQ(cache.fileSize(), DATA_LENGTH);
 
     // verify data with offset
     std::vector<size_t> offsetTestIdxList = {1, 511, 1023, 1025};

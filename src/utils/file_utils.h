@@ -31,7 +31,9 @@ struct FileOpenInfo {
 };
 
 //------------------------------------------------------------------------------
-cgl::FileOpenInfo TryOpenBinaryFile(const std::filesystem::path& filePath) {
+inline cgl::FileOpenInfo TryOpenBinaryFile(
+    const std::filesystem::path& filePath
+) {
     std::ifstream file;
 
     try {
@@ -67,14 +69,15 @@ class FileBlockCache {
  public:
     FileBlockCache(size_t blockSize = 4096, size_t maxCachedBlocks = 512)
         : blockSize_(blockSize),
-          maxBlocks_(maxCachedBlocks) {
+          maxBlocks_(maxCachedBlocks),
+          fileSize_(0) {
     }
 
     virtual ~FileBlockCache() {
     }
 
     virtual cgl::Results open(const std::filesystem::path& filePath) {
-        if (cgl::IsFileOpen(fileInfo_)) {
+        if (isStreamReady()) {
             return cgl::Results::Success;
         }
 
@@ -87,9 +90,15 @@ class FileBlockCache {
         return fileInfo_.result;
     }
 
-    virtual cgl::Results read(size_t offset, size_t len, uint8_t* pDest) {
+    virtual bool isStreamReady() const {
+        return IsFileOpen(fileInfo_);
+    }
+
+    virtual size_t fileSize() const noexcept { return fileSize_; }
+
+    virtual cgl::Results read(size_t offset, size_t len, void* pDest) {
         // arg check
-        if (!IsFileOpen(fileInfo_)) return cgl::Results::InvalidArgs;
+        if (!isStreamReady()) return cgl::Results::InvalidArgs;
         if (pDest == nullptr) return cgl::Results::InvalidArgs;
         if ((len > fileSize_) || (offset > fileSize_) ||
             (offset > (fileSize_ - len))) {
@@ -109,7 +118,7 @@ class FileBlockCache {
 
             size_t toRead = std::min(block->bufferDataSize - blockOffset,
                                      len - readTotal);
-            std::memcpy(pDest + readTotal,
+            std::memcpy(reinterpret_cast<uint8_t *>(pDest) + readTotal,
                         block->buffer.data() + blockOffset,
                         toRead);
             readTotal += toRead;
