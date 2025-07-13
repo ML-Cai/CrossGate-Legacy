@@ -13,6 +13,9 @@
 
 namespace cgl {
 
+enum class EnvironmentPaletteTypes : uint8_t;
+
+struct EnvironmentPaletteResourcePath;
 
 struct Settings {
     /**
@@ -27,6 +30,9 @@ struct Settings {
 
     const cgl::CrossGateResourcePaths& crossGateResourcePath(
         cgl::CrossGateVersion version) const noexcept;
+
+    const cgl::EnvironmentPaletteResourcePath& envPalettePath(
+        cgl::EnvironmentPaletteTypes paletteType) const noexcept;
 };
 
 }   // namespace cgl

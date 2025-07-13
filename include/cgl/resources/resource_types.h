@@ -32,6 +32,25 @@ union PaletteData {
 
 using PaletteData256 = std::array<PaletteData, 256>;
 
+// EnvironmentPaletteTypes enum
+#define EnvironmentPaletteTypes_ENUM_LIST \
+    CGL_X(Daytime)                        \
+    CGL_X(Evening)                        \
+    CGL_X(Night)                          \
+    CGL_X(EarlyMorning)                   \
+    CGL_X(Unknown)                        \
+
+enum class EnvironmentPaletteTypes : uint8_t {
+#define CGL_X(name) name,
+    EnvironmentPaletteTypes_ENUM_LIST
+#undef CGL_X
+};
+
+struct EnvironmentPaletteResourcePath {
+    cgl::EnvironmentPaletteTypes paletteType;
+    std::string_view             paletteFilePath;
+};
+
 // -----------------------------------------------------------------------------
 // GraphicsResourceIndexTypes
 // -----------------------------------------------------------------------------
