@@ -9,10 +9,28 @@
 #pragma once
 
 #include <stdint.h>
+#include <memory>
+#include <array>
+#include <optional>
 #include "cgl/core/version.h"
 
 namespace cgl {
 
+// -----------------------------------------------------------------------------
+// Palette data
+// -----------------------------------------------------------------------------
+#pragma pack(1)
+union PaletteData {
+    struct BGRColorVector {
+        uint8_t B;
+        uint8_t G;
+        uint8_t R;
+    } BGR;
+    uint8_t data[3];
+};
+#pragma pack()
+
+using PaletteData256 = std::array<PaletteData, 256>;
 
 // -----------------------------------------------------------------------------
 // GraphicsResourceIndexTypes
@@ -78,5 +96,15 @@ struct GraphicsResourceInfo {
 };
 
 
+// -----------------------------------------------------------------------------
+// Graphic resource data
+// -----------------------------------------------------------------------------
+struct GraphicsResourceData {
+    cgl::CrossGateVersion version;
+    int32_t width;
+    int32_t height;
+    std::unique_ptr<uint8_t[]> data;
+    std::optional<cgl::PaletteData256> paletteData;
+};
 
 }   // namespace cgl
