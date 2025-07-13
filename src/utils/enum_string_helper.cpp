@@ -49,3 +49,14 @@ const char* cgl::GetString(const cgl::GraphicsResourceIndexTypes& type) {
         return "Unknown";
     }
 }
+
+// -----------------------------------------------------------------------------
+const char* cgl::GetString(const cgl::EnvironmentPaletteTypes& type) {
+    switch (type) {
+#define CGL_X(name) case cgl::EnvironmentPaletteTypes::name: return #name;
+        EnvironmentPaletteTypes_ENUM_LIST
+#undef CGL_X
+    default:
+        return "Unknown";
+    }
+}

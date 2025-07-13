@@ -10,6 +10,7 @@
 #include <filesystem>
 #include "cgl/settings/settings.h"
 #include "cgl/settings/settings_loader.h"
+#include "cgl/resources/resource_types.h"
 
 using cgl::SettingsLoader;
 
@@ -83,6 +84,31 @@ const cgl::CrossGateResourcePaths& cgl::Settings::crossGateResourcePath(
     };
 
     return g_crossGateResourcePaths[static_cast<size_t>(version)];
+}
+
+const cgl::EnvironmentPaletteResourcePath& cgl::Settings::envPalettePath(
+    cgl::EnvironmentPaletteTypes paletteType
+) const noexcept {
+    static constexpr cgl::EnvironmentPaletteResourcePath g_pPaths[] = {
+        { cgl::EnvironmentPaletteTypes::Daytime,      "bin/pal/palet_00.cgp" },
+        { cgl::EnvironmentPaletteTypes::Evening,      "bin/pal/palet_01.cgp" },
+        { cgl::EnvironmentPaletteTypes::Night,        "bin/pal/palet_02.cgp" },
+        { cgl::EnvironmentPaletteTypes::EarlyMorning, "bin/pal/palet_03.cgp" },
+
+        // TODO(Miles) : decode the usage of other palette files in bin/pal/*
+
+        // invalid path
+        { cgl::EnvironmentPaletteTypes::Unknown,      "invalid-path" },
+    };
+
+    constexpr size_t pathCount = std::size(g_pPaths);
+    size_t index = static_cast<size_t>(paletteType);
+
+    if (index >= pathCount - 1) [[unlikely]] {
+        index = pathCount - 1;
+    }
+
+    return g_pPaths[index];
 }
 
 // -----------------------------------------------------------------------------
