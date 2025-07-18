@@ -18,21 +18,21 @@ namespace cgl {
 // -----------------------------------------------------------------------------
 
 #define CrossGateVersion_ENUM_LIST \
-    CrossGateVersion_X(CG_VERSION_Classic)  /* GraphicInfo              */ \
-    CrossGateVersion_X(CG_VERSION_PUK1)     /* GraphicInfoEx_*          */ \
-    CrossGateVersion_X(CG_VERSION_PUK2_V1)  /* GraphicInfoV3_*          */ \
-    CrossGateVersion_X(CG_VERSION_PUK2_V2)  /* Puk2/GraphicInfo_PUK2_*  */ \
-    CrossGateVersion_X(CG_VERSION_PUK3_V1)  /* Puk3/GraphicInfo_PUK3_*  */ \
-    CrossGateVersion_X(CG_VERSION_PUK4_V1)  /* GraphicInfo_Joy_*        */ \
-    CrossGateVersion_X(CG_VERSION_PUK4_V2)  /* GraphicInfo_Joy_CH*      */ \
-    CrossGateVersion_X(CG_VERSION_PUK4_V3)  /* GraphicInfo_Joy_EX_*     */ \
-    CrossGateVersion_X(Count)                                              \
-    CrossGateVersion_X(CG_VERSION_UNKNOWN)
+    CGL_X(CG_VERSION_Classic)  /* GraphicInfo              */ \
+    CGL_X(CG_VERSION_PUK1)     /* GraphicInfoEx_*          */ \
+    CGL_X(CG_VERSION_PUK2_V1)  /* GraphicInfoV3_*          */ \
+    CGL_X(CG_VERSION_PUK2_V2)  /* Puk2/GraphicInfo_PUK2_*  */ \
+    CGL_X(CG_VERSION_PUK3_V1)  /* Puk3/GraphicInfo_PUK3_*  */ \
+    CGL_X(CG_VERSION_PUK4_V1)  /* GraphicInfo_Joy_*        */ \
+    CGL_X(CG_VERSION_PUK4_V2)  /* GraphicInfo_Joy_CH*      */ \
+    CGL_X(CG_VERSION_PUK4_V3)  /* GraphicInfo_Joy_EX_*     */ \
+    CGL_X(Count)                                              \
+    CGL_X(CG_VERSION_UNKNOWN)
 
 enum class CrossGateVersion : uint8_t {
-#define CrossGateVersion_X(name) name,
+#define CGL_X(name) name,
     CrossGateVersion_ENUM_LIST
-#undef CrossGateVersion_X
+#undef CGL_X
 };
 
 struct CrossGateResourcePaths {
