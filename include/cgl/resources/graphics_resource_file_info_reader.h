@@ -51,6 +51,9 @@ class IGraphicsResourceFileInfoReader {
         const cgl::GraphicsResourceIndex& index,
         cgl::GraphicsResourceInfo*        pGfxResInfo) const noexcept = 0;
 
+    virtual cgl::Results queryAvailableIndexValue(
+        std::vector<int32_t>* pList) noexcept = 0;
+
  private:
     const CreateInfo createInfo_;
 };

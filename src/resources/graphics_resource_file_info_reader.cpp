@@ -99,6 +99,9 @@ class GraphicIndexReaderImpl : public cgl::IGraphicsResourceFileInfoReader {
         const cgl::GraphicsResourceIndex& index,
         cgl::GraphicsResourceInfo*        pGfxResInfo) const noexcept override;
 
+    cgl::Results queryAvailableIndexValue(
+        std::vector<int32_t>* pList) noexcept override;
+
  private:
     void destroy();
 
@@ -295,6 +298,21 @@ cgl::Results GraphicIndexReaderImpl::query(
     // retile data to resource
     *pGfxResInfo = retile(createInfo().version, iter->second);
 
+    return cgl::Results::Success;
+}
+
+// -----------------------------------------------------------------------------
+cgl::Results GraphicIndexReaderImpl::queryAvailableIndexValue(
+    std::vector<int32_t>* pList
+) noexcept {
+    if (pList == nullptr) {
+        return cgl::Results::InvalidArgs;
+    }
+
+    pList->reserve(graphicsIdxMap_.size());
+    for (const auto& [key, value] : graphicsIdxMap_) {
+        pList->emplace_back(value->graphicindex);
+    }
     return cgl::Results::Success;
 }
 

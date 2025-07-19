@@ -286,10 +286,17 @@ cgl::Results GraphicsDataReaderImpl::ReadDataFromPUK(
     cgl::GraphicsResourceData*       pGfxFileData
 ) {
     cgl::Results result = cgl::Results::Fail;
+    size_t graphicsDataSize = header.width * header.height;
     size_t dataBlockOffset = gfxResInfo.dataOffset +
                              sizeof(GraphicsFileDataHeader);
-    size_t dataBlockSize = header.dataSize -
-                           sizeof(GraphicsFileDataHeader);
+    // calculate graphics data size
+    size_t dataBlockSize;
+
+    if (header.flag & GraphicsDataFlags::CompressedData) {
+        dataBlockSize = header.dataSize - sizeof(GraphicsFileDataHeader);
+    } else {
+        dataBlockSize = graphicsDataSize;
+    }
 
     // check PUK2's header
     if (header.flag & GraphicsDataFlags::DataVerPUK2) {
@@ -319,7 +326,6 @@ cgl::Results GraphicsDataReaderImpl::ReadDataFromPUK(
     }
 
     // decompress the graphic resource
-    uint32_t graphicsDataSize = header.width * header.height;
     auto graphicsData = std::make_unique<uint8_t[]>(graphicsDataSize);
     assert(graphicsData != nullptr);
 
@@ -336,9 +342,7 @@ cgl::Results GraphicsDataReaderImpl::ReadDataFromPUK(
                  errorMsgBuf);
         }
     } else {
-        // Check the data size match or not for decompressed data.
-        assert(header.dataSize == static_cast<uint32_t>(graphicsDataSize));
-        memcpy(graphicsData.get(), tempBlock_.data(), header.dataSize);
+        memcpy(graphicsData.get(), tempBlock_.data(), graphicsDataSize);
     }
 
     // assign palette data
