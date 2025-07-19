@@ -39,4 +39,4 @@ This project is not a private server or an attempt to infringe upon the rights o
 
 ## Run
 
-- GraphicsDataViewer : see [bin\GraphicsDataViewer](bin\GraphicsDataViewer)
+- GraphicsDataViewer : see [bin\GraphicsDataViewer](bin/GraphicsDataViewer)
