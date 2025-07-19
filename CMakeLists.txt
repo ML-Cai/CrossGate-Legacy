@@ -3,11 +3,11 @@ cmake_minimum_required(VERSION 3.16)
 set(PROJECT_NAME "CrossGate-Legacy")
 project(${PROJECT_NAME})
 
-
 #-------------------------------------------------------------------------------
 # [Options]
 #-------------------------------------------------------------------------------
 option(CGL_WITH_TEST         "Build with unit tests"                         ON)
+option(CGL_WITH_BIN          "Build with binary"                             ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -84,4 +84,11 @@ endif()
 #-------------------------------------------------------------------------------
 if (CGL_WITH_TEST)
     add_subdirectory(tests)
+endif()
+
+#-------------------------------------------------------------------------------
+# [build bin]
+#-------------------------------------------------------------------------------
+if (CGL_WITH_BIN)
+    add_subdirectory(python)
 endif()
