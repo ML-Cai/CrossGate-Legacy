@@ -76,117 +76,113 @@ std::string toString(const GraphicsFileDataHeader &h) {
 //
 // Decompress algorithm : https://cgsword.com/filesystem_graphicmap.htm
 //
-bool Decompress(uint8_t*  pDataBlock,
-                size_t    dataBlockSize,
-                uint8_t*  pGraphicFileData,
-                size_t    graphicFileDataSize,
-                char*     pErrorMsgBuf,
-                size_t    errorMsgBufSize) {
+bool Decompress(
+    const uint8_t* pRawDataBlock,
+    const size_t   rawDataBlockSize,
+    uint8_t*       pGfxData,
+    const size_t   gfxDataSize,
+    const size_t   paletteDataSize,
+    char*          pErrorMsgBuf,
+    size_t         errorMsgBufSize
+) {
     constexpr size_t HEX_100 = 0x100;    // 0x100
     constexpr size_t HEX_10000 = 0x10000;    // 0x10000
-    uint8_t* p = pGraphicFileData;
 
-    for (size_t i = 0 ; i < dataBlockSize ; i++) {
-        const uint8_t code = pDataBlock[i] >> 4;
-        const uint8_t a = pDataBlock[i] & 0x0F;
-        const size_t remainSize = (graphicFileDataSize -
-                                   static_cast<size_t>(p - pGraphicFileData));
-        // LOGI("code {:X}", pDataBlock[i]);
+    // decode gfx data
+    const uint8_t* pRaw = pRawDataBlock;
+    uint8_t* pDst       = pGfxData;
+    uint8_t* pDstEnd    = pDst + gfxDataSize + paletteDataSize;
+
+    while (pDst < pDstEnd) {
+        const uint8_t code = *pRaw >> 4;
+        const uint8_t a    = *pRaw & 0x0F;
+        // LOGI("code {:X} , pDst {:X}, pDstEnd {:X}", code, (size_t)pDst, (size_t)pDstEnd);
+
+        // Subtract the size of `code`
+        pRaw++;
+        assert(pRaw <= pRawDataBlock + rawDataBlockSize);
 
         if (code == 0x0) {
             // 0a | xx :
             //  Read HEX(a) count of XX
-            const size_t count = std::min(remainSize, static_cast<size_t>(a));
-            memcpy(p, &pDataBlock[i + 1], count);
-            p += count;
-            i += count;
+            // const size_t count = std::min(remainSize, static_cast<size_t>(a));
+            const size_t count = a;
+            memcpy(pDst, pRaw, count);
+            pDst += count;
+            pRaw += count;
         } else if (code == 0x1) {
             // 1a | bb | xx :
             //  Read HEX(a * 100 + bb) count of xx
-            const uint8_t bb = pDataBlock[i + 1];
-            const size_t count = std::min(remainSize, a * HEX_100 + bb);
-            memcpy(p, &pDataBlock[i + 2], count);
-            p += count;
-            i += 1 + count;
+            const uint8_t bb = *pRaw++;
+            // const size_t count = std::min(remainSize, a * HEX_100 + bb);
+            const size_t count = a * HEX_100 + bb;
+            memcpy(pDst, pRaw, count);
+            pDst += count;
+            pRaw += count;
         } else if (code == 0x2) {
             // 2a | bb | cc | xx :
             //  Read HEX(a * 10000 + bb * 100 + cc) count of xx
-            const uint8_t bb = pDataBlock[i + 1];
-            const uint8_t cc = pDataBlock[i + 2];
-            const size_t count = std::min(remainSize,
-                                          a * HEX_10000 + bb * HEX_100 + cc);
-            memcpy(p, &pDataBlock[i + 3], count);
-            p += count;
-            i += 2 + count;
+            const uint8_t bb = *pRaw++;
+            const uint8_t cc = *pRaw++;
+            const size_t count = a * HEX_10000 + bb * HEX_100 + cc;
+            memcpy(pDst, pRaw, count);
+            pDst += count;
+            pRaw += count;
         } else if (code == 0x8) {
             // 8a | xx :
             //  Repeat HEX(a) count of transparent
-            const uint8_t xx = pDataBlock[i + 1];
-            const size_t count = std::min(remainSize, static_cast<size_t>(a));
-            memset(p, xx, count);
-            p += count;
-            i += 1;
+            const uint8_t xx = *pRaw++;
+            const size_t count = static_cast<size_t>(a);
+            memset(pDst, xx, count);
+            pDst += count;
         } else if (code == 0x9) {
             // 9a | xx | bb :
             //  Repeat HEX(a * 100 + bb) count of xx
-            const uint8_t xx = pDataBlock[i + 1];
-            const uint8_t bb = pDataBlock[i + 2];
-            const size_t count = std::min(remainSize, a * HEX_100 + bb);
-            memset(p, xx, count);
-            p += count;
-            i += 2;
+            const uint8_t xx = *pRaw++;
+            const uint8_t bb = *pRaw++;
+            const size_t count = a * HEX_100 + bb;
+            memset(pDst, xx, count);
+            pDst += count;
         } else if (code == 0xA) {
             // Aa | xx | bb | cc :
             //  Repeat HEX(a * 10000 + bb * 100 + cc) count of xx
-            const uint8_t xx = pDataBlock[i + 1];
-            const uint8_t bb = pDataBlock[i + 2];
-            const uint8_t cc = pDataBlock[i + 3];
-            const size_t count = std::min(remainSize,
-                                          a * HEX_10000 + bb * HEX_100 + cc);
-            memset(p, xx, count);
-            p += count;
-            i += 3;
+            const uint8_t xx = *pRaw++;
+            const uint8_t bb = *pRaw++;
+            const uint8_t cc = *pRaw++;
+            const size_t count = a * HEX_10000 + bb * HEX_100 + cc;
+            memset(pDst, xx, count);
+            pDst += count;
         } else if (code == 0xC) {
             // Ca :
             //  Repeat HEX(a) count of transparent
-            size_t count = std::min(remainSize, static_cast<size_t>(a));
-            memset(p, 0, count);
-            p += count;
+            size_t count = static_cast<size_t>(a);
+            memset(pDst, 0, count);
+            pDst += count;
         } else if (code == 0xD) {
             // Da | bb :
             //  Repeat HEX(a * 100 + bb) count of transparent
-            const uint8_t bb = pDataBlock[i + 1];
-            const size_t count = std::min(remainSize, a * HEX_100 + bb);
-            memset(p, 0, count);
-            p += count;
-            i += 1;
+            const uint8_t bb = *pRaw++;
+            const size_t count = a * HEX_100 + bb;
+            memset(pDst, 0, count);
+            pDst += count;
         } else if (code == 0xE) {
             // Ea | bb | cc :
             //   Read HEX(a * 10000 + bb * 100 + cc) count of transparent
-            const uint8_t bb = pDataBlock[i + 1];
-            const uint8_t cc = pDataBlock[i + 2];
-            const size_t count = std::min(remainSize,
-                                          a * HEX_10000 + bb * HEX_100 + cc);
-            memset(p, 0, count);
-            p += count;
-            i += 2;
+            const uint8_t bb = *pRaw++;
+            const uint8_t cc = *pRaw++;
+            const size_t count = a * HEX_10000 + bb * HEX_100 + cc;
+            memset(pDst, 0, count);
+            pDst += count;
         } else {
             sprintf_s(pErrorMsgBuf, errorMsgBufSize,
                       "Unknown header code %d", code);
             return false;
         }
-        // LOGI("proc size {} , remain {}",
-        //     (size_t)(p - pDataBlock), dataBlockSize - i);
     }
-
-    // LOGI("headerSize {}", headerSize);
-    // LOGI("Read size >>> {}", (size_t)(p - GraphicsFileData));
-    assert(static_cast<size_t>(graphicFileDataSize) ==
-           static_cast<size_t>(p - pGraphicFileData));
+    assert(pDst == pDstEnd);
 
     return true;
 }
-
 
 }   // namespace
 
@@ -287,9 +283,9 @@ cgl::Results GraphicsDataReaderImpl::ReadDataFromPUK(
 ) {
     cgl::Results result = cgl::Results::Fail;
     size_t graphicsDataSize = header.width * header.height;
+    size_t paletteDataSize = 0;
     size_t dataBlockOffset = gfxResInfo.dataOffset +
                              sizeof(GraphicsFileDataHeader);
-    // calculate graphics data size
     size_t dataBlockSize;
 
     if (header.flag & GraphicsDataFlags::CompressedData) {
@@ -299,6 +295,7 @@ cgl::Results GraphicsDataReaderImpl::ReadDataFromPUK(
     }
 
     // check PUK2's header
+    uint8_t* pPalette = nullptr;
     if (header.flag & GraphicsDataFlags::DataVerPUK2) {
         GraphicsFileDataHeader_PUK2 header_puk2;
         result = this->read(dataBlockOffset, sizeof(header_puk2), &header_puk2);
@@ -311,9 +308,10 @@ cgl::Results GraphicsDataReaderImpl::ReadDataFromPUK(
 
         // update size of data block & offset
         dataBlockOffset += sizeof(GraphicsFileDataHeader_PUK2);
+        paletteDataSize = header_puk2.paletteSize;
     }
 
-    // update temporary block is necessary
+    // update temporary block if necessary
     if (dataBlockSize > tempBlock_.size()) {
         tempBlock_.resize(dataBlockSize);
     }
@@ -325,34 +323,32 @@ cgl::Results GraphicsDataReaderImpl::ReadDataFromPUK(
         return result;
     }
 
-    // decompress the graphic resource
-    auto graphicsData = std::make_unique<uint8_t[]>(graphicsDataSize);
-    assert(graphicsData != nullptr);
+    // decompress the graphic resource, allocate the data with the
+    // `graphicsDataSize` & `paletteDataSize` since we might need to allocate
+    // the private palette in the same time.
+    auto resourceData = std::make_unique<uint8_t[]>(graphicsDataSize + paletteDataSize);
+    assert(resourceData != nullptr);
 
     if (header.flag & GraphicsDataFlags::CompressedData) {
         char errorMsgBuf[1024];
-        if (!Decompress(
-                tempBlock_.data(),
-                dataBlockSize,
-                graphicsData.get(),
-                graphicsDataSize,
-                errorMsgBuf,
-                sizeof(errorMsgBuf))) {
+        if (!Decompress(tempBlock_.data(),
+                        dataBlockSize,
+                        resourceData.get(),
+                        graphicsDataSize,
+                        paletteDataSize,
+                        errorMsgBuf,
+                        sizeof(errorMsgBuf))) {
             LOGE("Failed to do decompress for this data block, msg {}",
                  errorMsgBuf);
         }
     } else {
-        memcpy(graphicsData.get(), tempBlock_.data(), graphicsDataSize);
+        dataBlockSize = graphicsDataSize;
+        memcpy(resourceData.get(), tempBlock_.data(), dataBlockSize);
     }
 
     // assign palette data
-    std::optional<cgl::PaletteData256> palette;
-    if (header.flag & GraphicsDataFlags::DataVerPUK2) {
-        palette = std::make_optional<cgl::PaletteData256>();
-
-        result = this->read(dataBlockOffset + graphicsDataSize,
-                            sizeof(cgl::PaletteData) * 256,
-                            palette->data());
+    if (paletteDataSize > 0) {
+        pPalette = resourceData.get() + graphicsDataSize;
     }
 
     // dump data (debug)
@@ -376,8 +372,8 @@ cgl::Results GraphicsDataReaderImpl::ReadDataFromPUK(
         .version = this->createInfo().version,
         .width = header.width,
         .height = header.height,
-        .data = std::move(graphicsData),
-        .paletteData = palette
+        .pData = std::move(resourceData),
+        .pPaletteData = pPalette
     };
 
 

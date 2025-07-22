@@ -251,16 +251,22 @@ std::vector<uint8_t> Session::apply_palette(
     std::vector<uint8_t> img;
     size_t count = pGfxResData->width * pGfxResData->height;
     img.resize(count * 4);
-    uint8_t* pData = pGfxResData->data.get();
+    uint8_t* pData = pGfxResData->pData.get();
     uint8_t* pImg = img.data();
     uint8_t* pEnd = img.data() + count * 4;
 
+    // const cgl::PaletteData256* pPalette = &pPaletteHolder->data;
+    auto pPalette = reinterpret_cast<uint8_t*>(pPaletteHolder->data.data());
+    if (pGfxResData->pPaletteData != nullptr) {
+        pPalette = pGfxResData->pPaletteData;
+    }
+
     while (pImg < pEnd) {
-        uint8_t paletteDataIdx = *(pData);
-        auto& bgr = pPaletteHolder->data[paletteDataIdx].BGR;
-        pImg[0] = bgr.B;
-        pImg[1] = bgr.G;
-        pImg[2] = bgr.R;
+        uint32_t paletteDataIdx = *(pData);
+        uint8_t* pBGR = &pPalette[paletteDataIdx * 3];
+        pImg[0] = pBGR[0];
+        pImg[1] = pBGR[1];
+        pImg[2] = pBGR[2];
         pImg[3] = (paletteDataIdx == 0)? 0 : 255;
         pImg+=4;
         pData++;
