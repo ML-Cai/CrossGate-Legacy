@@ -66,8 +66,8 @@ TEST_F(IGraphicsResourceFileDataReaderTest, ReaderInitAndLoad) {
     EXPECT_EQ(gfxResData.version, info_.version);
     EXPECT_EQ(gfxResData.width, info_.width);
     EXPECT_EQ(gfxResData.height, info_.height);
-    EXPECT_NE(gfxResData.data, nullptr);
-    EXPECT_EQ(gfxResData.paletteData, std::nullopt);
+    EXPECT_NE(gfxResData.pData, nullptr);
+    EXPECT_EQ(gfxResData.pPaletteData, nullptr);
 }
 
 // -----------------------------------------------------------------------------

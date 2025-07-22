@@ -15,9 +15,11 @@ env_palette_type_map = {e.name: e for e in cgl.EnvironmentPaletteTypesList()}
 class GraphicsDataViewerApp:
     def __init__(self):
         self.session = cgl.Session()
-        self.interface = self.build_interface()
         self.palette_list = {}
         self.index_value_list = {}
+        self.img_col = 8
+        self.img_row = 2
+        self.interface = self.build_interface()
 
 
     def acquire_available_index_value_list(self, version):
@@ -44,8 +46,9 @@ class GraphicsDataViewerApp:
 
         # acquire available index value
         available_index_value_list = self.acquire_available_index_value_list(version)
-        end_index = min(index + 16, len(available_index_value_list))
-        start_index = min(index, len(available_index_value_list) - 16)
+        count = self.img_col * self.img_row
+        end_index = min(index + count, len(available_index_value_list))
+        start_index = min(index, len(available_index_value_list) - count)
 
         images = []
         for i in range(start_index, end_index):
@@ -99,13 +102,19 @@ class GraphicsDataViewerApp:
 
             with gr.Column(scale=3):
                 ui_index_selector = gr.Slider(label="Index", minimum=0, maximum=100, step=8, value=0, interactive=True)
-                ui_image_gallery = gr.Gallery(label="Images", columns=8, rows=2)
+                ui_image_gallery = gr.Gallery(label="Images", columns=self.img_col, rows=self.img_row)
 
             # Bind event
             ui_version.change(
                 fn      = self.on_version_type_change,
                 inputs  = ui_version,
                 outputs = ui_index_selector
+            )
+
+            ui_version.change(
+                fn      = self.on_image_change,
+                inputs  = [ui_version, ui_palette, ui_index_selector],
+                outputs = ui_image_gallery
             )
 
             ui_index_selector.change(

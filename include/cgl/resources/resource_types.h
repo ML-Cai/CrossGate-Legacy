@@ -122,8 +122,8 @@ struct GraphicsResourceData {
     cgl::CrossGateVersion version;
     int32_t width;
     int32_t height;
-    std::unique_ptr<uint8_t[]> data;
-    std::optional<cgl::PaletteData256> paletteData;
+    std::unique_ptr<uint8_t[]> pData;
+    uint8_t* pPaletteData;
 };
 
 }   // namespace cgl
