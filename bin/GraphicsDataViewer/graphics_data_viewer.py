@@ -72,7 +72,7 @@ class GraphicsDataViewerApp:
 
 
     def on_page_load(self):
-        default_version = list(cross_gate_version_map.values())[4]
+        default_version = list(cross_gate_version_map.values())[0]
         default_palette = list(env_palette_type_map.values())[0]
 
         # update index slider
@@ -102,7 +102,7 @@ class GraphicsDataViewerApp:
                 ui_palette = gr.Dropdown(label="Environment Palette Type", choices=env_palette_type_map)
 
             with gr.Column(scale=3):
-                ui_index_selector = gr.Slider(label="Index", minimum=0, maximum=100, step=8, value=3674, interactive=True)
+                ui_index_selector = gr.Slider(label="Index", minimum=0, maximum=100, step=8, value=0, interactive=True)
                 ui_image_gallery = gr.Gallery(label="Images", columns=self.img_col, rows=self.img_row)
 
             # Bind event
