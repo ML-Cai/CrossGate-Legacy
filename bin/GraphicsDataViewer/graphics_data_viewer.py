@@ -54,10 +54,11 @@ class GraphicsDataViewerApp:
         for i in range(start_index, end_index):
             index    = available_index_value_list[i]
             gfx_data = self.session.acquire_graphics_data(version, index)
-            img      = self.session.apply_palette(gfx_data, palette)
-            img      = img[:, :, [2, 1, 0]]
-            img      = img[::-1, :, :]
-            images.append((img, f"Index: {index}"))
+            if (gfx_data is not None) and (palette is not None):
+                img      = self.session.apply_palette(gfx_data, palette)
+                img      = img[:, :, [2, 1, 0]]
+                img      = img[::-1, :, :]
+                images.append((img, f"Index: {index}"))
         return images
 
 

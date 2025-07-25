@@ -15,6 +15,7 @@
 #include "cgl/utils/enum_string_helper.h"
 #include "utils/file_utils.h"
 #include "utils/logger.h"
+#include "utils/common.h"
 
 //------------------------------------------------------------------------------
 // namespace anonymous
@@ -64,14 +65,27 @@ std::string toString(const GraphicsFileDataHeader &h) {
     std::stringstream ss;
     ss << "code[0] " << h.code[0] << "(" << static_cast<int>(h.code[0]) << ")"
        << ", code[1] " << h.code[1] << "(" << static_cast<int>(h.code[1]) << ")"
-       << ", unknown " << h.unknown
        << ", width " << h.width
        << ", height " << h.height
-       << ", dataSize " << h.dataSize
-       << std::endl;
+       << ", dataSize " << h.dataSize;
 
     return ss.str();
 }
+
+constexpr size_t HEX_100 = 0x100;    // 0x100
+constexpr size_t HEX_10000 = 0x10000;    // 0x10000
+
+enum OpCode : uint8_t {
+    CODE_RAW_DATA_SMALL     = 0x0,
+    CODE_RAW_DATA_MEDIUM    = 0x1,
+    CODE_RAW_DATA_LARGE     = 0x2,
+    CODE_REPEAT_BYTE_SMALL  = 0x8,
+    CODE_REPEAT_BYTE_MEDIUM = 0x9,
+    CODE_REPEAT_BYTE_LARGE  = 0xA,
+    CODE_REPEAT_ZERO_SMALL  = 0xC,
+    CODE_REPEAT_ZERO_MEDIUM = 0xD,
+    CODE_REPEAT_ZERO_LARGE  = 0xE
+};
 
 //
 // Decompress algorithm : https://cgsword.com/filesystem_graphicmap.htm
@@ -81,105 +95,193 @@ bool Decompress(
     const size_t   rawDataBlockSize,
     uint8_t*       pGfxData,
     const size_t   gfxDataSize,
-    const size_t   paletteDataSize,
-    char*          pErrorMsgBuf,
-    size_t         errorMsgBufSize
+    const size_t   paletteDataSize
 ) {
-    constexpr size_t HEX_100 = 0x100;    // 0x100
-    constexpr size_t HEX_10000 = 0x10000;    // 0x10000
+    if (!pRawDataBlock || !pGfxData) {
+        LOGE("Decompress error: One or more input pointers are null.");
+        return false;
+    }
 
-    // decode gfx data
-    const uint8_t* pRaw = pRawDataBlock;
-    uint8_t* pDst       = pGfxData;
-    uint8_t* pDstEnd    = pDst + gfxDataSize + paletteDataSize;
+    const size_t totalOutputSize = gfxDataSize + paletteDataSize;
+    uint8_t* pDst          = pGfxData;
+    uint8_t* pDstEnd       = pGfxData + totalOutputSize;
+    const uint8_t* pRaw    = pRawDataBlock;
+    const uint8_t* pRawEnd = pRawDataBlock + rawDataBlockSize;
+    bool isValidBlock      = true;
 
     while (pDst < pDstEnd) {
-        const uint8_t code = *pRaw >> 4;
-        const uint8_t a    = *pRaw & 0x0F;
-        // LOGI("code {:X} , pDst {:X}, pDstEnd {:X}", code, (size_t)pDst, (size_t)pDstEnd);
+        // safe check
+        if (UNLIKELY(pRaw >= pRawEnd)) {
+            LOGE("Unexpected end of raw data block when read the instruction");
+            return false;
+        }
 
-        // Subtract the size of `code`
-        pRaw++;
-        assert(pRaw <= pRawDataBlock + rawDataBlockSize);
+        const size_t remainingDstSize = static_cast<size_t>(pDstEnd - pDst);
+        const uint8_t instructionByte = *pRaw++;
+        const uint8_t code = instructionByte >> 4;
+        const uint8_t a = instructionByte & 0x0F;
+        size_t count = 0;
+        uint8_t value_to_repeat = 0;
 
-        if (code == 0x0) {
+        auto ENSURE_RAW_BYTES_AVAILABLE = [&](size_t  reqBytes,
+                                              uint8_t code,
+                                              auto&&  onSuccess) -> bool {
+            if (UNLIKELY(static_cast<size_t>(pRawEnd - pRaw) < reqBytes)) {
+                LOGE("Unexpected end of raw data block when processing "
+                     "instruction (0x{:X})", code);
+                return false;
+            }
+            onSuccess();
+            return true;
+        };
+
+        // decompress the data block
+        switch (static_cast<OpCode>(code)) {
+        case CODE_RAW_DATA_SMALL:
             // 0a | xx :
             //  Read HEX(a) count of XX
-            // const size_t count = std::min(remainSize, static_cast<size_t>(a));
-            const size_t count = a;
-            memcpy(pDst, pRaw, count);
-            pDst += count;
-            pRaw += count;
-        } else if (code == 0x1) {
+            count = a;
+            break;
+
+        case CODE_RAW_DATA_MEDIUM: {
             // 1a | bb | xx :
             //  Read HEX(a * 100 + bb) count of xx
-            const uint8_t bb = *pRaw++;
-            // const size_t count = std::min(remainSize, a * HEX_100 + bb);
-            const size_t count = a * HEX_100 + bb;
-            memcpy(pDst, pRaw, count);
-            pDst += count;
-            pRaw += count;
-        } else if (code == 0x2) {
+            isValidBlock = ENSURE_RAW_BYTES_AVAILABLE(1, code, [&] {
+                const uint8_t bb = *pRaw++;
+                count = static_cast<size_t>(a) * HEX_100 + bb;
+            });
+            break;
+        }
+
+        case CODE_RAW_DATA_LARGE: {
             // 2a | bb | cc | xx :
             //  Read HEX(a * 10000 + bb * 100 + cc) count of xx
-            const uint8_t bb = *pRaw++;
-            const uint8_t cc = *pRaw++;
-            const size_t count = a * HEX_10000 + bb * HEX_100 + cc;
-            memcpy(pDst, pRaw, count);
-            pDst += count;
-            pRaw += count;
-        } else if (code == 0x8) {
+            isValidBlock = ENSURE_RAW_BYTES_AVAILABLE(2, code, [&] {
+                const uint8_t bb = *pRaw++;
+                const uint8_t cc = *pRaw++;
+                count = static_cast<size_t>(a) * HEX_10000 +
+                        static_cast<size_t>(bb) * HEX_100 +
+                        cc;
+            });
+            break;
+        }
+
+        case CODE_REPEAT_BYTE_SMALL: {
             // 8a | xx :
             //  Repeat HEX(a) count of transparent
-            const uint8_t xx = *pRaw++;
-            const size_t count = static_cast<size_t>(a);
-            memset(pDst, xx, count);
-            pDst += count;
-        } else if (code == 0x9) {
+            isValidBlock = ENSURE_RAW_BYTES_AVAILABLE(1, code, [&] {
+                value_to_repeat = *pRaw++;
+                count = a;
+            });
+            break;
+        }
+
+        case CODE_REPEAT_BYTE_MEDIUM: {
             // 9a | xx | bb :
             //  Repeat HEX(a * 100 + bb) count of xx
-            const uint8_t xx = *pRaw++;
-            const uint8_t bb = *pRaw++;
-            const size_t count = a * HEX_100 + bb;
-            memset(pDst, xx, count);
-            pDst += count;
-        } else if (code == 0xA) {
+            isValidBlock = ENSURE_RAW_BYTES_AVAILABLE(2, code, [&] {
+                value_to_repeat = *pRaw++;
+                const uint8_t bb = *pRaw++;
+                count = static_cast<size_t>(a) * HEX_100 + bb;
+            });
+            break;
+        }
+
+        case CODE_REPEAT_BYTE_LARGE: {
             // Aa | xx | bb | cc :
             //  Repeat HEX(a * 10000 + bb * 100 + cc) count of xx
-            const uint8_t xx = *pRaw++;
-            const uint8_t bb = *pRaw++;
-            const uint8_t cc = *pRaw++;
-            const size_t count = a * HEX_10000 + bb * HEX_100 + cc;
-            memset(pDst, xx, count);
-            pDst += count;
-        } else if (code == 0xC) {
+            isValidBlock = ENSURE_RAW_BYTES_AVAILABLE(3, code, [&] {
+                value_to_repeat = *pRaw++;
+                const uint8_t bb = *pRaw++;
+                const uint8_t cc = *pRaw++;
+                count = static_cast<size_t>(a) * HEX_10000 +
+                        static_cast<size_t>(bb) * HEX_100 +
+                        cc;
+            });
+            break;
+        }
+
+        case CODE_REPEAT_ZERO_SMALL:
             // Ca :
             //  Repeat HEX(a) count of transparent
-            size_t count = static_cast<size_t>(a);
-            memset(pDst, 0, count);
-            pDst += count;
-        } else if (code == 0xD) {
+            count = a;
+            value_to_repeat = 0;
+            break;
+
+        case CODE_REPEAT_ZERO_MEDIUM: {
             // Da | bb :
             //  Repeat HEX(a * 100 + bb) count of transparent
-            const uint8_t bb = *pRaw++;
-            const size_t count = a * HEX_100 + bb;
-            memset(pDst, 0, count);
-            pDst += count;
-        } else if (code == 0xE) {
+            isValidBlock = ENSURE_RAW_BYTES_AVAILABLE(1, code, [&] {
+                const uint8_t bb = *pRaw++;
+                count = static_cast<size_t>(a) * HEX_100 + bb;
+                value_to_repeat = 0;
+            });
+            break;
+        }
+
+        case CODE_REPEAT_ZERO_LARGE: {
             // Ea | bb | cc :
             //   Read HEX(a * 10000 + bb * 100 + cc) count of transparent
-            const uint8_t bb = *pRaw++;
-            const uint8_t cc = *pRaw++;
-            const size_t count = a * HEX_10000 + bb * HEX_100 + cc;
-            memset(pDst, 0, count);
-            pDst += count;
+            isValidBlock = ENSURE_RAW_BYTES_AVAILABLE(2, code, [&] {
+                const uint8_t bb = *pRaw++;
+                const uint8_t cc = *pRaw++;
+                count = static_cast<size_t>(a) * HEX_10000 +
+                        static_cast<size_t>(bb) * HEX_100 +
+                        cc;
+                value_to_repeat = 0;
+            });
+            break;
+        }
+
+        default:
+            LOGE("Decompress Error: Unknown header code 0x{:X}", code);
+            return false;
+        }
+
+        // Workaround for boundary check, It's safe in most case for regular
+        // CrossGate data, but for case such as CG_VERSION_PUK3_V1:3674, it
+        // might over the bounary for unknow reason. This cdoe will handle the
+        // overflow issue and dump a warning message.
+        if (UNLIKELY(count > remainingDstSize)) {
+            LOGW("Decompress Error: (0x{:X}): Destination buffer overflow. "
+                 "Requested {} bytes, but only {} remaining.", code, count,
+                 remainingDstSize);
+            isValidBlock = false;
+        }
+
+        //  Invalid block, skip this block
+        if (UNLIKELY(!isValidBlock)) {
+            break;
+        }
+
+        // copy or set the data
+        if (code <= CODE_RAW_DATA_LARGE) {
+            // boundary check
+            if (UNLIKELY((pRaw + count) > pRawEnd)) {
+                LOGW("Decompress Error: (0x{:X}): Raw data block overflow "
+                     "during copy operation. Requested {} bytes, but not "
+                     "enough raw data.", code, count);
+                return false;
+            }
+            memcpy(pDst, pRaw, count);
+            pRaw += count;
         } else {
-            sprintf_s(pErrorMsgBuf, errorMsgBufSize,
-                      "Unknown header code %d", code);
+            memset(pDst, value_to_repeat, count);
+        }
+        pDst += count;
+    }
+
+    // skip invalid block.
+    if (isValidBlock) {
+        assert(pDst == pDstEnd);
+
+        if (UNLIKELY(pDst != pDstEnd)) {
+            LOGE("Decompress Error: Decompression finished prematurely. "
+                 "Expected {} bytes, but filled {}.", totalOutputSize,
+                 static_cast<size_t>(pDst - pGfxData));
             return false;
         }
     }
-    assert(pDst == pDstEnd);
 
     return true;
 }
@@ -319,7 +421,7 @@ cgl::Results GraphicsDataReaderImpl::ReadDataFromPUK(
     // read data block
     result = this->read(dataBlockOffset, dataBlockSize, tempBlock_.data());
     if (result != cgl::Results::Success) {
-        LOGE("Failed to read data block in this header");
+        LOGE("Failed to read data block for header : [{}]", toString(header));
         return result;
     }
 
@@ -330,16 +432,14 @@ cgl::Results GraphicsDataReaderImpl::ReadDataFromPUK(
     assert(resourceData != nullptr);
 
     if (header.flag & GraphicsDataFlags::CompressedData) {
-        char errorMsgBuf[1024];
         if (!Decompress(tempBlock_.data(),
                         dataBlockSize,
                         resourceData.get(),
                         graphicsDataSize,
-                        paletteDataSize,
-                        errorMsgBuf,
-                        sizeof(errorMsgBuf))) {
-            LOGE("Failed to do decompress for this data block, msg {}",
-                 errorMsgBuf);
+                        paletteDataSize)) {
+            LOGE("Failed to do decompress the data block for the header : {}",
+                 toString(header));
+            return cgl::Results::Fail;
         }
     } else {
         dataBlockSize = graphicsDataSize;
