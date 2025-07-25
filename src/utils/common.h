@@ -8,6 +8,9 @@
 
 #pragma once
 
+// -----------------------------------------------------------------------------
+// UNLIKELY marco
+// This marco is used to indicate that the condition is unlikely to be true.
 #if __cplusplus >= 202002L
 #define UNLIKELY(x) (x) [[unlikely]]
 
@@ -15,8 +18,7 @@
 #define UNLIKELY(x) __builtin_expect(!!(x), 0)
 
 #elif defined(_MSC_VER)
-
-#define UNLIKELY(x) (x) // MSVC 沒有直接等價的 __builtin_expect，但其最佳化器通常能處理
+#define UNLIKELY(x) (x)
 
 #else
 
