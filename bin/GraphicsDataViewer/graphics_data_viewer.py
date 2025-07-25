@@ -54,10 +54,11 @@ class GraphicsDataViewerApp:
         for i in range(start_index, end_index):
             index    = available_index_value_list[i]
             gfx_data = self.session.acquire_graphics_data(version, index)
-            img      = self.session.apply_palette(gfx_data, palette)
-            img      = img[:, :, [2, 1, 0]]
-            img      = img[::-1, :, :]
-            images.append((img, f"Index: {index}"))
+            if (gfx_data is not None) and (palette is not None):
+                img      = self.session.apply_palette(gfx_data, palette)
+                img      = img[:, :, [2, 1, 0]]
+                img      = img[::-1, :, :]
+                images.append((img, f"Index: {index}"))
         return images
 
 
@@ -71,7 +72,7 @@ class GraphicsDataViewerApp:
 
 
     def on_page_load(self):
-        default_version = list(cross_gate_version_map.values())[0]
+        default_version = list(cross_gate_version_map.values())[4]
         default_palette = list(env_palette_type_map.values())[0]
 
         # update index slider
@@ -101,7 +102,7 @@ class GraphicsDataViewerApp:
                 ui_palette = gr.Dropdown(label="Environment Palette Type", choices=env_palette_type_map)
 
             with gr.Column(scale=3):
-                ui_index_selector = gr.Slider(label="Index", minimum=0, maximum=100, step=8, value=0, interactive=True)
+                ui_index_selector = gr.Slider(label="Index", minimum=0, maximum=100, step=8, value=3674, interactive=True)
                 ui_image_gallery = gr.Gallery(label="Images", columns=self.img_col, rows=self.img_row)
 
             # Bind event
