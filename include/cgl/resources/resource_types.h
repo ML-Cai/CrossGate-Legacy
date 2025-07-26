@@ -51,61 +51,62 @@ struct EnvironmentPaletteResourcePath {
     std::string_view             paletteFilePath;
 };
 
-// -----------------------------------------------------------------------------
-// GraphicsResourceIndexTypes
-// -----------------------------------------------------------------------------
-#define GraphicsResourceIndexTypes_ENUM_LIST    \
-    CGL_X(GraphicsBasedIndex)           \
-    CGL_X(MapBasedIndex)                \
-
-enum class GraphicsResourceIndexTypes : uint8_t {
-#define CGL_X(name) name,
-    GraphicsResourceIndexTypes_ENUM_LIST
-#undef CGL_X
-};
 
 // -----------------------------------------------------------------------------
 // Graphic Index/Data related section
 // -----------------------------------------------------------------------------
-struct GraphicsResourceIndex {
+
+// GraphicsResourceSerialNumTypes
+#define GraphicsResourceSerialNumTypes_ENUM_LIST    \
+    CGL_X(GraphicsSerialNum)           \
+    CGL_X(MapSerialNum)                \
+
+enum class GraphicsResourceSerialNumTypes : uint8_t {
+#define CGL_X(name) name,
+    GraphicsResourceSerialNumTypes_ENUM_LIST
+#undef CGL_X
+};
+
+
+// GraphicsResourceSerialNum
+struct GraphicsResourceSerialNum {
     using Key = uint64_t;
 
-    cgl::GraphicsResourceIndexTypes type;
+    cgl::GraphicsResourceSerialNumTypes type;
     cgl::CrossGateVersion version;
     int32_t value;
 
-    bool operator==(const cgl::GraphicsResourceIndex& other) const {
+    bool operator==(const cgl::GraphicsResourceSerialNum& other) const {
         return (type == other.type) &&
                (value == other.value) &&
                (version == other.version);
     }
 
-    bool operator!=(const cgl::GraphicsResourceIndex& other) const {
+    bool operator!=(const cgl::GraphicsResourceSerialNum& other) const {
         return (type != other.type) ||
                (value != other.value) ||
                (version != other.version);
     }
 
-    bool operator<(const cgl::GraphicsResourceIndex& other) const {
+    bool operator<(const cgl::GraphicsResourceSerialNum& other) const {
         if (this->type != other.type) {
             return false;
         }
         return key() < other.key();
     }
 
-    GraphicsResourceIndex::Key key() const noexcept {
+    GraphicsResourceSerialNum::Key key() const noexcept {
         return static_cast<uint64_t>(version) * INT32_MAX +
                static_cast<uint64_t>(value);
     }
 };
 
-// -----------------------------------------------------------------------------
-// Graphic resource info
-// -----------------------------------------------------------------------------
+
+// GraphicsResourceIndex
 struct GraphicsResourceInfo {
     cgl::CrossGateVersion version;
-    cgl::GraphicsResourceIndex gfxBasedsIdx;
-    cgl::GraphicsResourceIndex mapBasedsIdx;
+    cgl::GraphicsResourceSerialNum gfxBasedsIdx;
+    cgl::GraphicsResourceSerialNum mapBasedsIdx;
     uint32_t dataOffset;
     uint32_t dataSize;
     int32_t offsetX;
@@ -115,9 +116,7 @@ struct GraphicsResourceInfo {
 };
 
 
-// -----------------------------------------------------------------------------
 // Graphic resource data
-// -----------------------------------------------------------------------------
 struct GraphicsResourceData {
     cgl::CrossGateVersion version;
     int32_t width;

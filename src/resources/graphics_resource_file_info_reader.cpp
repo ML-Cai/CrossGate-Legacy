@@ -24,7 +24,7 @@ namespace {
 
 #pragma pack(1)
 struct GraphicInfoEntry {
-    int32_t graphicindex;
+    int32_t graphicSerialNum;
     uint32_t dataOffset;
     uint32_t dataSize;
     int32_t offsetX;
@@ -35,7 +35,7 @@ struct GraphicInfoEntry {
     uint8_t tileY;
     uint8_t passableFlag;
     uint8_t unknown[5];
-    int32_t mapIndex;
+    int32_t mapSerialNum;
 };
 #pragma pack()
 
@@ -52,15 +52,15 @@ inline cgl::GraphicsResourceInfo retile(
 ) noexcept {
     cgl::GraphicsResourceInfo ret(
         version,
-        cgl::GraphicsResourceIndex{
-            cgl::GraphicsResourceIndexTypes::GraphicsBasedIndex,
+        cgl::GraphicsResourceSerialNum{
+            cgl::GraphicsResourceSerialNumTypes::GraphicsSerialNum,
             version,
-            pCtx->graphicindex
+            pCtx->graphicSerialNum
         },
-        cgl::GraphicsResourceIndex{
-            cgl::GraphicsResourceIndexTypes::MapBasedIndex,
+        cgl::GraphicsResourceSerialNum{
+            cgl::GraphicsResourceSerialNumTypes::MapSerialNum,
             version,
-            pCtx->mapIndex
+            pCtx->mapSerialNum
         },
         pCtx->dataOffset,
         pCtx->dataSize,
@@ -92,14 +92,14 @@ class GraphicIndexReaderImpl : public cgl::IGraphicsResourceFileInfoReader {
 
     size_t infoCount() const noexcept override;
 
-    bool mightContain(
-        const cgl::GraphicsResourceIndex& mapIndex) const noexcept override;
+    bool mightContain(const cgl::GraphicsResourceSerialNum& mapSerialNum)
+        const noexcept override;
 
-    cgl::Results query(
-        const cgl::GraphicsResourceIndex& index,
-        cgl::GraphicsResourceInfo*        pGfxResInfo) const noexcept override;
+    cgl::Results query(const cgl::GraphicsResourceSerialNum& serialNum,
+                       cgl::GraphicsResourceInfo*            pGfxResInfo)
+        const noexcept override;
 
-    cgl::Results queryAvailableIndexValue(
+    cgl::Results queryAvailableSerialNums(
         std::vector<int32_t>* pList) noexcept override;
 
  private:
@@ -219,20 +219,20 @@ bool GraphicIndexReaderImpl::preLoad(size_t bufferSize) {
 
     for (size_t i = 0 ; i < count ; i++) {
         const auto& entry = pEntries[i];
-        mapIdxRange_.min = std::min(mapIdxRange_.min, entry.mapIndex);
-        mapIdxRange_.max = std::max(mapIdxRange_.max, entry.mapIndex);
-        gfxIdxRange_.min = std::min(gfxIdxRange_.min, entry.graphicindex);
-        gfxIdxRange_.max = std::max(gfxIdxRange_.max, entry.graphicindex);
+        mapIdxRange_.min = std::min(mapIdxRange_.min, entry.mapSerialNum);
+        mapIdxRange_.max = std::max(mapIdxRange_.max, entry.mapSerialNum);
+        gfxIdxRange_.min = std::min(gfxIdxRange_.min, entry.graphicSerialNum);
+        gfxIdxRange_.max = std::max(gfxIdxRange_.max, entry.graphicSerialNum);
 
-        mapIdxMap_.emplace(entry.mapIndex, pEntries + i);
-        graphicsIdxMap_.emplace(entry.graphicindex, pEntries + i);
+        mapIdxMap_.emplace(entry.mapSerialNum, pEntries + i);
+        graphicsIdxMap_.emplace(entry.graphicSerialNum, pEntries + i);
 
         // debug purpose
         if (false) {
             LOGI("[{} / {}] width {}, height {}, offsetX {}, offsetY {},"
                 "tileX {}, tileY {}, flag {}",
-                pEntries[i].graphicindex,
-                pEntries[i].mapIndex,
+                pEntries[i].graphicSerialNum,
+                pEntries[i].mapSerialNum,
                 pEntries[i].width,
                 pEntries[i].height,
                 pEntries[i].offsetX,
@@ -248,49 +248,49 @@ bool GraphicIndexReaderImpl::preLoad(size_t bufferSize) {
 
 // -----------------------------------------------------------------------------
 bool GraphicIndexReaderImpl::mightContain(
-    const cgl::GraphicsResourceIndex& idx
+    const cgl::GraphicsResourceSerialNum& serialNum
 ) const noexcept {
-    switch (idx.type) {
-    case cgl::GraphicsResourceIndexTypes::GraphicsBasedIndex:
-        return (gfxIdxRange_.min <= idx.value) &&
-               (idx.value <= gfxIdxRange_.max);
+    switch (serialNum.type) {
+    case cgl::GraphicsResourceSerialNumTypes::GraphicsSerialNum:
+        return (gfxIdxRange_.min <= serialNum.value) &&
+               (serialNum.value <= gfxIdxRange_.max);
 
-    case cgl::GraphicsResourceIndexTypes::MapBasedIndex:
-        return (mapIdxRange_.min <= idx.value) &&
-               (idx.value <= mapIdxRange_.max);
+    case cgl::GraphicsResourceSerialNumTypes::MapSerialNum:
+        return (mapIdxRange_.min <= serialNum.value) &&
+               (serialNum.value <= mapIdxRange_.max);
 
     default:
-        assert(false && "Unknown GraphicsResourceIndexTypes value");
+        assert(false && "Unknown GraphicsResourceSerialNumTypes value");
         return false;
     }
 }
 
 // -----------------------------------------------------------------------------
 cgl::Results GraphicIndexReaderImpl::query(
-    const cgl::GraphicsResourceIndex& idx,
-    cgl::GraphicsResourceInfo*        pGfxResInfo
+    const cgl::GraphicsResourceSerialNum& serialNum,
+    cgl::GraphicsResourceInfo*            pGfxResInfo
 ) const noexcept {
-    if (this->mightContain(idx) == false) {
+    if (this->mightContain(serialNum) == false) {
         return cgl::Results::IndexNotExist;
     }
 
     const GraphicInfoEntryMap *pEntryMap = nullptr;
-    switch (idx.type) {
-    case cgl::GraphicsResourceIndexTypes::GraphicsBasedIndex:
+    switch (serialNum.type) {
+    case cgl::GraphicsResourceSerialNumTypes::GraphicsSerialNum:
         pEntryMap = &graphicsIdxMap_;
         break;
 
-    case cgl::GraphicsResourceIndexTypes::MapBasedIndex:
+    case cgl::GraphicsResourceSerialNumTypes::MapSerialNum:
         pEntryMap = &mapIdxMap_;
         break;
 
     default:
-        assert(false && "Unknown GraphicsResourceIndexTypes value");
+        assert(false && "Unknown GraphicsResourceSerialNumTypes value");
         return cgl::Results::InvalidArgs;
     }
 
     // lookup the data
-    auto iter = pEntryMap->find(idx.value);
+    auto iter = pEntryMap->find(serialNum.value);
     if (iter == pEntryMap->end()) {
         return cgl::Results::IndexNotExist;
     }
@@ -302,7 +302,7 @@ cgl::Results GraphicIndexReaderImpl::query(
 }
 
 // -----------------------------------------------------------------------------
-cgl::Results GraphicIndexReaderImpl::queryAvailableIndexValue(
+cgl::Results GraphicIndexReaderImpl::queryAvailableSerialNums(
     std::vector<int32_t>* pList
 ) noexcept {
     if (pList == nullptr) {
@@ -311,7 +311,7 @@ cgl::Results GraphicIndexReaderImpl::queryAvailableIndexValue(
 
     pList->reserve(graphicsIdxMap_.size());
     for (const auto& [key, value] : graphicsIdxMap_) {
-        pList->emplace_back(value->graphicindex);
+        pList->emplace_back(value->graphicSerialNum);
     }
     return cgl::Results::Success;
 }
