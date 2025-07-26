@@ -32,8 +32,8 @@ class IGraphicsResourceFileDataReaderTest : public testing::Test {
         });
         EXPECT_EQ(infoReader_->load(), cgl::Results::Success);
 
-         cgl::GraphicsResourceIndex idx {
-            .type    = cgl::GraphicsResourceIndexTypes::GraphicsBasedIndex,
+         cgl::GraphicsResourceSerialNum idx {
+            .type    = cgl::GraphicsResourceSerialNumTypes::GraphicsSerialNum,
             .version = cgl::CrossGateVersion::CG_VERSION_Classic,
             .value   = 0
         };

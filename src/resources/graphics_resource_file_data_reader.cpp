@@ -360,7 +360,7 @@ cgl::Results GraphicsDataReaderImpl::load() {
 
     auto result = this->open(fullPath);
     if (result != cgl::Results::Success) {
-        LOGE("Failed to open graphic index file {}", fullPath.string());
+        LOGE("Failed to open graphic date file {}", fullPath.string());
         return result;
     }
 
@@ -506,7 +506,7 @@ cgl::Results GraphicsDataReaderImpl::query(
 
     if (result != cgl::Results::Success) {
         LOGE("Failed to read graphic data header from file, "
-             "graphic index {} / map index {}",
+             "graphic S/N {} / map S/N {}",
              gfxResInfo.gfxBasedsIdx.value, gfxResInfo.mapBasedsIdx.value);
         return cgl::Results::Fail;
     }

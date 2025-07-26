@@ -38,11 +38,11 @@ const char* cgl::GetString(const cgl::CrossGateVersion& type) {
 }
 
 // -----------------------------------------------------------------------------
-const char* cgl::GetString(const cgl::GraphicsResourceIndexTypes& type) {
+const char* cgl::GetString(const cgl::GraphicsResourceSerialNumTypes& type) {
     switch (type) {
-#define CGL_X(name) case cgl::GraphicsResourceIndexTypes::name: return #name;
+#define CGL_X(name) case cgl::GraphicsResourceSerialNumTypes::name: return #name;
 
-        GraphicsResourceIndexTypes_ENUM_LIST
+        GraphicsResourceSerialNumTypes_ENUM_LIST
 
 #undef CGL_X
     default:

@@ -93,7 +93,7 @@ public:
         void* pGfxDataHandle,
         void* pPlaetteHandle);
 
-    std::vector<int32_t> acquire_available_index_value(
+    std::vector<int32_t> acquire_available_serial_nums(
         cgl::CrossGateVersion version);
 
 private:
@@ -196,8 +196,8 @@ std::shared_ptr<cgl::GraphicsResourceData> Session::acquire_graphics_data(
     auto infoReader = acquireInfoReader(version);
     auto dataReader = acquireDataReader(version);
 
-    cgl::GraphicsResourceIndex resIdx {
-        .type    = cgl::GraphicsResourceIndexTypes::GraphicsBasedIndex,
+    cgl::GraphicsResourceSerialNum resIdx {
+        .type    = cgl::GraphicsResourceSerialNumTypes::GraphicsSerialNum,
         .version = cgl::CrossGateVersion::CG_VERSION_Classic,
         .value   = idx
     };
@@ -229,14 +229,14 @@ std::shared_ptr<PaletteData256Holder> Session::acquire_env_palette(
     return data;
 }
 
-std::vector<int32_t> Session::acquire_available_index_value(
+std::vector<int32_t> Session::acquire_available_serial_nums(
     cgl::CrossGateVersion version
 ) {
     auto reader = acquireInfoReader(version);
 
     std::vector<int32_t> ret;
-    if (reader->queryAvailableIndexValue(&ret) != cgl::Results::Success) {
-        throw std::invalid_argument("Failed to query available index value");
+    if (reader->queryAvailableSerialNums(&ret) != cgl::Results::Success) {
+        throw std::invalid_argument("Failed to query available Serial Numbers");
     }
     return ret;
 }
@@ -312,10 +312,10 @@ PYBIND11_MODULE(cgl, m) {
             })
 
         .def(
-            "acquire_available_index_value",
+            "acquire_available_serial_nums",
             [](Session& self,
                cgl::CrossGateVersion version) {
-                return self.acquire_available_index_value(version);
+                return self.acquire_available_serial_nums(version);
             })
 
         .def(

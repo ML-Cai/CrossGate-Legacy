@@ -75,8 +75,8 @@ TEST_F(IGraphicsResourceFileInfoReaderTest, LoadData) {
     EXPECT_GE(reader->infoCount(), 0);
 
     // Try to query data
-    cgl::GraphicsResourceIndex idx {
-        .type    = cgl::GraphicsResourceIndexTypes::GraphicsBasedIndex,
+    cgl::GraphicsResourceSerialNum idx {
+        .type    = cgl::GraphicsResourceSerialNumTypes::GraphicsSerialNum,
         .version = cgl::CrossGateVersion::CG_VERSION_Classic,
         .value   = 0
     };

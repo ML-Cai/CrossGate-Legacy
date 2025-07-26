@@ -45,13 +45,13 @@ class IGraphicsResourceFileInfoReader {
     virtual size_t infoCount() const noexcept = 0;
 
     virtual bool mightContain(
-        const cgl::GraphicsResourceIndex& index) const noexcept = 0;
+        const cgl::GraphicsResourceSerialNum& serialNum) const noexcept = 0;
 
     virtual cgl::Results query(
-        const cgl::GraphicsResourceIndex& index,
-        cgl::GraphicsResourceInfo*        pGfxResInfo) const noexcept = 0;
+        const cgl::GraphicsResourceSerialNum& serialNum,
+        cgl::GraphicsResourceInfo*            pGfxResInfo) const noexcept = 0;
 
-    virtual cgl::Results queryAvailableIndexValue(
+    virtual cgl::Results queryAvailableSerialNums(
         std::vector<int32_t>* pList) noexcept = 0;
 
  private:
