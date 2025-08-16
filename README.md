@@ -24,11 +24,11 @@ This project is not a private server or an attempt to infringe upon the rights o
     git clone https://github.com/ML-Cai/CrossGate-Legacy.git
     cd CrossGate-Legacy
 
-### 2. Install requirements (optional to build bin/*)
+### 2. Install requirements
 
-    conda create name cgl python=3.10
+    conda create --name cgl python=3.10
     conda activate cgl
-    pip install -r python/requirements.txt
+    python setup_requirements.py --build_type RelWithDebInfo
 
 ### 3. Building CGL
 

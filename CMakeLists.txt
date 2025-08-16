@@ -19,43 +19,32 @@ endif()
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
+if (MSVC)
+    # add_compile_options(/EHsc)
+
+    # Enable UTF-8 encoding for build with spdlog
+    add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
+endif()
+
 #-------------------------------------------------------------------------------
 # Setup requirements
 #-------------------------------------------------------------------------------
-message(STATUS "Setup requirements ...")
-
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
-
-execute_process(
-    COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_LIST_DIR}/setup_requirements.py
-            "${CMAKE_BINARY_DIR}/_deps/" # dependency install path
-            "${CMAKE_BINARY_DIR}/_tmp"   # temp path
-            "${CMAKE_BUILD_TYPE}"        # build type
-    RESULT_VARIABLE DEPS_SETUP_RESULT
-)
-
-if(NOT DEPS_SETUP_RESULT EQUAL 0)
-    message(FATAL_ERROR "setup_requirements.py failed with code ${DEPS_SETUP_RESULT}")
-endif()
-
-set(CMAKE_PREFIX_PATH "${CMAKE_BINARY_DIR}/_deps/${CMAKE_BUILD_TYPE};${CMAKE_PREFIX_PATH}")
+set(CMAKE_PREFIX_PATH "${CMAKE_CURRENT_LIST_DIR}/third_party/build/${CMAKE_BUILD_TYPE};${CMAKE_PREFIX_PATH}")
 
 #-------------------------------------------------------------------------------
 # [Dependency check] [spdlog]
 #-------------------------------------------------------------------------------
+
 find_package(spdlog REQUIRED)
 
-if (MSVC)
-    add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
-endif()
 
 #-------------------------------------------------------------------------------
 # [Dependency check] [google-test]
 #-------------------------------------------------------------------------------
 if (CGL_WITH_TEST)
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-    find_package(gtest REQUIRED)
+    find_package(GTest REQUIRED)
 
     enable_testing()
 endif()
