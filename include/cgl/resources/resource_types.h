@@ -74,7 +74,7 @@ struct GraphicsResourceSerialNum {
 
     cgl::GraphicsResourceSerialNumTypes type;
     cgl::CrossGateVersion version;
-    int32_t value;
+    uint32_t value;
 
     bool operator==(const cgl::GraphicsResourceSerialNum& other) const {
         return (type == other.type) &&

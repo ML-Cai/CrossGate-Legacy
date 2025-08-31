@@ -9,6 +9,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <string>
 
 namespace cgl {
 
@@ -17,9 +18,15 @@ enum class CrossGateVersion : uint8_t;
 enum class GraphicsResourceSerialNumTypes : uint8_t;
 enum class EnvironmentPaletteTypes : uint8_t;
 
+struct GraphicsResourceSerialNum;
+struct AnimeResourceSerialNum;
+
 const char* GetString(const cgl::Results& type);
 const char* GetString(const cgl::CrossGateVersion& type);
 const char* GetString(const cgl::GraphicsResourceSerialNumTypes& type);
 const char* GetString(const cgl::EnvironmentPaletteTypes& type);
+
+std::string toStr(const cgl::GraphicsResourceSerialNum&);
+std::string toStr(const cgl::AnimeResourceSerialNum&);
 
 }   // namespace cgl
