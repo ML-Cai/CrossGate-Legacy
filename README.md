@@ -21,21 +21,28 @@ This project is not a private server or an attempt to infringe upon the rights o
 
 ### 1. Clone the repository
 
-    git clone https://github.com/ML-Cai/CrossGate-Legacy.git
-    cd CrossGate-Legacy
+```bash
+git clone https://github.com/ML-Cai/CrossGate-Legacy.git
+cd CrossGate-Legacy
+```
 
 ### 2. Install requirements
 
-    conda create --name cgl python=3.10
-    conda activate cgl
-    python setup_requirements.py --build_type RelWithDebInfo
+```bash
+# Open `x64 Native Tools Command Prompt for VS2022` as command prompt in Windows build
+python -m venv .venv
+.venv\Scripts\activate
+python setup_requirements.py --build_typeRelWithDebInfo
+```
 
 ### 3. Building CGL
 
-    mkdir build
-    cd build
-    cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
-    cmake --build . --config RelWithDebInfo
+```bash
+mkdir build
+cd build
+cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+cmake --build . --config RelWithDebInfo
+```
 
 ## Run
 

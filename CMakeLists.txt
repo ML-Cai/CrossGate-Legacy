@@ -20,7 +20,7 @@ endif()
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 if (MSVC)
-    # add_compile_options(/EHsc)
+    add_compile_options(/EHsc)
 
     # Enable UTF-8 encoding for build with spdlog
     add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")

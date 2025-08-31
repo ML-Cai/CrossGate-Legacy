@@ -53,9 +53,9 @@ class GraphicsDataViewerApp:
         images = []
         for i in range(start_serial_num, end_serial_num):
             serial_num  = available_serial_nums[i]
-            gfx_data = self.session.acquire_graphics_data(version, serial_num)
-            if (gfx_data is not None) and (palette is not None):
-                img      = self.session.apply_palette(gfx_data, palette)
+            gfx_resource = self.session.acquire_graphics_resource(version, serial_num)
+            if (gfx_resource is not None) and (palette is not None):
+                img      = self.session.apply_palette(gfx_resource, palette)
                 img      = img[:, :, [2, 1, 0]]
                 img      = img[::-1, :, :]
                 images.append((img, f"S/N: {serial_num}"))

@@ -6,9 +6,11 @@
 //   All rights reserved.
 // =============================================================================
 
+#include <sstream>
 #include "cgl/core/results.h"
 #include "cgl/core/version.h"
 #include "cgl/resources/resource_types.h"
+#include "cgl/resources/anime_resource.h"
 #include "cgl/utils/enum_string_helper.h"
 
 // -----------------------------------------------------------------------------
@@ -59,4 +61,21 @@ const char* cgl::GetString(const cgl::EnvironmentPaletteTypes& type) {
     default:
         return "Unknown";
     }
+}
+
+// -----------------------------------------------------------------------------
+std::string cgl::toStr(const cgl::GraphicsResourceSerialNum& sn) {
+    std::ostringstream oss;
+    oss << GetString(sn.type)
+        << ":" << GetString(sn.version)
+        << ":" << sn.value;
+    return oss.str();
+}
+
+// -----------------------------------------------------------------------------
+std::string cgl::toStr(const cgl::AnimeResourceSerialNum& sn) {
+    std::ostringstream oss;
+    oss << GetString(sn.version)
+        << ":" << sn.value;
+    return oss.str();
 }

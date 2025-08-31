@@ -195,14 +195,14 @@ cgl::Results ReaderImpl::query(
         for (uint32_t i = 0; i < header.frameCount; i++) {
             ss << tempBuffer[i].serialNum << " ";
         }
-        LOGD("motion index [{}], header.direction {}, motion {} duraction {} "
-             "frameCount {} , frames : {}",
-            mIdx,
-            header.direction,
-            header.motion,
-            header.duraction,
-            header.frameCount,
-            ss.str());
+        // LOGD("motion index [{}], header.direction {}, motion {} duraction {} "
+        //      "frameCount {} , frames : {}",
+        //     mIdx,
+        //     header.direction,
+        //     header.motion,
+        //     header.duraction,
+        //     header.frameCount,
+        //     ss.str());
 
 
         // Update description

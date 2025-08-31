@@ -24,7 +24,7 @@ namespace {
 
 #pragma pack(1)
 struct GraphicInfoEntry {
-    int32_t graphicSerialNum;
+    uint32_t graphicSerialNum;
     uint32_t dataOffset;
     uint32_t dataSize;
     int32_t offsetX;
@@ -35,14 +35,14 @@ struct GraphicInfoEntry {
     uint8_t tileY;
     uint8_t passableFlag;
     uint8_t unknown[5];
-    int32_t mapSerialNum;
+    uint32_t mapSerialNum;
 };
 #pragma pack()
 
 
 struct DataRange {
-    int32_t min;
-    int32_t max;
+    uint32_t min;
+    uint32_t max;
 };
 
 
