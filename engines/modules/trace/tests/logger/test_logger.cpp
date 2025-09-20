@@ -37,7 +37,7 @@ struct CerrRedirect {
     }
 };
 
-TEST(trace_logger, InfoLogingTest) {
+TEST(trace_logger_test, InfoLogingTest) {
     cgl::SetLogLevel(cgl::LogLevel::Info);
     CerrRedirect redirect;
 
@@ -55,7 +55,7 @@ TEST(trace_logger, InfoLogingTest) {
     EXPECT_NE(output.find("[Error] TEST"), std::string::npos);
 }
 
-TEST(trace_logger, DebugLogingTest) {
+TEST(trace_logger_test, DebugLogingTest) {
     cgl::SetLogLevel(cgl::LogLevel::Debug);
 
     CerrRedirect redirect;
