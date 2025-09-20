@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.16)
 set(PROJECT_NAME "CrossGate-Legacy")
 project(${PROJECT_NAME})
 
+set(CGL_BIN_PATH ${CMAKE_CURRENT_BINARY_DIR}/bin)
+
 #-------------------------------------------------------------------------------
 # [Options]
 #-------------------------------------------------------------------------------
@@ -35,9 +37,7 @@ set(CMAKE_PREFIX_PATH "${CMAKE_CURRENT_LIST_DIR}/third_party/build/${CMAKE_BUILD
 #-------------------------------------------------------------------------------
 # [Dependency check] [spdlog]
 #-------------------------------------------------------------------------------
-
 find_package(spdlog REQUIRED)
-
 
 #-------------------------------------------------------------------------------
 # [Dependency check] [google-test]
@@ -50,34 +50,9 @@ if (CGL_WITH_TEST)
 endif()
 
 #-------------------------------------------------------------------------------
-# [build library]
+# [build modules]
 #-------------------------------------------------------------------------------
-include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
-include_directories(${CMAKE_CURRENT_LIST_DIR}/src)
-
-file(GLOB_RECURSE LIBRARY_SRC "src/*.cpp")
-
-add_library(cgl ${LIBRARY_SRC})
-set_target_properties(cgl PROPERTIES FOLDER "CGL")
-target_link_libraries(cgl PRIVATE spdlog::spdlog)
-# target_precompile_headers(cgl PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src/utils/pch.h)
-
-set (PROJECT_LIBS ${PROJECT_LIBS} cgl)
-
-if (MSVC)
-    target_compile_options(cgl PRIVATE /W4 /WX)
-endif()
-
-#-------------------------------------------------------------------------------
-# [build Tests]
-#-------------------------------------------------------------------------------
-if (CGL_WITH_TEST)
-    add_subdirectory(tests)
-endif()
-
-#-------------------------------------------------------------------------------
-# [build bin]
-#-------------------------------------------------------------------------------
-if (CGL_WITH_BIN)
-    add_subdirectory(python)
-endif()
+add_subdirectory(engines/modules/common)
+add_subdirectory(engines/modules/utils)
+add_subdirectory(engines/modules/settings)
+add_subdirectory(engines/modules/trace)
