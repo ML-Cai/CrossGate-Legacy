@@ -35,7 +35,7 @@ set(PYTHON_LIB_PATH "${Python3_LIBRARY_RELEASE}")
 #-------------------------------------------------------------------------------
 add_library(${PROJECT_NAME} MODULE cgl_pybind.cpp)
 target_include_directories(${PROJECT_NAME}  PRIVATE ${Python3_INCLUDE_DIRS})
-target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::pybind11 ${PYTHON_LIB_PATH} cgl spdlog::spdlog)
+target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::pybind11 ${PYTHON_LIB_PATH} cgl::all)
 
 set(CGL_OUTPUT_DIR ${CMAKE_BINARY_DIR}/bin)
 set_target_properties(${PROJECT_NAME} PROPERTIES

@@ -10,8 +10,7 @@
 #include <optional>
 #include <stdexcept>
 #include <memory>
-#include "cgl/resources/resource_types.h"
-#include "cgl/resources/anime_resource.h"
+#include "cgl/common/assets.h"
 
 namespace cgl {
 namespace py {

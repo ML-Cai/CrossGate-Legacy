@@ -35,24 +35,28 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(CMAKE_PREFIX_PATH "${CMAKE_CURRENT_LIST_DIR}/third_party/build/${CMAKE_BUILD_TYPE};${CMAKE_PREFIX_PATH}")
 
 #-------------------------------------------------------------------------------
-# [Dependency check] [spdlog]
-#-------------------------------------------------------------------------------
-find_package(spdlog REQUIRED)
-
-#-------------------------------------------------------------------------------
-# [Dependency check] [google-test]
-#-------------------------------------------------------------------------------
-if (CGL_WITH_TEST)
-    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-    find_package(GTest REQUIRED)
-
-    enable_testing()
-endif()
-
-#-------------------------------------------------------------------------------
 # [build modules]
 #-------------------------------------------------------------------------------
 add_subdirectory(engines/modules/common)
 add_subdirectory(engines/modules/utils)
 add_subdirectory(engines/modules/settings)
 add_subdirectory(engines/modules/trace)
+add_subdirectory(engines/modules/assets)
+
+add_library(cgl_all INTERFACE)
+add_library(cgl::all ALIAS cgl_all)
+target_link_libraries(cgl_all INTERFACE
+    cgl::common
+    cgl::utils
+    cgl::settings
+    cgl::trace
+    cgl::assets
+)
+
+
+#-------------------------------------------------------------------------------
+# [build bin]
+#-------------------------------------------------------------------------------
+if (CGL_WITH_BIN)
+    add_subdirectory(python)
+endif()

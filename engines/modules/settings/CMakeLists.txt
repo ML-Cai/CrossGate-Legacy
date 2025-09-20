@@ -7,6 +7,16 @@ project(${PROJECT_NAME})
 
 set(AUTO_GEN_PATH ${CMAKE_CURRENT_BINARY_DIR}/_gen)
 
+#-------------------------------------------------------------------------------
+# [Dependency check] [google-test]
+#-------------------------------------------------------------------------------
+if (CGL_WITH_TEST)
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    find_package(GTest REQUIRED)
+
+    enable_testing()
+endif()
+
 # ------------------------------------------------------------------------------
 # [Dependency check] [python]
 # ------------------------------------------------------------------------------
