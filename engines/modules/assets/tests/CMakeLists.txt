@@ -12,7 +12,7 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
 
     # Create an executable for each .cpp file
     add_executable(${EXE_NAME} ${TEST_SOURCE})
-    target_link_libraries(${EXE_NAME} PRIVATE GTest::gtest_main cgl::trace cgl::common)
+    target_link_libraries(${EXE_NAME} PRIVATE GTest::gtest_main cgl::assets cgl::settings cgl::trace cgl::utils cgl::common)
     set_target_properties(${EXE_NAME} PROPERTIES FOLDER "tests")
     set_target_properties(${EXE_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 

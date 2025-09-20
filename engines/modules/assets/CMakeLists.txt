@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(PROJECT_NAME "cgl_trace")
-set(PROJECT_ALIAS "cgl::trace")
+set(PROJECT_NAME "cgl_assets")
+set(PROJECT_ALIAS "cgl::assets")
 project(${PROJECT_NAME})
 
 #-------------------------------------------------------------------------------
@@ -15,11 +15,6 @@ if (CGL_WITH_TEST)
 endif()
 
 #-------------------------------------------------------------------------------
-# [Dependency check] [spdlog]
-#-------------------------------------------------------------------------------
-# find_package(spdlog REQUIRED)
-
-#-------------------------------------------------------------------------------
 # [build library]
 #-------------------------------------------------------------------------------
 include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
@@ -29,8 +24,9 @@ file(GLOB_RECURSE LIBRARY_SRC "src/*.cpp")
 
 add_library(${PROJECT_NAME} ${LIBRARY_SRC})
 add_library(${PROJECT_ALIAS} ALIAS ${PROJECT_NAME})
+target_link_libraries(${PROJECT_NAME} PRIVATE cgl::settings cgl::trace cgl::utils cgl::common )
+
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(${PROJECT_NAME} PRIVATE cgl::common cgl::settings)
 
 #-------------------------------------------------------------------------------
 # [build Tests]

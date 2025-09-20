@@ -13,25 +13,25 @@
 // -----------------------------------------------------------------------------
 TEST(common_enum_test, ResultsToStr) {
     auto str = cgl::ToStr(cgl::Results::Success);
-    EXPECT_STREQ(str, "Success");
+    EXPECT_STREQ(str.c_str(), "Success");
 }
 
 // -----------------------------------------------------------------------------
 TEST(common_enum_test, ResultsToStr_OutOfRangeValue) {
     auto invalid = static_cast<cgl::Results>(255);
-    EXPECT_STREQ(ToStr(invalid), "Unknown");
+    EXPECT_STREQ(ToStr(invalid).c_str(), "Unknown");
 }
 
 // -----------------------------------------------------------------------------
 TEST(common_enum_test, CrossGateVersionToStr) {
     auto str = cgl::ToStr(cgl::CrossGateVersion::CG_VERSION_Classic);
-    EXPECT_STREQ(str, "CG_VERSION_Classic");
+    EXPECT_STREQ(str.c_str(), "CG_VERSION_Classic");
 }
 
 // -----------------------------------------------------------------------------
 TEST(common_enum_test, CrossGateVersionToStr_OutOfRangeValue) {
     auto invalid = static_cast<cgl::CrossGateVersion>(255);
-    EXPECT_STREQ(ToStr(invalid), "UNKNOWN");
+    EXPECT_STREQ(ToStr(invalid).c_str(), "Unknown");
 }
 
 // -----------------------------------------------------------------------------

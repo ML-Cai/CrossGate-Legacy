@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <string>
+
 namespace cgl {
 
 // -----------------------------------------------------------------------------
@@ -28,6 +30,6 @@ enum class Results : unsigned int {
 #undef CGL_X
 };
 
-const char* ToStr(const cgl::Results& type);
+std::string ToStr(const cgl::Results& type);
 
 }   // namespace cgl

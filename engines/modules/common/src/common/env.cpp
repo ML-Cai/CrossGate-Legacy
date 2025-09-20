@@ -14,7 +14,14 @@
 #include <algorithm>
 #include "cgl/common/env.h"
 
-const uint8_t cgl::Env::LogLevel() noexcept {
+
+// -----------------------------------------------------------------------------
+bool cgl::env::exist(const std::string_view name) noexcept {
+    return std::getenv(name.data()) != nullptr;
+}
+
+// -----------------------------------------------------------------------------
+const uint8_t cgl::env::LogLevel() noexcept {
     constexpr uint8_t DEFAULT_LOG_LEVEL = 2; // Info level
 
     static const uint8_t level = []() {
@@ -34,4 +41,17 @@ const uint8_t cgl::Env::LogLevel() noexcept {
     }();
 
     return level;
+}
+
+// -----------------------------------------------------------------------------
+const std::string_view cgl::env::EngineRootPath() noexcept {
+    static const std::string_view str = []() -> std::string_view {
+        const char* var = std::getenv(cgl::ENV_VAR_CGL_ENGINE_ROOT_PATH.data());
+        if (var != nullptr && *var != '\0') {
+            return std::string_view(var);
+        }
+        return "";
+    }();
+
+    return str;
 }

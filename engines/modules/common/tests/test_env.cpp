@@ -27,25 +27,25 @@
 // -----------------------------------------------------------------------------
 TEST(common_env_test, DefaultIfEnvVarNotSet) {
     UNSET_ENV_VAR(cgl::ENV_VAR_CGL_LOG_LEVEL.data());
-    EXPECT_EQ(cgl::Env::LogLevel(), 2);
+    EXPECT_EQ(cgl::env::LogLevel(), 2);
 }
 
 // -----------------------------------------------------------------------------
 TEST(common_env_test, CorrectlyReadsValidValue) {
     SET_ENV_VAR(cgl::ENV_VAR_CGL_LOG_LEVEL.data(), "3");
-    EXPECT_EQ(cgl::Env::LogLevel(), 3);
+    EXPECT_EQ(cgl::env::LogLevel(), 3);
 }
 
 // -----------------------------------------------------------------------------
 TEST(common_env_test, HandlesInvalidString) {
     SET_ENV_VAR(cgl::ENV_VAR_CGL_LOG_LEVEL.data(), "invalid");
-    EXPECT_EQ(cgl::Env::LogLevel(), 2);
+    EXPECT_EQ(cgl::env::LogLevel(), 2);
 }
 
 // -----------------------------------------------------------------------------
 TEST(common_env_test, HandlesOutOfRangeValue) {
     SET_ENV_VAR(cgl::ENV_VAR_CGL_LOG_LEVEL.data(), "10");
-    EXPECT_EQ(cgl::Env::LogLevel(), 4);
+    EXPECT_EQ(cgl::env::LogLevel(), 4);
 }
 
 // -----------------------------------------------------------------------------

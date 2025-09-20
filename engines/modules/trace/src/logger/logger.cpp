@@ -17,7 +17,7 @@ static auto g_log_level = static_cast<uint8_t>(cgl::LogLevel::Default);
 
 // -----------------------------------------------------------------------------
 bool cgl::IsLogging(const cgl::LogLevel level) {
-    auto env_log_level = cgl::Env::LogLevel();
+    auto env_log_level = cgl::env::LogLevel();
     auto level_ = static_cast<uint8_t>(level);
 
     // If the environment variable is set and valid, it takes precedence

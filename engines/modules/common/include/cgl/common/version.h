@@ -37,6 +37,6 @@ enum class CrossGateVersion : uint8_t {
 #undef CGL_X
 };
 
-const char* ToStr(const cgl::CrossGateVersion& type);
+std::string ToStr(const cgl::CrossGateVersion& type);
 
 }   // namespace cgl

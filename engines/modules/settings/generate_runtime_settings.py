@@ -227,10 +227,10 @@ cgl::RuntimeSettingsPtr cgl::LoadRuntimeSettings(
             self.append("")
 
         self.append(
-    """
+"""
     return settings;
 }
-    """)
+""")
 
 # ------------------------------------------------------------------------------
 # generate cpp to read ini file and populate RuntimeSettings struct
