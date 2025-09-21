@@ -69,8 +69,7 @@ class FileBlockCache {
           fileSize_(0) {
     }
 
-    virtual ~FileBlockCache() {
-    }
+    virtual ~FileBlockCache() = default;
 
     virtual bool open(const std::filesystem::path& filePath) {
         if (isStreamReady()) {
