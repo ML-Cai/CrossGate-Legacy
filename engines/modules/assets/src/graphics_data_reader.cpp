@@ -10,7 +10,7 @@
 #include <filesystem>
 #include <memory>
 #include <sstream>
-#include "cgl/assets/graphics_resource_file_data_reader.h"
+#include "cgl/assets/graphics_data_reader.h"
 #include "cgl/settings/settings.h"
 #include "cgl/utils/filesystem.h"
 #include "cgl/trace/logger.h"
@@ -294,11 +294,11 @@ bool Decompress(
 //------------------------------------------------------------------------------
 namespace {
 
-class GraphicsDataReaderImpl : public cgl::IGraphicsResourceFileDataReader,
+class GraphicsDataReaderImpl : public cgl::IGraphicsDataReader,
                                       cgl::FileBlockCache {
  public:
     explicit GraphicsDataReaderImpl(
-        const cgl::IGraphicsResourceFileDataReader::CreateInfo& createInfo);
+        const cgl::IGraphicsDataReader::CreateInfo& createInfo);
 
     ~GraphicsDataReaderImpl();
 
@@ -324,8 +324,8 @@ class GraphicsDataReaderImpl : public cgl::IGraphicsResourceFileDataReader,
 }   // namespace
 
 GraphicsDataReaderImpl::GraphicsDataReaderImpl(
-    const cgl::IGraphicsResourceFileDataReader::CreateInfo& createInfo)
-    : cgl::IGraphicsResourceFileDataReader(createInfo),
+    const cgl::IGraphicsDataReader::CreateInfo& createInfo)
+    : cgl::IGraphicsDataReader(createInfo),
       cgl::FileBlockCache(4096, 1024) {
 }
 
@@ -356,7 +356,6 @@ cgl::Results GraphicsDataReaderImpl::load() {
     // setup exceptions to capture the fail reasons.
     std::filesystem::path fullPath =
         std::filesystem::path(pSettings->general.EngineRootPath) /
-        std::filesystem::path(cgl::Settings::General::AssetsRelPath) /
         std::filesystem::path(resPaths.graphicsDataSubPath);
     LOGD("Load graphics data from file : " << fullPath.string());
 
@@ -516,11 +515,11 @@ cgl::Results GraphicsDataReaderImpl::query(
 }
 
 //------------------------------------------------------------------------------
-// cgl::IGraphicsResourceFileDataReader
+// cgl::IGraphicsDataReader
 //------------------------------------------------------------------------------
-cgl::IGraphicsResourceFileDataReader::Ptr
-cgl::IGraphicsResourceFileDataReader::create(
-    const cgl::IGraphicsResourceFileDataReader::CreateInfo& createInfo
+cgl::IGraphicsDataReader::Ptr
+cgl::IGraphicsDataReader::create(
+    const cgl::IGraphicsDataReader::CreateInfo& createInfo
 ) {
     if (createInfo.pSettings == nullptr) {
         return nullptr;

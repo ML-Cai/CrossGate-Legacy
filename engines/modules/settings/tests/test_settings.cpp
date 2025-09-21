@@ -17,11 +17,11 @@
 // -----------------------------------------------------------------------------
 TEST(settings_test, LoadingTest) {
     // Verify the result
-    EXPECT_EQ(cgl::Settings::General::AssetsRelPath, "bin");
+    EXPECT_EQ(cgl::StaticSettings::General::AssetsRelPath, "bin");
 }
 
 TEST(settings_test, LoadInvalidFile) {
-    auto settings = cgl::LoadRuntimeSettings("non_existent_file.ini");
+    auto settings = cgl::LoadSettings("non_existent_file.ini");
     EXPECT_EQ(settings, nullptr);
 }
 
@@ -35,7 +35,7 @@ TEST(settings_test, LoadValidFile) {
     ini_file << "ViewportScale=1.5\n";
     ini_file.close();
 
-    auto settings = cgl::LoadRuntimeSettings(test_ini_path);
+    auto settings = cgl::LoadSettings(test_ini_path);
     ASSERT_NE(settings, nullptr);
     EXPECT_EQ(settings->general.EngineRootPath, "C:/Games/CrossGate");
     EXPECT_FLOAT_EQ(settings->display.ViewportScale, 1.5f);
@@ -52,7 +52,7 @@ TEST(settings_test, LoadPartialFile) {
     ini_file << "EngineRootPath=C:/Games/CrossGate\n";
     ini_file.close();
 
-    auto settings = cgl::LoadRuntimeSettings(test_ini_path);
+    auto settings = cgl::LoadSettings(test_ini_path);
     ASSERT_NE(settings, nullptr);
     EXPECT_EQ(settings->general.EngineRootPath, "C:/Games/CrossGate");
     // Default value for ViewportScale should be 1.0f
@@ -69,8 +69,8 @@ TEST(settings_test, LoadInvalidFormatFile) {
     ini_file << "This is not a valid INI format\n";
     ini_file.close();
 
-    auto default_settings = cgl::LoadRuntimeSettings();
-    auto settings = cgl::LoadRuntimeSettings(test_ini_path);
+    auto default_settings = cgl::LoadSettings();
+    auto settings = cgl::LoadSettings(test_ini_path);
     ASSERT_NE(settings, nullptr);
 
     // Default values should be set
@@ -86,8 +86,8 @@ TEST(settings_test, LoadEmptyFile) {
     std::ofstream ini_file(test_ini_path);
     ini_file.close();
 
-    auto default_settings = cgl::LoadRuntimeSettings();
-    auto settings = cgl::LoadRuntimeSettings(test_ini_path);
+    auto default_settings = cgl::LoadSettings();
+    auto settings = cgl::LoadSettings(test_ini_path);
     ASSERT_NE(settings, nullptr);
 
     // Default values should be set
@@ -107,7 +107,7 @@ TEST(settings_test, LoadFileWithExtraWhitespace) {
     ini_file << "   ViewportScale = 2.0   \n";
     ini_file.close();
 
-    auto settings = cgl::LoadRuntimeSettings(test_ini_path);
+    auto settings = cgl::LoadSettings(test_ini_path);
     ASSERT_NE(settings, nullptr);
     EXPECT_EQ(settings->general.EngineRootPath, "C:/Games/CrossGate");
     EXPECT_FLOAT_EQ(settings->display.ViewportScale, 2.0f);

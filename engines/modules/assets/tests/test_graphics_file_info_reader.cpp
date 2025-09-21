@@ -9,49 +9,49 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include "cgl/settings/settings.h"
-#include "cgl/assets/graphics_resource_file_info_reader.h"
+#include "cgl/assets/graphics_info_reader.h"
 
 // -----------------------------------------------------------------------------
 namespace {
 
-class IGraphicsAssetsFileInfoReaderTest : public testing::Test {
+class assets_IGraphicsAssetsFileInfoReaderTest : public testing::Test {
  protected:
     void SetUp() override {
         // the path of test settings.ini is configured via CMakeLists.txt
         // > gtest_discover_tests(${EXE_NAME} WORKING_DIRECTORY ${CGL_BIN_PATH})
-        pSettings_ = cgl::LoadRuntimeSettings("settings.ini");
+        pSettings_ = cgl::LoadSettings("settings.ini");
         EXPECT_NE(pSettings_, nullptr);
     }
 
-    cgl::RuntimeSettingsPtr pSettings_;
+    cgl::SettingsPtr pSettings_;
 };
 
 }   // namespace
 
 // -----------------------------------------------------------------------------
-TEST_F(IGraphicsAssetsFileInfoReaderTest, ReaderInit) {
+TEST_F(assets_IGraphicsAssetsFileInfoReaderTest, ReaderInit) {
     // invalid init args check
-    EXPECT_EQ(cgl::IGraphicsResourceFileInfoReader::create({
+    EXPECT_EQ(cgl::IGraphicsInfoReader::create({
                 .pSettings = nullptr,
                 .version   = cgl::CrossGateVersion::UNKNOWN
               }), nullptr);
 
-    EXPECT_EQ(cgl::IGraphicsResourceFileInfoReader::create({
+    EXPECT_EQ(cgl::IGraphicsInfoReader::create({
                 .pSettings = pSettings_.get(),
                 .version   = cgl::CrossGateVersion::UNKNOWN
               }), nullptr);
 
-    EXPECT_EQ(cgl::IGraphicsResourceFileInfoReader::create({
+    EXPECT_EQ(cgl::IGraphicsInfoReader::create({
                 .pSettings = pSettings_.get(),
                 .version   = cgl::CrossGateVersion::COUNT
               }), nullptr);
 
     // valid creation
-    cgl::IGraphicsResourceFileInfoReader::CreateInfo cInfo {
+    cgl::IGraphicsInfoReader::CreateInfo cInfo {
         .pSettings = pSettings_.get(),
         .version   = cgl::CrossGateVersion::CG_VERSION_PUK1
     };
-    auto reader = cgl::IGraphicsResourceFileInfoReader::create(cInfo);
+    auto reader = cgl::IGraphicsInfoReader::create(cInfo);
     EXPECT_NE(reader, nullptr);
     EXPECT_EQ(reader->infoCount(), 0);
     EXPECT_EQ(reader->createInfo().pSettings, cInfo.pSettings);
@@ -59,8 +59,8 @@ TEST_F(IGraphicsAssetsFileInfoReaderTest, ReaderInit) {
 }
 
 // -----------------------------------------------------------------------------
-TEST_F(IGraphicsAssetsFileInfoReaderTest, LoadData) {
-    auto reader = cgl::IGraphicsResourceFileInfoReader::create({
+TEST_F(assets_IGraphicsAssetsFileInfoReaderTest, LoadData) {
+    auto reader = cgl::IGraphicsInfoReader::create({
       .pSettings = pSettings_.get(),
       .version   = cgl::CrossGateVersion::CG_VERSION_Classic
     });
@@ -73,7 +73,7 @@ TEST_F(IGraphicsAssetsFileInfoReaderTest, LoadData) {
 
     // Try to query data
     cgl::GraphicsResourceSerialNum idx {
-        .type    = cgl::GraphicsAssetsSerialNumTypes::GraphicsSerialNum,
+        .type    = cgl::GraphicsResourceSerialNumTypes::GraphicsSerialNum,
         .version = cgl::CrossGateVersion::CG_VERSION_Classic,
         .value   = 0
     };

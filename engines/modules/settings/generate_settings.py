@@ -77,16 +77,16 @@ namespace _runtime_settings {
 
     #----------------------------------------------------------------------------
     def generate_setting_struct(self, settings):
-        self.append("struct RuntimeSettings {")
+        self.append("struct Settings {")
 
         # append equality operator
-        self.append(f"    bool operator==(const cgl::RuntimeSettings& other) const;")
+        self.append(f"    bool operator==(const cgl::Settings& other) const;")
 
         # Generate category defines
         for category, entries in settings.items():
             self.append(f"    cgl::_runtime_settings::{category} {category.lower()};")
 
-        self.append("};     // struct RuntimeSettings")
+        self.append("};     // struct Settings")
         self.append("}      // namespace cgl")
 
 # ------------------------------------------------------------------------------
@@ -94,7 +94,7 @@ def generate_header(json_file, output_file):
     with open(json_file, "r") as f:
         data = json.load(f)
 
-    settings = data["RuntimeSettings"]
+    settings = data["Settings"]
 
     generator = HeaderGenerator()
     generator.generate_header_prefix()
@@ -108,7 +108,7 @@ def generate_ini(json_file, output_file):
     with open(json_file, "r") as f:
         data = json.load(f)
 
-    settings = data["RuntimeSettings"]
+    settings = data["Settings"]
 
     ini = []
     for category, entries in settings.items():
@@ -172,7 +172,7 @@ class CPPGenerator:
             self.append("}")
 
     def generate_equal(self, settings):
-        self.append("bool cgl::RuntimeSettings::operator==(const cgl::RuntimeSettings& other) const {")
+        self.append("bool cgl::Settings::operator==(const cgl::Settings& other) const {")
         for category, entries in settings.items():
             self.append(f"    if (this->{category.lower()} != other.{category.lower()}) return false;")
 
@@ -183,10 +183,10 @@ class CPPGenerator:
 
         self.append(
 """
-cgl::RuntimeSettingsPtr cgl::LoadRuntimeSettings(
+cgl::SettingsPtr cgl::LoadSettings(
     const std::string_view int_path
 ) noexcept {
-    cgl::RuntimeSettingsPtr settings = std::make_unique<cgl::RuntimeSettings>();
+    cgl::SettingsPtr settings = std::make_unique<cgl::Settings>();
     cgl::INI ini;
 
     if (int_path.empty()) {
@@ -233,12 +233,12 @@ cgl::RuntimeSettingsPtr cgl::LoadRuntimeSettings(
 """)
 
 # ------------------------------------------------------------------------------
-# generate cpp to read ini file and populate RuntimeSettings struct
+# generate cpp to read ini file and populate settings struct
 def generate_cpp(json_file, output_file):
     with open(json_file, "r") as f:
         data = json.load(f)
 
-    settings = data["RuntimeSettings"]
+    settings = data["Settings"]
 
     generator = CPPGenerator()
     generator.generate_cpp_prefix()

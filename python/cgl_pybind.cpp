@@ -19,10 +19,10 @@
 #include "cgl/common/direction_types.h"
 #include "cgl/common/motion_types.h"
 #include "cgl/settings/settings.h"
-#include "cgl/assets/graphics_resource_file_info_reader.h"
-#include "cgl/assets/graphics_resource_file_data_reader.h"
-#include "cgl/assets/anime_resource_info_reader.h"
-#include "cgl/assets/anime_resource_data_reader.h"
+#include "cgl/assets/graphics_info_reader.h"
+#include "cgl/assets/graphics_data_reader.h"
+#include "cgl/assets/anime_info_reader.h"
+#include "cgl/assets/anime_data_reader.h"
 #include "cgl/assets/palette_reader.h"
 #include "cgl/trace/logger.h"
 #include "holders.h"
@@ -106,25 +106,25 @@ private:
     int width_, height_;
     std::vector<uint8_t> rgbData_;
 
-    cgl::RuntimeSettingsPtr pSettings_;
+    cgl::SettingsPtr pSettings_;
 
     std::unordered_map<
         cgl::CrossGateVersion,
-        cgl::IGraphicsResourceFileInfoReader::Ptr> infoReaderMap_;
+        cgl::IGraphicsInfoReader::Ptr> infoReaderMap_;
 
     std::unordered_map<
         cgl::CrossGateVersion,
-        cgl::IGraphicsResourceFileDataReader::Ptr> dataReaderMap_;
+        cgl::IGraphicsDataReader::Ptr> dataReaderMap_;
 
     cgl::IPaletteReader::Ptr paletteReader_;
 
     std::unordered_map<
         cgl::CrossGateVersion,
-        cgl::IAnimeResourceInfoReader::Ptr> animeInfoReaderMap_;
+        cgl::IAnimeInfoReader::Ptr> animeInfoReaderMap_;
 
     std::unordered_map<
         cgl::CrossGateVersion,
-        cgl::IAnimeResourceDataReader::Ptr> animeDataReaderMap_;
+        cgl::IAnimeDataReader::Ptr> animeDataReaderMap_;
 
     cgl::IPaletteReader* acquirePaletteReader(
         cgl::EnvironmentPaletteTypes envPalette);
@@ -140,7 +140,7 @@ private:
 
 // -----------------------------------------------------------------------------
 Session::Session() {
-    pSettings_ = cgl::LoadRuntimeSettings();
+    pSettings_ = cgl::LoadSettings();
 }
 
 // -----------------------------------------------------------------------------
@@ -194,7 +194,7 @@ cgl::IPaletteReader* Session::acquirePaletteReader(
 size_t Session::acquire_graphics_data_count(
     cgl::CrossGateVersion version
 ) {
-    auto reader = acquireReader<cgl::IGraphicsResourceFileInfoReader>(
+    auto reader = acquireReader<cgl::IGraphicsInfoReader>(
                     infoReaderMap_, version);
     return reader->infoCount();
 }
@@ -217,7 +217,7 @@ cgl::py::PaletteData256Holder::Ptr Session::acquire_env_palette(
 std::vector<int32_t> Session::acquire_available_serial_nums(
     cgl::CrossGateVersion version
 ) {
-    auto reader = acquireReader<cgl::IGraphicsResourceFileInfoReader>(
+    auto reader = acquireReader<cgl::IGraphicsInfoReader>(
                     infoReaderMap_, version);
 
     std::vector<int32_t> ret;
@@ -268,9 +268,9 @@ cgl::py::AnimeResourceDataHolder::Ptr Session::acquire_anime_resource(
     cgl::CrossGateVersion version,
     uint32_t              serial_num
 ) {
-    auto infoReader = acquireReader<cgl::IAnimeResourceInfoReader>(
+    auto infoReader = acquireReader<cgl::IAnimeInfoReader>(
                         animeInfoReaderMap_, version);
-    auto dataReader = acquireReader<cgl::IAnimeResourceDataReader>(
+    auto dataReader = acquireReader<cgl::IAnimeDataReader>(
                         animeDataReaderMap_, version);
 
     if (!infoReader || !dataReader) {
@@ -306,9 +306,9 @@ cgl::py::GraphicsResourceBundleHolder::Ptr Session::acquire_graphics_resource(
     cgl::CrossGateVersion version,
     uint32_t              serial_num
 ) {
-    auto infoReader = acquireReader<cgl::IGraphicsResourceFileInfoReader>(
+    auto infoReader = acquireReader<cgl::IGraphicsInfoReader>(
                         infoReaderMap_, version);
-    auto dataReader = acquireReader<cgl::IGraphicsResourceFileDataReader>(
+    auto dataReader = acquireReader<cgl::IGraphicsDataReader>(
                         dataReaderMap_, version);
 
     if (!infoReader || !dataReader) {

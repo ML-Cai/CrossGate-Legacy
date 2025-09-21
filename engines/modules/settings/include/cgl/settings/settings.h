@@ -10,14 +10,14 @@
 
 #include <memory>
 #include <string_view>
-#include "cgl/settings/engine_static_settings.h"
-#include "cgl/settings/engine_runtime_settings.h"
+#include "cgl/settings/engine_config.h"
+#include "cgl/settings/engine_settings.h"
 
 namespace cgl {
 
-using RuntimeSettingsPtr = std::unique_ptr<RuntimeSettings>;
+using SettingsPtr = std::unique_ptr<cgl::Settings>;
 
-cgl::RuntimeSettingsPtr LoadRuntimeSettings(
+cgl::SettingsPtr LoadSettings(
     const std::string_view int_path="") noexcept;
 
 }   // namespace cgl

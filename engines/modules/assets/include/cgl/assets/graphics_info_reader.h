@@ -16,26 +16,24 @@
 
 namespace cgl {
 
-struct RuntimeSettings;
+struct Settings;
 
-// Open the specific GraphicInfo*_*.bin to read the data.
-class IGraphicsResourceFileInfoReader {
+class IGraphicsInfoReader {
  public:
-    using Ptr = std::unique_ptr<cgl::IGraphicsResourceFileInfoReader>;
+    using Ptr = std::unique_ptr<cgl::IGraphicsInfoReader>;
 
     struct CreateInfo {
-        const cgl::RuntimeSettings* pSettings;
+        const cgl::Settings* pSettings;
         cgl::CrossGateVersion       version;
     };
 
-    static cgl::IGraphicsResourceFileInfoReader::Ptr create(
-        const CreateInfo& createInfo);
+    static cgl::IGraphicsInfoReader::Ptr create(const CreateInfo& createInfo);
 
-    explicit IGraphicsResourceFileInfoReader(
+    explicit IGraphicsInfoReader(
         const CreateInfo& createInfo)
         : createInfo_(createInfo) {}
 
-    virtual ~IGraphicsResourceFileInfoReader() = default;
+    virtual ~IGraphicsInfoReader() = default;
 
     const CreateInfo& createInfo() const noexcept {
         return createInfo_;

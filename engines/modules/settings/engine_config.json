@@ -1,5 +1,5 @@
 {
-    "StaticSettings": {
+    "Config": {
         "General" : [
             {
                 "Name" : "EngineVersion",

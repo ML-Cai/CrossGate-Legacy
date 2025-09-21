@@ -34,9 +34,9 @@ std::string cgl::ToStr(const cgl::CrossGateVersion& type) {
 }
 
 // -----------------------------------------------------------------------------
-std::string cgl::ToStr(const cgl::GraphicsAssetsSerialNumTypes& type) {
+std::string cgl::ToStr(const cgl::GraphicsResourceSerialNumTypes& type) {
     switch (type) {
-#define CGL_X(name) case cgl::GraphicsAssetsSerialNumTypes::name: return #name;
+#define CGL_X(name) case cgl::GraphicsResourceSerialNumTypes::name: return #name;
         GRAPHICS_ASSETS_SERIAL_NUM_TYPE_ENUM_LIST
 #undef CGL_X
     default:

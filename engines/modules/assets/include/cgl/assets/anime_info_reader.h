@@ -6,47 +6,50 @@
 //   All rights reserved.
 // =============================================================================
 
+
 #pragma once
 
 #include <memory>
+#include <vector>
 #include "cgl/common/version.h"
 #include "cgl/common/results.h"
 #include "cgl/common/assets.h"
 
 namespace cgl {
 
-struct RuntimeSettings;
+struct Settings;
 
-class IGraphicsResourceFileDataReader {
+class IAnimeInfoReader {
  public:
-    using Ptr = std::unique_ptr<cgl::IGraphicsResourceFileDataReader>;
+    using Ptr = std::unique_ptr<IAnimeInfoReader>;
 
     struct CreateInfo {
-        const cgl::RuntimeSettings* pSettings;
+        const cgl::Settings* pSettings;
         cgl::CrossGateVersion       version;
     };
 
-    static cgl::IGraphicsResourceFileDataReader::Ptr create(
-        const CreateInfo& createInfo);
+    static cgl::IAnimeInfoReader::Ptr create(const CreateInfo& createInfo);
 
-    explicit IGraphicsResourceFileDataReader(const CreateInfo& createInfo)
+    explicit IAnimeInfoReader(const CreateInfo& createInfo)
         : createInfo_(createInfo) {}
 
-    virtual ~IGraphicsResourceFileDataReader() = default;
+    virtual ~IAnimeInfoReader() = default;
 
     const CreateInfo& createInfo() const noexcept {
         return createInfo_;
     }
 
-    // Try to load specific Graphic*_*.bin data but not read data yet.
     virtual cgl::Results load() = 0;
 
     virtual cgl::Results query(
-        const cgl::GraphicsResourceInfo& gfxResInfo,
-        cgl::GraphicsResourceData*       pGfxResData) = 0;
+        const cgl::AnimeResourceSerialNum& index,
+        cgl::AnimeResourceInfo*            pInfo) = 0;
+
+    virtual cgl::Results queryAvailableSerialNums(
+        std::vector<cgl::AnimeResourceSerialNum>* pList) noexcept = 0;
 
  private:
     const CreateInfo createInfo_;
 };
 
-}   // namespace cgl
+}   // namespace cgm

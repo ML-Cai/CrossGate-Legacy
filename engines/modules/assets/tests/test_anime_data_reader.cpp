@@ -9,55 +9,75 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include "cgl/settings/settings.h"
-#include "cgl/assets/anime_resource_info_reader.h"
+#include "cgl/assets/anime_info_reader.h"
+#include "cgl/assets/anime_data_reader.h"
 
 // -----------------------------------------------------------------------------
 namespace {
 
-class IAnimeResourceInfoReaderTest : public testing::Test {
+class assets_IAnimeDataReaderTest : public testing::Test {
  protected:
     void SetUp() override {
-        pSettings_ = cgl::LoadRuntimeSettings("settings.ini");
+        pSettings_ = cgl::LoadSettings("settings.ini");
         EXPECT_NE(pSettings_, nullptr);
+
+        // prepare info reader
+        infoReader_ = cgl::IAnimeInfoReader::create({
+            .pSettings = pSettings_.get(),
+            .version   = cgl::CrossGateVersion::CG_VERSION_Classic
+        });
+        EXPECT_NE(infoReader_, nullptr);
+        EXPECT_EQ(infoReader_->load(), cgl::Results::Success);
     }
 
-    cgl::RuntimeSettingsPtr pSettings_;
+    cgl::SettingsPtr pSettings_;
+    cgl::IAnimeInfoReader::Ptr infoReader_;
 };
 
 }   // namespace
 
 // -----------------------------------------------------------------------------
-TEST_F(IAnimeResourceInfoReaderTest, ReaderInit) {
+TEST_F(assets_IAnimeDataReaderTest, ReaderInit) {
     // invalid init args check
-    EXPECT_EQ(cgl::IAnimeResourceInfoReader::create({
+    EXPECT_EQ(cgl::IAnimeDataReader::create({
                 .pSettings = nullptr,
                 .version   = cgl::CrossGateVersion::UNKNOWN
               }), nullptr);
 
-    EXPECT_EQ(cgl::IAnimeResourceInfoReader::create({
+    EXPECT_EQ(cgl::IAnimeDataReader::create({
                 .pSettings = pSettings_.get(),
                 .version   = cgl::CrossGateVersion::UNKNOWN
               }), nullptr);
 
-    EXPECT_EQ(cgl::IAnimeResourceInfoReader::create({
+    EXPECT_EQ(cgl::IAnimeDataReader::create({
                 .pSettings = pSettings_.get(),
                 .version   = cgl::CrossGateVersion::COUNT
               }), nullptr);
 
     // valid creation
-    cgl::IAnimeResourceInfoReader::CreateInfo cInfo {
+    cgl::IAnimeDataReader::CreateInfo cInfo {
         .pSettings = pSettings_.get(),
         .version   = cgl::CrossGateVersion::CG_VERSION_PUK1
     };
-    auto reader = cgl::IAnimeResourceInfoReader::create(cInfo);
+    auto reader = cgl::IAnimeDataReader::create(cInfo);
     EXPECT_NE(reader, nullptr);
     EXPECT_EQ(reader->createInfo().pSettings, cInfo.pSettings);
     EXPECT_EQ(reader->createInfo().version, cInfo.version);
 }
 
 // -----------------------------------------------------------------------------
-TEST_F(IAnimeResourceInfoReaderTest, LoadData) {
-    auto reader = cgl::IAnimeResourceInfoReader::create({
+TEST_F(assets_IAnimeDataReaderTest, LoadData) {
+    // prepare info
+    cgl::AnimeResourceInfo animeResInfo;
+    infoReader_->query(
+        cgl::AnimeResourceSerialNum{
+            .version = cgl::CrossGateVersion::CG_VERSION_Classic,
+            .value   = 100000
+        },
+        &animeResInfo);
+
+    // Create the data reader
+    auto reader = cgl::IAnimeDataReader::create({
       .pSettings = pSettings_.get(),
       .version   = cgl::CrossGateVersion::CG_VERSION_Classic
     });
@@ -67,24 +87,20 @@ TEST_F(IAnimeResourceInfoReaderTest, LoadData) {
     cgl::Results result = reader->load();
     EXPECT_EQ(result, cgl::Results::Success);
 
-    // Check if the reader has loaded data.
-    std::vector<cgl::AnimeResourceSerialNum> serialNums;
-    result = reader->queryAvailableSerialNums(&serialNums);
+    // Try to query data
+    cgl::AnimeResourceData animeData;
+    result = reader->query(animeResInfo, &animeData);
     EXPECT_EQ(result, cgl::Results::Success);
 
-    // Try to query data
-    cgl::AnimeResourceInfo info;
-    for (const auto& idx : serialNums) {
-        EXPECT_EQ(idx.version, cgl::CrossGateVersion::CG_VERSION_Classic);
-        EXPECT_GT(idx.value, 0);
-
-        // Query the info
-        result = reader->query(idx, &info);
-        EXPECT_EQ(result, cgl::Results::Success);
-        EXPECT_EQ(info.serialNum.version, idx.version);
-        EXPECT_EQ(info.serialNum.value, idx.value);
-        EXPECT_GE(info.dataOffset, 0);
-        EXPECT_GT(info.motionCount, 0);
+    // Check the data
+    EXPECT_EQ(animeData.serialNum.version, animeResInfo.serialNum.version);
+    EXPECT_EQ(animeData.serialNum.value, animeResInfo.serialNum.value);
+    EXPECT_EQ(animeData.motionMap.size(), animeResInfo.motionCount);
+    for (const auto& [key, motionDesc] : animeData.motionMap) {
+        EXPECT_EQ(motionDesc.version, animeResInfo.serialNum.version);
+        EXPECT_EQ(motionDesc.direction, key.first);
+        EXPECT_EQ(motionDesc.motion, key.second);
+        EXPECT_GT(motionDesc.motionGraphicsSerialNums.size(), 0);
     }
 }
 

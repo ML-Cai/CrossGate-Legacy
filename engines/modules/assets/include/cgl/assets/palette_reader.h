@@ -14,14 +14,14 @@
 
 namespace cgl {
 
-struct RuntimeSettings;
+struct Settings;
 
 class IPaletteReader {
  public:
     using Ptr = std::unique_ptr<IPaletteReader>;
 
     struct CreateInfo {
-        const cgl::RuntimeSettings* pSettings;
+        const cgl::Settings* pSettings;
     };
 
     static IPaletteReader::Ptr create(const CreateInfo& createInfo);
@@ -33,7 +33,6 @@ class IPaletteReader {
 
     const CreateInfo& createInfo() const noexcept { return createInfo_; }
 
-    // Try to open specific Graphic*_*.bin data but not read data yet.
     virtual cgl::Results read(
         cgl::EnvironmentPaletteTypes envPalette,
         cgl::PaletteData256*         pPaletteData) = 0;

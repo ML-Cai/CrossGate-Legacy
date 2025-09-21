@@ -14,20 +14,20 @@
 // -----------------------------------------------------------------------------
 namespace {
 
-class IPaletteReaderTest : public testing::Test {
+class assets_IPaletteReaderTest : public testing::Test {
  protected:
     void SetUp() override {
-        pSettings_ = cgl::LoadRuntimeSettings("settings.ini");
+        pSettings_ = cgl::LoadSettings("settings.ini");
         EXPECT_NE(pSettings_, nullptr);
     }
 
-    cgl::RuntimeSettingsPtr pSettings_;
+    cgl::SettingsPtr pSettings_;
 };
 
 }   // namespace
 
 // -----------------------------------------------------------------------------
-TEST_F(IPaletteReaderTest, ReaderCreation) {
+TEST_F(assets_IPaletteReaderTest, ReaderCreation) {
     // invalid creation
     EXPECT_EQ(cgl::IPaletteReader::create({.pSettings = nullptr}), nullptr);
 
@@ -36,7 +36,7 @@ TEST_F(IPaletteReaderTest, ReaderCreation) {
 }
 
 
-TEST_F(IPaletteReaderTest, ReadData) {
+TEST_F(assets_IPaletteReaderTest, ReadData) {
     auto reader = cgl::IPaletteReader::create({.pSettings = pSettings_.get()});
     cgl::PaletteData256 paletteData;
 
@@ -45,7 +45,7 @@ TEST_F(IPaletteReaderTest, ReadData) {
     EXPECT_EQ(paletteData.size() , 256);    // Test for 8bit color (256)
 }
 
-TEST_F(IPaletteReaderTest, CheckGlobalPaletteDefaultPaletteData) {
+TEST_F(assets_IPaletteReaderTest, CheckGlobalPaletteDefaultPaletteData) {
     // Load data to check if the loading work find
     auto reader = cgl::IPaletteReader::create({.pSettings = pSettings_.get()});
     cgl::PaletteData256 paleteA;

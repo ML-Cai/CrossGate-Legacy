@@ -9,13 +9,13 @@
 #include <fstream>
 #include <filesystem>
 #include <memory>
-#include "cgl/assets/graphics_resource_file_info_reader.h"
+#include "cgl/assets/graphics_info_reader.h"
 #include "cgl/settings/settings.h"
 #include "cgl/utils/filesystem.h"
 #include "cgl/trace/logger.h"
 #include "assets_path_info.h"
 
-using cgl::IGraphicsResourceFileInfoReader;
+using cgl::IGraphicsInfoReader;
 
 // -----------------------------------------------------------------------------
 // anonymouse namespace
@@ -53,12 +53,12 @@ inline cgl::GraphicsResourceInfo retile(
     cgl::GraphicsResourceInfo ret(
         version,
         cgl::GraphicsResourceSerialNum{
-            cgl::GraphicsAssetsSerialNumTypes::GraphicsSerialNum,
+            cgl::GraphicsResourceSerialNumTypes::GraphicsSerialNum,
             version,
             pCtx->graphicSerialNum
         },
         cgl::GraphicsResourceSerialNum{
-            cgl::GraphicsAssetsSerialNumTypes::MapSerialNum,
+            cgl::GraphicsResourceSerialNumTypes::MapSerialNum,
             version,
             pCtx->mapSerialNum
         },
@@ -81,10 +81,10 @@ namespace {
 
 using GraphicInfoEntryMap = std::unordered_map<int32_t, GraphicInfoEntry*>;
 
-class GraphicIndexReaderImpl : public cgl::IGraphicsResourceFileInfoReader {
+class GraphicIndexReaderImpl : public cgl::IGraphicsInfoReader {
  public:
     explicit GraphicIndexReaderImpl(
-        const cgl::IGraphicsResourceFileInfoReader::CreateInfo& createInfo);
+        const cgl::IGraphicsInfoReader::CreateInfo& createInfo);
 
     ~GraphicIndexReaderImpl();
 
@@ -121,8 +121,8 @@ class GraphicIndexReaderImpl : public cgl::IGraphicsResourceFileInfoReader {
 
 // -----------------------------------------------------------------------------
 GraphicIndexReaderImpl::GraphicIndexReaderImpl(
-    const cgl::IGraphicsResourceFileInfoReader::CreateInfo& createInfo)
-    : cgl::IGraphicsResourceFileInfoReader(createInfo),
+    const cgl::IGraphicsInfoReader::CreateInfo& createInfo)
+    : cgl::IGraphicsInfoReader(createInfo),
       mapIdxRange_(0, 0),
       gfxIdxRange_(0, 0) {
 }
@@ -170,7 +170,6 @@ cgl::Results GraphicIndexReaderImpl::load() {
     // // load file
     std::filesystem::path fullPath =
         std::filesystem::path(pSettings->general.EngineRootPath) /
-        std::filesystem::path(cgl::Settings::General::AssetsRelPath) /
         std::filesystem::path(resPaths.graphicsInfoSubPath);
     LOGD("Load graphics index from file `" << fullPath.string() << "`");
 
@@ -251,16 +250,16 @@ bool GraphicIndexReaderImpl::mightContain(
     const cgl::GraphicsResourceSerialNum& serialNum
 ) const noexcept {
     switch (serialNum.type) {
-    case cgl::GraphicsAssetsSerialNumTypes::GraphicsSerialNum:
+    case cgl::GraphicsResourceSerialNumTypes::GraphicsSerialNum:
         return (gfxIdxRange_.min <= serialNum.value) &&
                (serialNum.value <= gfxIdxRange_.max);
 
-    case cgl::GraphicsAssetsSerialNumTypes::MapSerialNum:
+    case cgl::GraphicsResourceSerialNumTypes::MapSerialNum:
         return (mapIdxRange_.min <= serialNum.value) &&
                (serialNum.value <= mapIdxRange_.max);
 
     default:
-        assert(false && "Unknown GraphicsAssetsSerialNumTypes value");
+        assert(false && "Unknown GraphicsResourceSerialNumTypes value");
         return false;
     }
 }
@@ -276,16 +275,16 @@ cgl::Results GraphicIndexReaderImpl::query(
 
     const GraphicInfoEntryMap *pEntryMap = nullptr;
     switch (serialNum.type) {
-    case cgl::GraphicsAssetsSerialNumTypes::GraphicsSerialNum:
+    case cgl::GraphicsResourceSerialNumTypes::GraphicsSerialNum:
         pEntryMap = &graphicsIdxMap_;
         break;
 
-    case cgl::GraphicsAssetsSerialNumTypes::MapSerialNum:
+    case cgl::GraphicsResourceSerialNumTypes::MapSerialNum:
         pEntryMap = &mapIdxMap_;
         break;
 
     default:
-        assert(false && "Unknown GraphicsAssetsSerialNumTypes value");
+        assert(false && "Unknown GraphicsResourceSerialNumTypes value");
         return cgl::Results::InvalidArgs;
     }
 
@@ -322,11 +321,11 @@ size_t GraphicIndexReaderImpl::infoCount() const noexcept {
 }
 
 // -----------------------------------------------------------------------------
-// cgl::IGraphicsResourceFileInfoReader
+// cgl::IGraphicsInfoReader
 // -----------------------------------------------------------------------------
-cgl::IGraphicsResourceFileInfoReader::Ptr
-cgl::IGraphicsResourceFileInfoReader::create(
-    const cgl::IGraphicsResourceFileInfoReader::CreateInfo& createInfo
+cgl::IGraphicsInfoReader::Ptr
+cgl::IGraphicsInfoReader::create(
+    const cgl::IGraphicsInfoReader::CreateInfo& createInfo
 ) {
     // check args
     if ((createInfo.pSettings == nullptr) ||

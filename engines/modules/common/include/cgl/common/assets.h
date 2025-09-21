@@ -58,24 +58,24 @@ std::string ToStr(const cgl::EnvironmentPaletteTypes& type);
 // Graphic Index/Data related section
 // -----------------------------------------------------------------------------
 
-// GraphicsAssetsSerialNumTypes
+// GraphicsResourceSerialNumTypes
 #define GRAPHICS_ASSETS_SERIAL_NUM_TYPE_ENUM_LIST    \
     CGL_X(GraphicsSerialNum)           \
     CGL_X(MapSerialNum)                \
 
-enum class GraphicsAssetsSerialNumTypes : uint8_t {
+enum class GraphicsResourceSerialNumTypes : uint8_t {
 #define CGL_X(name) name,
     GRAPHICS_ASSETS_SERIAL_NUM_TYPE_ENUM_LIST
 #undef CGL_X
 };
 
-std::string ToStr(const cgl::GraphicsAssetsSerialNumTypes& type);
+std::string ToStr(const cgl::GraphicsResourceSerialNumTypes& type);
 
 // GraphicsResourceSerialNum
 struct GraphicsResourceSerialNum {
     using Key = uint64_t;
 
-    cgl::GraphicsAssetsSerialNumTypes type;
+    cgl::GraphicsResourceSerialNumTypes type;
     cgl::CrossGateVersion version;
     uint32_t value;
 

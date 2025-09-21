@@ -15,30 +15,28 @@
 
 namespace cgl {
 
-struct RuntimeSettings;
+struct Settings;
 
-class IAnimeResourceDataReader {
+class IAnimeDataReader {
  public:
-    using Ptr = std::unique_ptr<cgl::IAnimeResourceDataReader>;
+    using Ptr = std::unique_ptr<cgl::IAnimeDataReader>;
 
     struct CreateInfo {
-        const cgl::RuntimeSettings* pSettings;
+        const cgl::Settings* pSettings;
         cgl::CrossGateVersion       version;
     };
 
-    static cgl::IAnimeResourceDataReader::Ptr create(
-        const CreateInfo& createInfo);
+    static cgl::IAnimeDataReader::Ptr create(const CreateInfo& createInfo);
 
-    explicit IAnimeResourceDataReader(const CreateInfo& createInfo)
+    explicit IAnimeDataReader(const CreateInfo& createInfo)
         : createInfo_(createInfo) {}
 
-    virtual ~IAnimeResourceDataReader() = default;
+    virtual ~IAnimeDataReader() = default;
 
     const CreateInfo& createInfo() const noexcept {
         return createInfo_;
     }
 
-    // Try to load specific Graphic*_*.bin data but not read data yet.
     virtual cgl::Results load() = 0;
 
     virtual cgl::Results query(

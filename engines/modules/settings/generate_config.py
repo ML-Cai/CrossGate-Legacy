@@ -8,7 +8,7 @@ def parse_category_settings(header, category, entries):
     header.append(
 f"""
 // `{category}` settings
-struct {category} {{
+namespace {category} {{
 """)
 
     for entry in entries:
@@ -23,14 +23,14 @@ struct {category} {{
             header.append(f"    static constexpr {ctype} {name} = {default};")
         else:
             header.append(f"    // Unsupported type: {ctype}")
-    header.append("};\n")
+    header.append(f"}};   // namespace {category}")
 
 # ------------------------------------------------------------------------------
 def generate_header(json_file, output_file):
     with open(json_file, "r") as f:
         data = json.load(f)
 
-    settings = data["StaticSettings"]
+    settings = data["Config"]
 
     header = []
     header.append(
@@ -49,7 +49,7 @@ def generate_header(json_file, output_file):
 #include <string_view>
 
 namespace cgl {
-namespace Settings {
+namespace StaticSettings {
 """)
 
     # Generate category structs
@@ -58,7 +58,7 @@ namespace Settings {
 
     header.append(
 """
-}   // namespace Settings
+}   // namespace StaticSettings
 }   // namespace cgl
 
 """)

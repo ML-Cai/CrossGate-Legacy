@@ -29,6 +29,16 @@ if (MSVC)
 endif()
 
 #-------------------------------------------------------------------------------
+# [Dependency check] [google-test]
+#-------------------------------------------------------------------------------
+if (CGL_WITH_TEST)
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    find_package(GTest REQUIRED)
+
+    enable_testing()
+endif()
+
+#-------------------------------------------------------------------------------
 # Setup requirements
 #-------------------------------------------------------------------------------
 find_package(Python3 REQUIRED COMPONENTS Interpreter)

@@ -12,7 +12,7 @@
 #include <memory>
 #include <sstream>
 #include <iostream>
-#include "cgl/assets/anime_resource_data_reader.h"
+#include "cgl/assets/anime_data_reader.h"
 #include "cgl/settings/settings.h"
 #include "cgl/utils/filesystem.h"
 #include "cgl/trace/logger.h"
@@ -41,11 +41,11 @@ struct AnimeDataRawMotionFrame {
 #pragma pack()
 
 
-class ReaderImpl : public cgl::IAnimeResourceDataReader,
+class ReaderImpl : public cgl::IAnimeDataReader,
                           cgl::FileBlockCache {
  public:
     explicit ReaderImpl(
-        const cgl::IAnimeResourceDataReader::CreateInfo& createInfo);
+        const cgl::IAnimeDataReader::CreateInfo& createInfo);
 
     ~ReaderImpl();
 
@@ -66,8 +66,8 @@ class ReaderImpl : public cgl::IAnimeResourceDataReader,
 }   // namespace
 
 ReaderImpl::ReaderImpl(
-    const cgl::IAnimeResourceDataReader::CreateInfo& createInfo)
-    : cgl::IAnimeResourceDataReader(createInfo),
+    const cgl::IAnimeDataReader::CreateInfo& createInfo)
+    : cgl::IAnimeDataReader(createInfo),
       cgl::FileBlockCache(4096, 1024) {
 }
 
@@ -98,7 +98,6 @@ cgl::Results ReaderImpl::load() {
     // open the file
     std::filesystem::path fullPath =
         std::filesystem::path(pSettings->general.EngineRootPath) /
-        std::filesystem::path(cgl::Settings::General::AssetsRelPath) /
         std::filesystem::path(resPaths.animeDataSubPath);
     LOGD("Load graphics index from file `" << fullPath.string() << "`");
 
@@ -237,11 +236,11 @@ cgl::Results ReaderImpl::query(
 }
 
 //------------------------------------------------------------------------------
-// cgl::IAnimeResourceDataReader
+// cgl::IAnimeDataReader
 //------------------------------------------------------------------------------
-cgl::IAnimeResourceDataReader::Ptr
-cgl::IAnimeResourceDataReader::create(
-    const cgl::IAnimeResourceDataReader::CreateInfo& createInfo
+cgl::IAnimeDataReader::Ptr
+cgl::IAnimeDataReader::create(
+    const cgl::IAnimeDataReader::CreateInfo& createInfo
 ) {
     // check args
     if ((createInfo.pSettings == nullptr) ||

@@ -9,13 +9,13 @@
 #include <fstream>
 #include <filesystem>
 #include <memory>
-#include "cgl/assets/anime_resource_info_reader.h"
+#include "cgl/assets/anime_info_reader.h"
 #include "cgl/settings/settings.h"
 #include "cgl/utils/filesystem.h"
 #include "cgl/trace/logger.h"
 #include "assets_path_info.h"
 
-using cgl::IAnimeResourceInfoReader;
+using cgl::IAnimeInfoReader;
 
 // -----------------------------------------------------------------------------
 // anonymous namespace
@@ -32,10 +32,10 @@ struct AnimeInfoRawData {
 #pragma pack(pop)
 
 
-class ReaderImpl : public cgl::IAnimeResourceInfoReader {
+class ReaderImpl : public cgl::IAnimeInfoReader {
  public:
     explicit ReaderImpl(
-        const cgl::IAnimeResourceInfoReader::CreateInfo& createInf);
+        const cgl::IAnimeInfoReader::CreateInfo& createInf);
 
     virtual ~ReaderImpl();
 
@@ -65,8 +65,8 @@ class ReaderImpl : public cgl::IAnimeResourceInfoReader {
 // AnimeInfoRawData Impl
 // -----------------------------------------------------------------------------
 ReaderImpl::ReaderImpl(
-    const cgl::IAnimeResourceInfoReader::CreateInfo& createInfo)
-    : cgl::IAnimeResourceInfoReader(createInfo) {
+    const cgl::IAnimeInfoReader::CreateInfo& createInfo)
+    : cgl::IAnimeInfoReader(createInfo) {
 }
 
 // -----------------------------------------------------------------------------
@@ -104,7 +104,6 @@ cgl::Results ReaderImpl::load() {
     // load file
     std::filesystem::path fullPath =
         std::filesystem::path(pSettings->general.EngineRootPath) /
-        std::filesystem::path(cgl::Settings::General::AssetsRelPath) /
         std::filesystem::path(resPaths.animeIndexSubPath);
     LOGD("Load graphics index from file `" << fullPath.string() << "`");
 
@@ -229,15 +228,15 @@ cgl::Results ReaderImpl::queryAvailableSerialNums(
 }
 
 // -----------------------------------------------------------------------------
-// cgm::IAnimeResourceInfoReader
+// cgm::IAnimeInfoReader
 // -----------------------------------------------------------------------------
-IAnimeResourceInfoReader::Ptr cgl::IAnimeResourceInfoReader::create(
+IAnimeInfoReader::Ptr cgl::IAnimeInfoReader::create(
     const CreateInfo& createInfo
 ) {
     // check args
     if ((createInfo.pSettings == nullptr) ||
         (createInfo.version >= cgl::CrossGateVersion::COUNT)) {
-        LOGE("Invalid create info for IAnimeResourceInfoReader");
+        LOGE("Invalid create info for IAnimeInfoReader");
         return nullptr;
     }
 

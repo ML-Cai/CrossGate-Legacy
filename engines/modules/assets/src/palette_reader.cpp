@@ -135,7 +135,6 @@ cgl::Results PaletteReaderImpl::read(
 
     auto fullPath =
         std::filesystem::path(pSettings->general.EngineRootPath) /
-        std::filesystem::path(cgl::Settings::General::AssetsRelPath) /
         std::filesystem::path(resPath.paletteFilePath);
 
 

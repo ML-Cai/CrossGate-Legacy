@@ -23,26 +23,26 @@ endif()
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 # ------------------------------------------------------------------------------
-# [Generate settings.hpp from engine_static_settings.json]
+# [Generate settings.hpp from engine_config.json]
 # ------------------------------------------------------------------------------
-set(CGL_STATIC_SETTINGS_HEADER_EXPORT_PATH ${AUTO_GEN_PATH}/cgl/settings/engine_static_settings.h)
+set(CGL_STATIC_SETTINGS_HEADER_EXPORT_PATH ${AUTO_GEN_PATH}/cgl/settings/engine_config.h)
 
 add_custom_command(
     OUTPUT ${CGL_STATIC_SETTINGS_HEADER_EXPORT_PATH}
     COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/generate_static_settings.py
-            ${CMAKE_CURRENT_SOURCE_DIR}/engine_static_settings.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/generate_config.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/engine_config.json
             ${CGL_STATIC_SETTINGS_HEADER_EXPORT_PATH}
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/engine_static_settings.json
-            ${CMAKE_CURRENT_SOURCE_DIR}/generate_static_settings.py
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/engine_config.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/generate_config.py
     COMMENT "Generating settings header from JSON..."
 )
 
 # ------------------------------------------------------------------------------
-# [Generate settings.hpp from engine_runtime_settings.json]
+# [Generate settings.hpp from engine_settings.json]
 # ------------------------------------------------------------------------------
-set(CGL_RUNTIME_SETTINGS_HEADER_EXPORT_PATH ${AUTO_GEN_PATH}/cgl/settings/engine_runtime_settings.h)
-set(CGL_RUNTIME_SETTINGS_CPP_EXPORT_PATH ${AUTO_GEN_PATH}/cgl/settings/engine_runtime_settings.cpp)
+set(CGL_RUNTIME_SETTINGS_HEADER_EXPORT_PATH ${AUTO_GEN_PATH}/cgl/settings/engine_settings.h)
+set(CGL_RUNTIME_SETTINGS_CPP_EXPORT_PATH ${AUTO_GEN_PATH}/cgl/settings/engine_settings.cpp)
 set(CGL_RUNTIME_SETTINGS_INI_EXPORT_PATH ${CGL_BIN_PATH}/settings.ini)
 
 add_custom_command(
@@ -50,13 +50,13 @@ add_custom_command(
            ${CGL_RUNTIME_SETTINGS_CPP_EXPORT_PATH}
            ${CGL_RUNTIME_SETTINGS_INI_EXPORT_PATH}
     COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/generate_runtime_settings.py
-            ${CMAKE_CURRENT_SOURCE_DIR}/engine_runtime_settings.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/generate_settings.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/engine_settings.json
             ${CGL_RUNTIME_SETTINGS_HEADER_EXPORT_PATH}
             ${CGL_RUNTIME_SETTINGS_CPP_EXPORT_PATH}
             ${CGL_RUNTIME_SETTINGS_INI_EXPORT_PATH}
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/engine_runtime_settings.json
-            ${CMAKE_CURRENT_SOURCE_DIR}/generate_runtime_settings.py
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/engine_settings.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/generate_settings.py
     COMMENT "Generating settings header from JSON..."
 )
 
