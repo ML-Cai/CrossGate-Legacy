@@ -9,6 +9,7 @@
 #include <fstream>
 #include <filesystem>
 #include <memory>
+#include "cgl/common/formatters.h"
 #include "cgl/assets/graphics_info_reader.h"
 #include "cgl/settings/settings.h"
 #include "cgl/utils/filesystem.h"
@@ -150,7 +151,7 @@ cgl::Results GraphicIndexReaderImpl::load() {
     if ((resPaths.version == cgl::CrossGateVersion::UNKNOWN) ||
         (resPaths.version != createInfo().version)) {
         LOGE("Fail to query resource path configurations of version `"
-              << cgl::ToStr(createInfo().version) << "`");
+              << createInfo().version << "`");
         return cgl::Results::Fail;
     }
 

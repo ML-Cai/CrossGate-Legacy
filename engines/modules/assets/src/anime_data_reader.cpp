@@ -12,6 +12,7 @@
 #include <memory>
 #include <sstream>
 #include <iostream>
+#include "cgl/common/formatters.h"
 #include "cgl/assets/anime_data_reader.h"
 #include "cgl/settings/settings.h"
 #include "cgl/utils/filesystem.h"
@@ -91,7 +92,7 @@ cgl::Results ReaderImpl::load() {
     if ((resPaths.version == cgl::CrossGateVersion::UNKNOWN) ||
         (resPaths.version != createInfo().version)) {
         LOGE("Fail to query resource path configurations of version `"
-              << cgl::ToStr(createInfo().version) << "`");
+             << createInfo().version << "`");
         return cgl::Results::Fail;
     }
 
@@ -127,9 +128,9 @@ cgl::Results ReaderImpl::query(
 
     if (animeResInfo.serialNum.version != createInfo().version) {
         LOGE("Attempted to read anime data from a mismatched version: the "
-             "reader was created for `" << cgl::ToStr(createInfo().version)
+             "reader was created for `" << createInfo().version
              << "`, but the query requested data from `"
-             << cgl::ToStr(animeResInfo.serialNum.version) << "`");
+             << animeResInfo.serialNum.version << "`");
         return cgl::Results::InvalidArgs;
     }
 
@@ -141,7 +142,7 @@ cgl::Results ReaderImpl::query(
                        sizeof(cgl::AnimeMotionDesc) * animeResInfo.motionCount;
     if (readBound > this->fileSize()) {
         LOGE("Address offset " << animeResInfo.dataOffset
-             << " of anime info S/N " << cgl::ToStr(animeResInfo.serialNum)
+             << " of anime info S/N " << animeResInfo.serialNum
              << " is out of range : " << fileSize());
         return cgl::Results::InvalidArgs;
     }
@@ -157,8 +158,7 @@ cgl::Results ReaderImpl::query(
         AnimeDataRawMotionHeader header;
         if (read(offset, sizeof(header), &header) == false) {
             LOGE("Failed to read motion header for AnimeIndex "
-                 << cgl::ToStr(animeResInfo.serialNum)
-                 << "at offset " << offset);
+                 << animeResInfo.serialNum << "at offset " << offset);
             return cgl::Results::Fail;
         }
         offset += sizeof(header);   // offset to read motion data
@@ -166,13 +166,13 @@ cgl::Results ReaderImpl::query(
         // verify the motion header
         if (header.direction >= static_cast<int>(cgl::DirectionTypes::COUNT)) {
             LOGE("The direction value (" << header.direction
-                 << ") of AnimeIndex " << cgl::ToStr(animeResInfo.serialNum)
+                 << ") of AnimeIndex " << animeResInfo.serialNum
                  << "} is out of range.");
             continue;
         }
         if (header.motion >= static_cast<int>(cgl::MotionTypes::COUNT)) {
             LOGE("The motion value (" << header.motion
-                 << ") of AnimeIndex " << cgl::ToStr(animeResInfo.serialNum)
+                 << ") of AnimeIndex " << animeResInfo.serialNum
                  << "} is out of range.");
             continue;
         }
@@ -185,8 +185,7 @@ cgl::Results ReaderImpl::query(
 
         if (read(offset, readCount, tempBuffer) == false) {
             LOGE("Failed to read motion data for AnimeIndex"
-                 << cgl::ToStr(animeResInfo.serialNum)
-                 << "at offset " << offset);
+                 << animeResInfo.serialNum << "at offset " << offset);
             return cgl::Results::Fail;
         }
         offset += readCount;   // offset to read next motion header

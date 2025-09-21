@@ -16,8 +16,9 @@
 #include <pybind11/numpy.h>
 
 #include "cgl/common/assets.h"
-#include "cgl/common/direction_types.h"
-#include "cgl/common/motion_types.h"
+#include "cgl/common/direction.h"
+#include "cgl/common/motion.h"
+#include "cgl/common/formatters.h"
 #include "cgl/settings/settings.h"
 #include "cgl/assets/graphics_info_reader.h"
 #include "cgl/assets/graphics_data_reader.h"
@@ -57,7 +58,7 @@ std::string type_name() {
 std::vector<cgl::EnvironmentPaletteTypes> GetTypes_EnvironmentPaletteTypes() {
     std::vector<cgl::EnvironmentPaletteTypes> result;
 #define CGL_X(name) result.push_back(cgl::EnvironmentPaletteTypes::name);
-    EnvironmentPaletteTypes_ENUM_LIST
+    CGL_ENVIRONMENT_PALETTE_TYPES_ENUM_LIST
 #undef CGL_X
     remove(&result, cgl::EnvironmentPaletteTypes::Unknown);
 
@@ -152,7 +153,7 @@ ReaderInterface* Session::acquireReader(
     auto& reader = readerMap[version];
     if (!reader) {
         LOGD("Create `" << type_name<ReaderInterface>() << "` for version `"
-             << cgl::ToStr(version) << "`");
+             << version << "`");
 
         reader = ReaderInterface::create({
             .pSettings = pSettings_.get(),
@@ -162,13 +163,13 @@ ReaderInterface* Session::acquireReader(
         if (!reader) {
             std::stringstream ss;
             ss << "Failed to create " << type_name<ReaderInterface>()
-               << " for version: " << cgl::ToStr(version);
+               << " for version: " << version;
             throw std::invalid_argument(ss.str());
         }
         if (reader->load() != cgl::Results::Success) {
             std::stringstream ss;
             ss << "Failed to load " << type_name<ReaderInterface>()
-               << " for version: " << cgl::ToStr(version);
+               << " for version: " << version;
             throw std::invalid_argument(ss.str());
         }
     }
@@ -207,7 +208,7 @@ cgl::py::PaletteData256Holder::Ptr Session::acquire_env_palette(
 
     auto data = std::make_shared<cgl::py::PaletteData256Holder>();
     if (infoReader->read(envPalette, &data->data) != cgl::Results::Success) {
-        LOGE("Failed to query palette " << cgl::ToStr(envPalette));
+        LOGE("Failed to query palette " << envPalette);
         return nullptr;
     }
     return data;
@@ -274,8 +275,7 @@ cgl::py::AnimeResourceDataHolder::Ptr Session::acquire_anime_resource(
                         animeDataReaderMap_, version);
 
     if (!infoReader || !dataReader) {
-        LOGE("Failed to acquire anime resource readers for version: " <<
-             cgl::ToStr(version));
+        LOGE("Failed to acquire anime readers for version: " << version);
         return nullptr;
     }
 
@@ -287,14 +287,14 @@ cgl::py::AnimeResourceDataHolder::Ptr Session::acquire_anime_resource(
 
     // query info first
     if (infoReader->query(sn, &info) != cgl::Results::Success) {
-        LOGE("Failed to query anime info via S/N: " << cgl::ToStr(sn));
+        LOGE("Failed to query anime info via S/N: " << sn);
         return nullptr;
     }
 
     // query anime data to the holder
     auto holder = std::make_shared<cgl::py::AnimeResourceDataHolder>();
     if (dataReader->query(info, &holder->animeData) != cgl::Results::Success) {
-        LOGE("Failed to query anime data via S/N: " << cgl::ToStr(sn));
+        LOGE("Failed to query anime data via S/N: " << sn);
         return nullptr;
     }
 
@@ -312,8 +312,7 @@ cgl::py::GraphicsResourceBundleHolder::Ptr Session::acquire_graphics_resource(
                         dataReaderMap_, version);
 
     if (!infoReader || !dataReader) {
-        LOGE("Failed to acquire graphics resource readers for version: "
-             << cgl::ToStr(version));
+        LOGE("Failed to acquire graphics readers for version: " << version);
         return nullptr;
     }
 
@@ -326,12 +325,12 @@ cgl::py::GraphicsResourceBundleHolder::Ptr Session::acquire_graphics_resource(
     };
 
     if (infoReader->query(sn, &holder->info) != cgl::Results::Success) {
-        LOGE("Failed to query graphics info via S/N: " << cgl::ToStr(sn));
+        LOGE("Failed to query graphics info via S/N: " << sn);
         return nullptr;
     }
 
     if (dataReader->query(holder->info, &holder->data) != cgl::Results::Success) {
-        LOGE("Failed to query graphics data via S/N: " << cgl::ToStr(sn));
+        LOGE("Failed to query graphics data via S/N: " << sn);
         return nullptr;
     }
 
@@ -342,6 +341,9 @@ cgl::py::GraphicsResourceBundleHolder::Ptr Session::acquire_graphics_resource(
 // Define pybind
 // -----------------------------------------------------------------------------
 PYBIND11_MODULE(cgl, m) {
+
+    cgl::SetLogLevel(cgl::LogLevel::Trace);
+
     // -------------------------------------------------------------------------
     // Session
     // -------------------------------------------------------------------------
@@ -436,7 +438,7 @@ PYBIND11_MODULE(cgl, m) {
     m.def("EnvironmentPaletteTypesList", &GetTypes_EnvironmentPaletteTypes);
     py::enum_<cgl::EnvironmentPaletteTypes>(m, "EnvironmentPaletteTypes", py::arithmetic())
         #define CGL_X(name) .value(#name, cgl::EnvironmentPaletteTypes::name)
-            EnvironmentPaletteTypes_ENUM_LIST
+            CGL_ENVIRONMENT_PALETTE_TYPES_ENUM_LIST
         #undef CGL_X
         .export_values();
 

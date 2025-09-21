@@ -50,6 +50,4 @@ enum class MotionTypes : uint8_t {
 #undef CGL_X
 };
 
-std::string ToStr(const cgl::MotionTypes& type);
-
 }   // namespace cgl

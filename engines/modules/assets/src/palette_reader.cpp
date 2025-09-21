@@ -6,7 +6,7 @@
 //   All rights reserved.
 // =============================================================================
 
-
+#include "cgl/common/formatters.h"
 #include "cgl/assets/palette_reader.h"
 #include "cgl/settings/settings.h"
 #include "cgl/utils/filesystem.h"
@@ -129,7 +129,7 @@ cgl::Results PaletteReaderImpl::read(
     const auto pSettings = createInfo().pSettings;
     const auto resPath = cgl::AcquireEnvPalettePath(envPalette);
     if (resPath.paletteType != envPalette) {
-        LOGE("Palette path mismatch for : " << cgl::ToStr(envPalette));
+        LOGE("Palette path mismatch for : " << envPalette);
         return cgl::Results::Fail;
     }
 
@@ -138,8 +138,8 @@ cgl::Results PaletteReaderImpl::read(
         std::filesystem::path(resPath.paletteFilePath);
 
 
-    LOGD("Loading env palette(" << cgl::ToStr(envPalette)
-         << ") from file : " << fullPath.string());
+    LOGD("Loading env palette(" << envPalette << ") from file : "
+         << fullPath.string());
 
     // Load palette data
     cgl::Results result = readPaletteFile(fullPath, pPaletteData);

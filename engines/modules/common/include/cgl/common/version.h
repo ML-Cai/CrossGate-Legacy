@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <stdint.h>
+#include <cstdint>
 
 namespace cgl {
 
@@ -36,7 +36,5 @@ enum class CrossGateVersion : uint8_t {
     CGL_VERSION_TYPES_ENUM_FULL_LIST
 #undef CGL_X
 };
-
-std::string ToStr(const cgl::CrossGateVersion& type);
 
 }   // namespace cgl

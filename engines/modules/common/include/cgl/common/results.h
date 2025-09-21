@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <string>
+#include <cstdint>
 
 namespace cgl {
 
@@ -29,7 +29,5 @@ enum class Results : unsigned int {
     CGL_RESULTS_ENUM_LIST
 #undef CGL_X
 };
-
-std::string ToStr(const cgl::Results& type);
 
 }   // namespace cgl

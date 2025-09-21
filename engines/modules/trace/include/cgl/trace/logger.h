@@ -35,17 +35,31 @@ bool IsLogging(const cgl::LogLevel level);
     do {                                                                \
         if(cgl::IsLogging(cgl::LogLevel::level)) {                      \
             std::ostringstream ss;                                      \
-            ss << CGL_LOG_PREFIX ## tag << __VA_ARGS__ << std::endl;    \
+            ss << CGL_LOG_PREFIX << tag << __VA_ARGS__ << std::endl;    \
             std::cerr << ss.str();                                      \
         }                                                               \
     } while(false)
 
 #define CGL_LOG_PREFIX "CGL:"
-#define LOGT(...) CGL_LOG_HELPER(Trace, "[Trace] ", __VA_ARGS__)
-#define LOGD(...) CGL_LOG_HELPER(Debug, "[Debug] ",__VA_ARGS__)
-#define LOGI(...) CGL_LOG_HELPER(Info, "[Info] ",__VA_ARGS__)
-#define LOGW(...) CGL_LOG_HELPER(Warning, "[Warning] ",__VA_ARGS__)
-#define LOGE(...) CGL_LOG_HELPER(Error, "[Error] ",__VA_ARGS__)
+#ifndef CGL_LOG_DISABLE_COLORED_FORMATTER
+#define CGL_LOG_TAG_TRACE "\033[35m[Trace] \033[0m"
+#define CGL_LOG_TAG_DEBUG "\033[34m[Debug] \033[0m"
+#define CGL_LOG_TAG_INFO "[Info] \033[0m"
+#define CGL_LOG_TAG_WARNING "\033[33m[Warning] \033[0m"
+#define CGL_LOG_TAG_ERROR "\033[31m[Error] \033[0m"
+#else
+#define CGL_LOG_TAG_TRACE "[Trace] "
+#define CGL_LOG_TAG_DEBUG "[Debug] "
+#define CGL_LOG_TAG_INFO "[Info] "
+#define CGL_LOG_TAG_WARNING "[Warning] "
+#define CGL_LOG_TAG_ERROR "[Error] "
+#endif
+
+#define LOGT(...) CGL_LOG_HELPER(Trace, CGL_LOG_TAG_TRACE, __VA_ARGS__)
+#define LOGD(...) CGL_LOG_HELPER(Debug, CGL_LOG_TAG_DEBUG, __VA_ARGS__)
+#define LOGI(...) CGL_LOG_HELPER(Info, CGL_LOG_TAG_INFO ,__VA_ARGS__)
+#define LOGW(...) CGL_LOG_HELPER(Warning, CGL_LOG_TAG_WARNING, __VA_ARGS__)
+#define LOGE(...) CGL_LOG_HELPER(Error, CGL_LOG_TAG_ERROR, __VA_ARGS__)
 
 }   // namespace cgl
 

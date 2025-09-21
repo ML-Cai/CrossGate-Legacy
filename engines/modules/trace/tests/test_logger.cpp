@@ -7,6 +7,7 @@
 // =============================================================================
 
 #include <gtest/gtest.h>
+#define CGL_LOG_DISABLE_COLORED_FORMATTER
 #include "cgl/trace/logger.h"
 #include "cgl/common/env.h"
 

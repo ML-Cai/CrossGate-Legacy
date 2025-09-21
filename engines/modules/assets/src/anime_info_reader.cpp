@@ -9,6 +9,7 @@
 #include <fstream>
 #include <filesystem>
 #include <memory>
+#include "cgl/common/formatters.h"
 #include "cgl/assets/anime_info_reader.h"
 #include "cgl/settings/settings.h"
 #include "cgl/utils/filesystem.h"
@@ -90,7 +91,7 @@ cgl::Results ReaderImpl::load() {
     if ((resPaths.version == cgl::CrossGateVersion::UNKNOWN) ||
         (resPaths.version != createInfo().version)) {
         LOGE("Fail to query resource path configurations of version `"
-              << cgl::ToStr(createInfo().version) << "`");
+              << createInfo().version << "`");
         return cgl::Results::Fail;
     }
 
@@ -186,8 +187,8 @@ cgl::Results ReaderImpl::query(
     }
 
     if (serialNum.version != createInfo().version) {
-        LOGE("Invalid version " << cgl::ToStr(serialNum.version) << " for query"
-             << ", expected " << cgl::ToStr(createInfo().version));
+        LOGE("Invalid version " << serialNum.version << " for query, "
+             << "expected " << createInfo().version);
         return cgl::Results::InvalidArgs;
     }
 

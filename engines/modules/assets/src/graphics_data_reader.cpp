@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <memory>
 #include <sstream>
+#include "cgl/common/formatters.h"
 #include "cgl/assets/graphics_data_reader.h"
 #include "cgl/settings/settings.h"
 #include "cgl/utils/filesystem.h"
@@ -349,7 +350,7 @@ cgl::Results GraphicsDataReaderImpl::load() {
     if ((resPaths.version == cgl::CrossGateVersion::UNKNOWN) ||
         (resPaths.version != createInfo().version)) {
         LOGE("Fail to query resource path configurations of version : "
-             << cgl::ToStr(createInfo().version));
+             << createInfo().version);
         return cgl::Results::InvalidFile;
     }
 
@@ -488,9 +489,8 @@ cgl::Results GraphicsDataReaderImpl::query(
 
     if (gfxResInfo.version != createInfo().version) {
         LOGE("Attempted to read graphic data from a mismatched version: the "
-             "reader was created for " << cgl::ToStr(createInfo().version)
-             << ", but the query requested data from "
-             << cgl::ToStr(gfxResInfo.version));
+             "reader was created for " << createInfo().version
+             << ", but the query requested data from " << gfxResInfo.version);
         return cgl::Results::InvalidArgs;
     }
 

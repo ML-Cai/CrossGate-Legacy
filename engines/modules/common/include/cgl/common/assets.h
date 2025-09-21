@@ -16,8 +16,8 @@
 #include <vector>
 #include <unordered_map>
 #include "cgl/common/version.h"
-#include "cgl/common/direction_types.h"
-#include "cgl/common/motion_types.h"
+#include "cgl/common/direction.h"
+#include "cgl/common/motion.h"
 
 
 namespace cgl {
@@ -39,7 +39,7 @@ union PaletteData {
 using PaletteData256 = std::array<PaletteData, 256>;
 
 // EnvironmentPaletteTypes enum
-#define EnvironmentPaletteTypes_ENUM_LIST \
+#define CGL_ENVIRONMENT_PALETTE_TYPES_ENUM_LIST \
     CGL_X(Daytime)                        \
     CGL_X(Evening)                        \
     CGL_X(Night)                          \
@@ -48,28 +48,24 @@ using PaletteData256 = std::array<PaletteData, 256>;
 
 enum class EnvironmentPaletteTypes : uint8_t {
 #define CGL_X(name) name,
-    EnvironmentPaletteTypes_ENUM_LIST
+    CGL_ENVIRONMENT_PALETTE_TYPES_ENUM_LIST
 #undef CGL_X
 };
-
-std::string ToStr(const cgl::EnvironmentPaletteTypes& type);
 
 // -----------------------------------------------------------------------------
 // Graphic Index/Data related section
 // -----------------------------------------------------------------------------
 
 // GraphicsResourceSerialNumTypes
-#define GRAPHICS_ASSETS_SERIAL_NUM_TYPE_ENUM_LIST    \
+#define CGL_GRAPHICS_ASSETS_SERIAL_NUM_TYPE_ENUM_LIST    \
     CGL_X(GraphicsSerialNum)           \
     CGL_X(MapSerialNum)                \
 
 enum class GraphicsResourceSerialNumTypes : uint8_t {
 #define CGL_X(name) name,
-    GRAPHICS_ASSETS_SERIAL_NUM_TYPE_ENUM_LIST
+    CGL_GRAPHICS_ASSETS_SERIAL_NUM_TYPE_ENUM_LIST
 #undef CGL_X
 };
-
-std::string ToStr(const cgl::GraphicsResourceSerialNumTypes& type);
 
 // GraphicsResourceSerialNum
 struct GraphicsResourceSerialNum {
@@ -104,8 +100,6 @@ struct GraphicsResourceSerialNum {
     }
 };
 
-std::string ToStr(const cgl::GraphicsResourceSerialNum& type);
-
 // GraphicsResourceIndex
 struct GraphicsResourceInfo {
     cgl::CrossGateVersion version;
@@ -138,8 +132,6 @@ struct AnimeResourceSerialNum {
     cgl::CrossGateVersion version;
     uint32_t value;
 };
-
-std::string ToStr(const cgl::AnimeResourceSerialNum& type);
 
 struct AnimeResourceInfo {
     AnimeResourceSerialNum serialNum;
