@@ -1,0 +1,22 @@
+{
+    "Settings": {
+        "General" : [
+            {
+                "Name" : "EngineRootPath",
+                "Type" : "std::string",
+                "Default" : "C:/CrossGate-Legacy",
+                "ExportToINI" : true,
+                "Description" : "Path to the engine root directory, relative to the executable directory."
+            }
+        ],
+        "Display" : [
+            {
+                "Name" : "ViewportScale",
+                "Type" : "float",
+                "Default" : "1.0",
+                "ExportToINI" : true,
+                "Description" : "Scaling factor for the game viewport."
+            }
+        ]
+    }
+}

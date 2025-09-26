@@ -1,0 +1,33 @@
+{
+    "Config": {
+        "General" : [
+            {
+                "Name" : "EngineVersion",
+                "Type" : "std::string_view",
+                "Default" : "v0.1",
+                "Description" : "The version of the engine."
+            },
+            {
+                "Name" : "AssetsRelPath",
+                "Type" : "std::string_view",
+                "Default" : "bin",
+                "Description" : "Path to the assets directory, relative to the executable directory."
+            }
+        ],
+        "Trace" : [
+            {
+                "Name" : "LogLevel",
+                "Type" : "uint8_t",
+                "Default" : "2",
+                "Description" : "Set the logging level. Possible values are: Error(0), Warning(1), Info(2), Debug(3), Trace(4), This setting can be overridden by the environment variable `CGL_LOG_LEVEL`.",
+                "ValidValueDescs" : {
+                    "Error" : 0,
+                    "Warning" : 1,
+                    "Info" : 2,
+                    "Debug" : 3,
+                    "Trace" : 4
+                }
+            }
+        ]
+    }
+}
