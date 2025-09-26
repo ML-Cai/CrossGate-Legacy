@@ -23,8 +23,8 @@ class IGraphicsInfoReader {
     using Ptr = std::unique_ptr<cgl::IGraphicsInfoReader>;
 
     struct CreateInfo {
-        const cgl::Settings* pSettings;
-        cgl::CrossGateVersion       version;
+        const cgl::Settings*  pSettings;
+        cgl::CrossGateVersion version;
     };
 
     static cgl::IGraphicsInfoReader::Ptr create(const CreateInfo& createInfo);

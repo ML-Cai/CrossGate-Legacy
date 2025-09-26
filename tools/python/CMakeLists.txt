@@ -15,7 +15,7 @@ include(FetchContent)
 #-------------------------------------------------------------------------------
 # [find python3]
 #-------------------------------------------------------------------------------
-find_package(Python3 COMPONENTS Development REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 
 #-------------------------------------------------------------------------------
 # [find pybind11]

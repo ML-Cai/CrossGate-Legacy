@@ -22,8 +22,8 @@ class IAnimeDataReader {
     using Ptr = std::unique_ptr<cgl::IAnimeDataReader>;
 
     struct CreateInfo {
-        const cgl::Settings* pSettings;
-        cgl::CrossGateVersion       version;
+        const cgl::Settings*  pSettings;
+        cgl::CrossGateVersion version;
     };
 
     static cgl::IAnimeDataReader::Ptr create(const CreateInfo& createInfo);

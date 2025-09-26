@@ -38,6 +38,7 @@ python setup_requirements.py --build_typeRelWithDebInfo
 ### 3. Building CGL
 
 ```bash
+# Open `x64 Native Tools Command Prompt for VS2022` as command prompt in Windows build
 mkdir build
 cd build
 cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
