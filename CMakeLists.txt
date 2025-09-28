@@ -7,7 +7,8 @@ project(${PROJECT_NAME})
 # [Options]
 #-------------------------------------------------------------------------------
 option(CGL_WITH_TEST         "Build with unit tests"                         ON)
-option(CGL_WITH_TOOLS        "Build with binary"                             ON)
+option(CGL_WITH_TOOLS        "Build with tools"                              ON)
+option(CGL_WITH_BINARIES     "Build with binaries"                           ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -47,6 +48,7 @@ add_subdirectory(engines/modules/utils)
 add_subdirectory(engines/modules/settings)
 add_subdirectory(engines/modules/trace)
 add_subdirectory(engines/modules/assets)
+add_subdirectory(engines/modules/engine)
 
 add_library(cgl_all INTERFACE)
 add_library(cgl::all ALIAS cgl_all)
@@ -60,8 +62,15 @@ target_link_libraries(cgl_all INTERFACE
 
 
 #-------------------------------------------------------------------------------
-# [build bin]
+# [build tools]
 #-------------------------------------------------------------------------------
 if (CGL_WITH_TOOLS)
     add_subdirectory(tools/python)
+endif()
+
+#-------------------------------------------------------------------------------
+# [build bin]
+#-------------------------------------------------------------------------------
+if (CGL_WITH_BINARIES)
+    add_subdirectory(bin)
 endif()

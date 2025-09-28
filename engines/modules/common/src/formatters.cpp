@@ -68,6 +68,28 @@ std::string_view cgl::ToStr(const cgl::DirectionTypes& type) {
 }
 
 // -----------------------------------------------------------------------------
+std::string_view cgl::ToStr(const cgl::MouseButtonTypes& type) {
+    switch (type) {
+#define CGL_X(name) case cgl::MouseButtonTypes::name: return #name;
+        CGL_MOUSE_BUTTON_TYPES_ENUM_LIST_FULL_LIST
+#undef CGL_X
+    default:
+        return "Unknown";
+    }
+}
+
+// -----------------------------------------------------------------------------
+std::string_view cgl::ToStr(const cgl::InputActionTypes& type) {
+    switch (type) {
+#define CGL_X(name) case cgl::InputActionTypes::name: return #name;
+        CGL_INPUT_ACTION_TYPES_ENUM_FULL_LIST
+#undef CGL_X
+    default:
+        return "Unknown";
+    }
+}
+
+// -----------------------------------------------------------------------------
 std::string_view cgl::ToStr(const cgl::EnvironmentPaletteTypes& type) {
     switch (type) {
 #define CGL_X(name) case cgl::EnvironmentPaletteTypes::name: return #name;
