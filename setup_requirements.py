@@ -50,7 +50,7 @@ def build_cmake_depend(workspace, build_type, depend_name, *cmake_args):
 
 # ----------------------------------------------------------------------------------------------------------------------
 def install_python_requirements(workspace):
-    requirements_path = os.path.join(workspace, "python", "requirements.txt")
+    requirements_path = os.path.join(workspace, "tools", "python", "requirements.txt")
     run_cmd([
         sys.executable, "-m", "pip", "install", "-r", requirements_path])
 
@@ -80,6 +80,12 @@ def main(args):
 
     build_cmake_depend(workspace, args.build_type,
                        "spdlog")
+
+    build_cmake_depend(workspace, args.build_type,
+                       "glfw",
+                       "-DGLFW_BUILD_DOCS=OFF",
+                       "-DGLFW_BUILD_EXAMPLES=OFF",
+                       "-DGLFW_BUILD_TESTS=OFF")
 
 # ----------------------------------------------------------------------------------------------------------------------
 if __name__ == "__main__":

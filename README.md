@@ -32,7 +32,7 @@ cd CrossGate-Legacy
 # Open `x64 Native Tools Command Prompt for VS2022` as command prompt in Windows build
 python -m venv .venv
 .venv\Scripts\activate
-python setup_requirements.py --build_typeRelWithDebInfo
+python setup_requirements.py --build_type RelWithDebInfo
 ```
 
 ### 3. Building CGL
