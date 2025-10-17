@@ -12,19 +12,29 @@
 #include <functional>
 #include "window/window_components.h"
 
-// -----------------------------------------------------------------------------
-// forward declaration
 struct GLFWwindow;
 
+// -----------------------------------------------------------------------------
 namespace cgl {
 
 class ECSCore;
 
-}   // namespace cgl
+// -----------------------------------------------------------------------------
+class WindowInitSystem {
+public:
+    WindowInitSystem() = default;
+
+    ~WindowInitSystem() = default;
+
+    void update(cgl::ECSCore* pECS);
+
+ private:
+    bool createWindow(const cgl::component::WindowCreateInfo* pCreateInfo,
+                      cgl::component::WindowState*            pWindowState);
+    GLFWwindow *window_;
+};
 
 // -----------------------------------------------------------------------------
-namespace cgl {
-
 class WindowInputSystem {
 public:
     WindowInputSystem();
@@ -43,7 +53,11 @@ public:
 
     static void cursorPosCb(GLFWwindow* pWindow, double x, double y);
     static void mouseButtonCb(GLFWwindow* pWindow, int btn, int act, int);
+    static void framebufferReSszeCb(GLFWwindow* window, int w, int h);
+
     cgl::component::CursorPositionState cursorPosState_[2];
+    cgl::component::WindowState* pWindowState_;
+    cgl::component::WindowHandle* pWindowHandle_;
 };
 
 }   // namespace cgl
