@@ -13,21 +13,24 @@
 namespace cgl {
 
 // -----------------------------------------------------------------------------
-// Results
+// Scene
 // -----------------------------------------------------------------------------
-#define CGL_RESULTS_ENUM_LIST      \
-    CGL_X(Success)                 \
-    CGL_X(Fail)                    \
-    CGL_X(OutOfMemory)             \
-    CGL_X(InvalidFile)             \
-    CGL_X(InvalidArgs)             \
-    CGL_X(InvalidRendererDevice)   \
-    CGL_X(IndexNotExist)           \
+#define CGL_SCENE_TYPES_ENUM_LIST   \
+    CGL_X(NullScene)                \
+    CGL_X(InitScene)                \
+    CGL_X(LoginScene)               \
+    CGL_X(ServerSelectionScene)     \
+    CGL_X(CharacterSelectionScene)  \
+    CGL_X(MainScene)
+
+#define CGL_SCENE_TYPES_ENUM_FULL_LIST  \
+    CGL_SCENE_TYPES_ENUM_LIST           \
+    CGL_X(Count)                        \
     CGL_X(Unknown)
 
-enum class Results : unsigned int {
+enum class SceneTypes : uint32_t {
 #define CGL_X(name) name,
-    CGL_RESULTS_ENUM_LIST
+    CGL_SCENE_TYPES_ENUM_FULL_LIST
 #undef CGL_X
 };
 

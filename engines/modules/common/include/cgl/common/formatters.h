@@ -16,6 +16,7 @@
 #include "cgl/common/direction.h"
 #include "cgl/common/assets.h"
 #include "cgl/common/input.h"
+#include "cgl/common/scene_types.h"
 
 namespace cgl {
 
@@ -27,6 +28,7 @@ std::string_view ToStr(const cgl::EnvironmentPaletteTypes& type);
 std::string_view ToStr(const cgl::GraphicsResourceSerialNumTypes& type);
 std::string_view ToStr(const cgl::MouseButtonTypes& type);
 std::string_view ToStr(const cgl::InputActionTypes& type);
+std::string_view ToStr(const cgl::SceneTypes& type);
 
 std::string ToStr(const cgl::GraphicsResourceSerialNum& type);
 std::string ToStr(const cgl::AnimeResourceSerialNum& type);

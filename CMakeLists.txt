@@ -48,6 +48,7 @@ add_subdirectory(engines/modules/utils)
 add_subdirectory(engines/modules/settings)
 add_subdirectory(engines/modules/trace)
 add_subdirectory(engines/modules/assets)
+add_subdirectory(engines/modules/render)
 add_subdirectory(engines/modules/engine)
 
 add_library(cgl_all INTERFACE)

@@ -5,42 +5,51 @@
 //
 //   All rights reserved.
 // =============================================================================
+
 #include <assert.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+#include <sstream>
 #include "cgl/trace/logger.h"
-#include "ecs.h"
-#include "engine_components.h"
+#include "engine/ecs.h"
+#include "engine/error_system.h"
 #include "window/window_components.h"
-#include "window/window_init_system.h"
-
-
-cgl::WindowInitSystem::WindowInitSystem() {
-}
+#include "window/window_systems.h"
 
 // -----------------------------------------------------------------------------
 void cgl::WindowInitSystem::update(cgl::ECSCore* pECS) {
-    LOGD("WindowInitSystem::update");
-    auto pEngineState = pECS->getSingleton<cgl::component::EngineState>();
+    LOGI("WindowInitSystem::update");
+    auto pWindowState = pECS->getSingleton<cgl::component::WindowState>();
     auto pCreateInfo = pECS->getSingleton<cgl::component::WindowCreateInfo>();
-    assert(pEngineState != nullptr);
+    assert(pWindowState != nullptr);
     assert(pCreateInfo != nullptr);
 
-    if (this->createWindow(pCreateInfo) == false) {
-        pEngineState->state = cgl::EngineStateTypes::FATAL_ERROR;
-        pEngineState->last_error_message = "Failed to create window";
+    // reset state
+    pWindowState->state = cgl::StateTypes::INITIALIZING;
+
+    // create window
+    if (this->createWindow(pCreateInfo, pWindowState) == false) {
+        return;
     }
+    pWindowState->state = cgl::StateTypes::ACTIVE;
 
     // Add result handle to ecs
-    pECS->addSingleton<cgl::component::WindowHandle>(window_, false);
+    pECS->addSingleton<cgl::component::WindowHandle>(
+            window_,
+            false,
+            pCreateInfo->width,
+            pCreateInfo->height);
 }
 
 // -----------------------------------------------------------------------------
 bool cgl::WindowInitSystem::createWindow(
-    const cgl::component::WindowCreateInfo* pCreateInfo
+    const cgl::component::WindowCreateInfo* pCreateInfo,
+    cgl::component::WindowState*            pWindowState
 ) {
+    std::stringstream ss;
+
     if (glfwInit() != GLFW_TRUE) {
-        LOGE("Failed in glfwInit()");
+        cgl::RaiseError(pWindowState, "Failed in glfwInit()");
         return false;
     }
 
@@ -55,9 +64,9 @@ bool cgl::WindowInitSystem::createWindow(
                                nullptr,
                                nullptr);
     if (window_ == nullptr) {
-        LOGE("Failed to create window with size (" << pCreateInfo->width
-             << " x " << pCreateInfo->height
-             << "), title :" << pCreateInfo->title);
+        cgl::RaiseError(pWindowState,
+            "Failed to create window with size (", pCreateInfo->width,
+            " x ", pCreateInfo->height, "), title :", pCreateInfo->title);
         return false;
     }
     return true;

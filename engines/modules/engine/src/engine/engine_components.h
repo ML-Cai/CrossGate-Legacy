@@ -9,19 +9,15 @@
 #pragma once
 
 #include <string_view>
-#include "cgl/common/engine.h"
+#include "cgl/common/states.h"
 
 namespace cgl {
 namespace component {
 
 struct EngineState {
-    EngineState() : state(cgl::EngineStateTypes::UNKNOWN) { }
-
-    EngineState(cgl::EngineStateTypes state_, std::string last_error_message_)
-        : state(state), last_error_message(last_error_message_) { }
-
-    cgl::EngineStateTypes state;
-    std::string last_error_message;
+    EngineState() : state(cgl::StateTypes::UNKNOWN) {}
+    cgl::StateTypes state;
+    std::string lastError;
 };
 
 }   // namespace component

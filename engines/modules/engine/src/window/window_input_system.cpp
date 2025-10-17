@@ -12,10 +12,10 @@
 #include "cgl/common/input.h"
 #include "cgl/common/formatters.h"
 #include "cgl/trace/logger.h"
-#include "ecs.h"
-#include "engine_components.h"
+#include "engine/ecs.h"
+#include "engine/engine_components.h"
 #include "window/window_components.h"
-#include "window/window_input_system.h"
+#include "window/window_systems.h"
 
 
 // -----------------------------------------------------------------------------
@@ -51,7 +51,9 @@ cgl::InputActionTypes fromGLFWInputAction(int32_t glfw_action_value) {
 
 // -----------------------------------------------------------------------------
 cgl::WindowInputSystem::WindowInputSystem()
-    : cursorPosState_{} {
+    : cursorPosState_{},
+      pWindowState_(nullptr),
+      pWindowHandle_(nullptr) {
     updater_ = &WindowInputSystem::init;
 }
 
@@ -63,30 +65,29 @@ void cgl::WindowInputSystem::update(cgl::ECSCore* pECS) {
 // -----------------------------------------------------------------------------
 void cgl::WindowInputSystem::init(cgl::ECSCore* pECS) {
     LOGD("WindowInitSystem::init");
-    auto pEngineState = pECS->getSingleton<cgl::component::EngineState>();
-    auto pWinHandle = pECS->getSingleton<cgl::component::WindowHandle>();
-    assert(pEngineState != nullptr);
-    assert(pWinHandle != nullptr);
+    pWindowState_ = pECS->getSingleton<cgl::component::WindowState>();
+    pWindowHandle_ = pECS->getSingleton<cgl::component::WindowHandle>();
+    assert(pWindowState_ != nullptr);
+    assert(pWindowHandle_ != nullptr);
 
-    GLFWwindow* pWindow = static_cast<GLFWwindow *>(pWinHandle->nativeHandle);
+    auto pWindow = static_cast<GLFWwindow *>(pWindowHandle_->nativeHandle);
     glfwSetWindowUserPointer(pWindow, this);
     glfwSetCursorPosCallback(pWindow, cursorPosCb);
     glfwSetMouseButtonCallback(pWindow, mouseButtonCb);
+    glfwSetFramebufferSizeCallback(pWindow, framebufferReSszeCb);
 
     updater_ = &WindowInputSystem::updateEvents;
 }
 
 // -----------------------------------------------------------------------------
 void cgl::WindowInputSystem::updateEvents(cgl::ECSCore* pECS) {
-    auto pEngineState = pECS->getSingleton<cgl::component::EngineState>();
-    auto pWinHandle   = pECS->getSingleton<cgl::component::WindowHandle>();
-    assert(pEngineState != nullptr);
-    assert(pWinHandle != nullptr);
+    assert(pWindowState_ != nullptr);
+    assert(pWindowHandle_ != nullptr);
 
-    GLFWwindow* pWindow = static_cast<GLFWwindow *>(pWinHandle->nativeHandle);
+    auto pWindow = static_cast<GLFWwindow *>(pWindowHandle_->nativeHandle);
     if (glfwWindowShouldClose(pWindow) > 0) {
-        LOGD("Window closed ...");
-        pWinHandle->windowShouldClose = true;
+        LOGD("Window closed");
+        pWindowHandle_->windowShouldClose = true;
         return;
     }
 
@@ -133,4 +134,13 @@ void cgl::WindowInputSystem::mouseButtonCb(
         .inputAction = fromGLFWInputAction(action)
     };
     LOGD("MouseInput " << inputState.button << " , " << inputState.inputAction);
+}
+
+// -----------------------------------------------------------------------------
+void cgl::WindowInputSystem::framebufferReSszeCb(
+    GLFWwindow* window,
+    int w,
+    int h
+) {
+    LOGW("Window size " << w << " , " << h);
 }

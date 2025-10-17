@@ -101,6 +101,17 @@ std::string_view cgl::ToStr(const cgl::EnvironmentPaletteTypes& type) {
 }
 
 // -----------------------------------------------------------------------------
+std::string_view cgl::ToStr(const cgl::SceneTypes& type) {
+    switch (type) {
+#define CGL_X(name) case cgl::SceneTypes::name: return #name;
+        CGL_SCENE_TYPES_ENUM_FULL_LIST
+#undef CGL_X
+    default:
+        return "Unknown";
+    }
+}
+
+// -----------------------------------------------------------------------------
 std::string cgl::ToStr(const cgl::GraphicsResourceSerialNum& sn) {
     std::ostringstream oss;
     oss << cgl::ToStr(sn.type)
