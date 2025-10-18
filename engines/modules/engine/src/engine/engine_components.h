@@ -8,16 +8,17 @@
 
 #pragma once
 
-#include <string_view>
+#include <string>
 #include "cgl/common/states.h"
+#include "cgl/settings/settings.h"
 
 namespace cgl {
 namespace component {
 
 struct EngineState {
-    EngineState() : state(cgl::StateTypes::UNKNOWN) {}
     cgl::StateTypes state;
     std::string lastError;
+    cgl::Settings::Ptr settings;
 };
 
 }   // namespace component
