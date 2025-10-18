@@ -78,6 +78,7 @@ namespace _runtime_settings {
     #----------------------------------------------------------------------------
     def generate_setting_struct(self, settings):
         self.append("struct Settings {")
+        self.append("using Ptr = std::unique_ptr<cgl::Settings>;")
 
         # append equality operator
         self.append(f"    bool operator==(const cgl::Settings& other) const;")

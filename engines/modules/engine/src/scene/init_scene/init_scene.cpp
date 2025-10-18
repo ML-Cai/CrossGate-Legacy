@@ -6,13 +6,16 @@
 //   All rights reserved.
 // =============================================================================
 
-#include "assert.h"
+#include <assert.h>
 #include <memory>
 #include "cgl/trace/logger.h"
-#include "render/render_components.h"
-#include "scene/scene_components.h"
 #include "engine/ecs.h"
+#include "render/render_components.h"
+#include "assets/assets_system.h"
+#include "scene/scene_components.h"
 #include "scene/init_scene/init_scene_systems.h"
+
+using cgl::component::AssetsReaderState;
 
 // -----------------------------------------------------------------------------
 namespace {
@@ -31,6 +34,8 @@ class InitScene : public cgl::IScene {
 
  private:
     cgl::InitSceneRenderSystem renderSys_;
+    cgl::AssetsReaderInitSystem assetsReaderInitSys_;
+    cgl::component::AssetsReaderState* pAssetsReaderState_;
 };
 
 }   // namespace
@@ -42,8 +47,12 @@ InitScene::InitScene()
 }
 
 void InitScene::onEnter(cgl::ECSCore* pECS) noexcept {
+    pAssetsReaderState_ = pECS->getSingleton<AssetsReaderState>();
+    assert(pAssetsReaderState_ != nullptr);
+
     cgl::InitSceneInitRenderSystem initRenderSys;
     initRenderSys.update(pECS);
+    assetsReaderInitSys_.update(pECS);
 }
 
 void InitScene::onExit(cgl::ECSCore* pECS) noexcept {
@@ -56,7 +65,7 @@ void InitScene::update(cgl::ECSCore* pECS) noexcept {
     renderSys_.update(pECS);
 
     // check resource init finish
-    
+    assetsReaderInitSys_.update(pECS);
 }
 
 // -----------------------------------------------------------------------------

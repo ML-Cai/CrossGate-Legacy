@@ -12,6 +12,7 @@
 #include "cgl/trace/logger.h"
 #include "engine/ecs.h"
 #include "engine/engine_components.h"
+#include "assets/assets_components.h"
 #include "window/window_components.h"
 #include "window/window_systems.h"
 #include "render/render_components.h"
@@ -63,8 +64,14 @@ ClientEngine::~ClientEngine() {
 void ClientEngine::init() {
     LOGI("Init client engine");
 
-    // append all essential singleton components
-    ecs().addSingleton<cgl::component::EngineState>();
+    // add engine state
+    auto pSettings = cgl::LoadSettings("settings.ini");
+    if (pSettings == nullptr) {
+        LOGW("Failed to to the setting file, use default setting for the engine");
+        pSettings = cgl::LoadSettings();
+    }
+    ecs().addSingleton<cgl::component::EngineState>(
+        cgl::StateTypes::UNKNOWN, "", std::move(pSettings));
 
     // add window state
     ecs().addSingleton<cgl::component::WindowState>(
@@ -76,11 +83,16 @@ void ClientEngine::init() {
         cgl::StateTypes::UNKNOWN, cgl::SceneTypes::Unknown, nullptr, "");
     pSceneState_ = ecs().getSingleton<cgl::component::SceneState>();
 
+    // add assets reader state
+    ecs().addSingleton<cgl::component::AssetsReaderState>(
+        cgl::StateTypes::UNKNOWN, "");
+
     // add render state
     ecs().addSingleton<cgl::component::RenderState>(
         cgl::StateTypes::UNKNOWN, "");
     pRenderState_ = ecs().getSingleton<cgl::component::RenderState>();
 
+    // add window create info
     ecs().addSingleton<cgl::component::WindowCreateInfo>(
         800, 600, "CGL");
 }
