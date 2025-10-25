@@ -30,9 +30,6 @@ class RenderDeviceInitSystem {
     ~RenderDeviceInitSystem() = default;
 
     void update(cgl::ECSCore* pECS);
-
- private:
-    bool initEssentialRenderObjects(cgl::ECSCore* pECS);
 };
 
 // -----------------------------------------------------------------------------

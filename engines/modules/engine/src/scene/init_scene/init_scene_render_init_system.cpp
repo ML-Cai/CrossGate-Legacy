@@ -20,22 +20,19 @@ constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 
 }   // namespace
 
-using cgl::component::PrimaryDeviceContext;
-using cgl::component::PrimarySwapchain;
+using cgl::component::RenderDeviceState;
 
 // -----------------------------------------------------------------------------
-bool cgl::InitSceneInitRenderSystem::initEssentialRenderObjects(
+bool cgl::InitSceneRenderInitSystem::initEssentialRenderObjects(
     cgl::ECSCore* pECS
 ) {
-    auto pDevCtx        = pECS->getSingleton<PrimaryDeviceContext>();
-    auto pPrimSwapchain = pECS->getSingleton<PrimarySwapchain>();
-    if (pDevCtx == nullptr || pPrimSwapchain == nullptr) {
+    auto pRenderDeviceState = pECS->getSingleton<RenderDeviceState>();
+    auto pDevice            = pRenderDeviceState->pDevice.get();
+    auto pSwapchain         = pRenderDeviceState->pSwapchain.get();
+    if (pDevice == nullptr || pSwapchain == nullptr) {
         LOGE("No primary device or swapchian object created before scene init");
         return false;
     }
-
-    auto pDevice = pDevCtx->pDevice.get();
-    auto pSwapchain = pPrimSwapchain->pSwapchain.get();
 
     // create command buffer
     auto pCmdBufferList = cgl::ICommandBufferList::create(
@@ -89,18 +86,22 @@ bool cgl::InitSceneInitRenderSystem::initEssentialRenderObjects(
 }
 
 // -----------------------------------------------------------------------------
-void cgl::InitSceneInitRenderSystem::update(cgl::ECSCore* pECS) {
-    LOGD("InitSceneInitRenderSystem::update");
+void cgl::InitSceneRenderInitSystem::update(cgl::ECSCore* pECS) {
+    auto pState = pECS->getSingleton<cgl::component::SceneRenderState>();
+    assert(pState != nullptr);
 
-    pState_ = pECS->getSingleton<cgl::component::SceneState>();
-    pState_->state = cgl::StateTypes::INITIALIZING;
-
-    if (initEssentialRenderObjects(pECS) == false) {
-        cgl::RaiseError(pState_,
-            "Failed to init essential render objects in "
-            "InitSceneInitRenderSystem");
+    if ((pState->state != cgl::StateTypes::UNKNOWN) &&
+        (pState->state != cgl::StateTypes::INITIALIZING)) {
+        cgl::RaiseError(pState, "The `InitSceneRenderInitSystem` updates data "
+            "and systems only when the `SceneRenderState` is in the `UNKNOWN` "
+            "or `INITIALIZING` state. Please verify the flow.");
         return;
     }
 
-    pState_->state = cgl::StateTypes::INITIALIZED;
+    if (initEssentialRenderObjects(pECS) == false) {
+        cgl::RaiseError(pState,
+            "Failed to init one of essential render objects in "
+            "InitSceneRenderInitSystem");
+        return;
+    }
 }

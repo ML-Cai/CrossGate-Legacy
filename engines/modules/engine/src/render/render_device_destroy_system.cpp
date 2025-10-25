@@ -13,7 +13,14 @@
 
 // -----------------------------------------------------------------------------
 void cgl::RenderDeviceDestroySystem::update(cgl::ECSCore* pECS) {
-    LOGI("RenderDeviceDestroySystem::update");
-    pECS->removeSingleton<cgl::component::PrimarySwapchain>();
-    pECS->removeSingleton<cgl::component::PrimaryDeviceContext>();
+    LOGI("Destroy render device.");
+    auto pState     = pECS->getSingleton<cgl::component::RenderDeviceState>();
+    assert(pState != nullptr);
+
+    // release objects
+    pState->pSwapchain = nullptr;
+    pState->pDevice = nullptr;
+
+    // remove singleton
+    pECS->removeSingleton<cgl::component::RenderDeviceState>();
 }

@@ -17,14 +17,19 @@
 
 // -----------------------------------------------------------------------------
 cgl::SceneManagerSystem::SceneManagerSystem() {
-    updater_ = &cgl::SceneManagerSystem::init;
+    updater_ = &cgl::SceneManagerSystem::initStage;
 }
 
 // -----------------------------------------------------------------------------
-void cgl::SceneManagerSystem::init(cgl::ECSCore* pECS) {
+void cgl::SceneManagerSystem::initStage(cgl::ECSCore* pECS) {
     pSceneState_ = pECS->getSingleton<cgl::component::SceneState>();
     assert(pSceneState_ != nullptr);
-    updater_ = &cgl::SceneManagerSystem::_update;
+
+    // setup init scene
+    pSceneState_->nextScene = cgl::SceneTypes::InitScene;
+
+    // swtich to next stage
+    updater_ = &cgl::SceneManagerSystem::sceneUpdateStage;
 }
 
 // -----------------------------------------------------------------------------
@@ -57,10 +62,14 @@ void cgl::SceneManagerSystem::switchScene(cgl::ECSCore* pECS) {
 }
 
 // -----------------------------------------------------------------------------
-void cgl::SceneManagerSystem::_update(cgl::ECSCore* pECS) {
+void cgl::SceneManagerSystem::sceneUpdateStage(cgl::ECSCore* pECS) {
     // switch scene?
     if (pSceneState_->nextScene != cgl::SceneTypes::Unknown) {
         switchScene(pECS);
+
+        if (pSceneState_->state == cgl::StateTypes::ERROR) {
+            return;
+        }
     }
 
     // update scene

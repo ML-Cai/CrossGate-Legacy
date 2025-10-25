@@ -19,14 +19,11 @@ void cgl::SceneManagerDestroySystem::update(cgl::ECSCore* pECS) {
         return;
     }
 
-    pSceneState->state = cgl::StateTypes::SHUTTING_DOWN;
-
     // release scene
     if (pSceneState->scene != nullptr) {
         pSceneState->scene->onExit(pECS);
         pSceneState->scene = nullptr;
     }
 
-    pSceneState->state =cgl::StateTypes::RELEASE;
     pSceneState->nextScene = cgl::SceneTypes::NullScene;
 }

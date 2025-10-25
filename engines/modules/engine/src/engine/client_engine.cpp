@@ -11,6 +11,8 @@
 #include "cgl/engine/engine.h"
 #include "cgl/trace/logger.h"
 #include "engine/ecs.h"
+#include "engine/error_system.h"
+#include "engine/state_system.h"
 #include "engine/engine_components.h"
 #include "assets/assets_components.h"
 #include "window/window_components.h"
@@ -32,7 +34,12 @@ class ClientEngine : public cgl::IEngine {
     void run() override;
 
  private:
-    void init();
+    void initSingletonStage(cgl::ECSCore*);
+    void initModulesStage(cgl::ECSCore*);
+    void runStage(cgl::ECSCore*);
+    void closeStage(cgl::ECSCore*);
+    bool anyStateError() const noexcept;
+
     cgl::SettingsPtr setting_;
     cgl::ECSCore ecs_;
     cgl::ECSCore& ecs() noexcept { return ecs_; }
@@ -43,9 +50,10 @@ class ClientEngine : public cgl::IEngine {
     cgl::SceneManagerSystem sceneMgrSys_;
 
     // state objects
+    cgl::component::EngineState* pEngineState_;
     cgl::component::WindowState* pWindowState_;
     cgl::component::SceneState* pSceneState_;
-    cgl::component::RenderState* pRenderState_;
+    cgl::component::RenderDeviceState* pRenderDevState_;
 };
 
 }   // namespace
@@ -61,9 +69,7 @@ ClientEngine::~ClientEngine() {
 }
 
 // -----------------------------------------------------------------------------
-void ClientEngine::init() {
-    LOGI("Init client engine");
-
+void ClientEngine::initSingletonStage(cgl::ECSCore* pEcs) {
     // add engine state
     auto pSettings = cgl::LoadSettings("settings.ini");
     if (pSettings == nullptr) {
@@ -72,6 +78,7 @@ void ClientEngine::init() {
     }
     ecs().addSingleton<cgl::component::EngineState>(
         cgl::StateTypes::UNKNOWN, "", std::move(pSettings));
+    pEngineState_ = ecs().getSingleton<cgl::component::EngineState>();
 
     // add window state
     ecs().addSingleton<cgl::component::WindowState>(
@@ -88,9 +95,9 @@ void ClientEngine::init() {
         cgl::StateTypes::UNKNOWN, "");
 
     // add render state
-    ecs().addSingleton<cgl::component::RenderState>(
+    ecs().addSingleton<cgl::component::RenderDeviceState>(
         cgl::StateTypes::UNKNOWN, "");
-    pRenderState_ = ecs().getSingleton<cgl::component::RenderState>();
+    pRenderDevState_ = ecs().getSingleton<cgl::component::RenderDeviceState>();
 
     // add window create info
     ecs().addSingleton<cgl::component::WindowCreateInfo>(
@@ -98,42 +105,97 @@ void ClientEngine::init() {
 }
 
 // -----------------------------------------------------------------------------
-void ClientEngine::run() {
-    LOGI("Run client engine");
-    init();
-
+void ClientEngine::initModulesStage(cgl::ECSCore* pEcs) {
     // init window
-    winInitSys_.update(&ecs_);
-    renderDeviceInitSys_.update(&ecs_);
+    if (!CGL_UPDATE_SYS_AND_TRANSIT_STATE({
+            .pSystem     = &winInitSys_,
+            .pEcs        = pEcs,
+            .pCheckState = pWindowState_,
+            .onSuccess   = cgl::StateTransitionHint{
+                .pState = pWindowState_,
+                .to     = cgl::StateTypes::RUNNING
+            },
+            .pOnErrorState = pEngineState_})) {
+        return;
+    }
 
-    // setup init scene
-    pSceneState_->nextScene = cgl::SceneTypes::InitScene;
+    // init render device
+    if (!CGL_UPDATE_SYS_AND_TRANSIT_STATE({
+            .pSystem     = &renderDeviceInitSys_,
+            .pEcs        = pEcs,
+            .pCheckState = pRenderDevState_,
+            .onSuccess   = cgl::StateTransitionHint{
+                .pState = pRenderDevState_,
+                .to     = cgl::StateTypes::RUNNING
+            },
+            .pOnErrorState = pEngineState_})) {
+        return;
+    }
 
+    // init scene manager
+    if (!CGL_UPDATE_SYS_AND_TRANSIT_STATE({
+            .pSystem     = &sceneMgrSys_,
+            .pEcs        = pEcs,
+            .pCheckState = pSceneState_,
+            .onSuccess   = cgl::StateTransitionHint{
+                .pState = pSceneState_,
+                .to     = cgl::StateTypes::RUNNING
+            },
+            .pOnErrorState = pEngineState_})) {
+        return;
+    }
+}
 
+// -----------------------------------------------------------------------------
+void ClientEngine::runStage(cgl::ECSCore* pEcs) {
     // main loop
     auto pWinHandle = ecs().getSingleton<cgl::component::WindowHandle>();
     assert(pWinHandle != nullptr);
 
     while (pWinHandle->windowShouldClose == false) {
-        winInputSys_.update(&ecs_);
+        if (anyStateError()) break;
+        winInputSys_.update(pEcs);
 
-        sceneMgrSys_.update(&ecs_);
-
-        // check error
-        if ((pWindowState_->state == cgl::StateTypes::ERROR) ||
-            (pRenderState_->state == cgl::StateTypes::ERROR) ||
-            (pSceneState_->state == cgl::StateTypes::ERROR)) {
-            break;
-        }
+        if (anyStateError()) break;
+        sceneMgrSys_.update(pEcs);
     }
+}
 
+// -----------------------------------------------------------------------------
+void ClientEngine::closeStage(cgl::ECSCore* pEcs) {
     // destroy scene
     cgl::SceneManagerDestroySystem sceneMgrDestroySys;
-    sceneMgrDestroySys.update(&ecs_);
+    sceneMgrDestroySys.update(pEcs);
 
-    // destory window
+    // destory render device
     cgl::RenderDeviceDestroySystem renderDeviceDestroySys;
-    renderDeviceDestroySys.update(&ecs_);
+    renderDeviceDestroySys.update(pEcs);
+}
+
+// -----------------------------------------------------------------------------
+bool ClientEngine::anyStateError() const noexcept {
+    return (CGL_IS_STATE_ERROR(pWindowState_) ||
+            CGL_IS_STATE_ERROR(pRenderDevState_) ||
+            CGL_IS_STATE_ERROR(pSceneState_));
+}
+
+// -----------------------------------------------------------------------------
+void ClientEngine::run() {
+    LOGI("Run client engine");
+
+    initSingletonStage(&ecs_);
+
+    if (anyStateError() == false) {
+        initModulesStage(&ecs_);
+    }
+
+    if (anyStateError() == false) {
+        runStage(&ecs_);
+    }
+
+    closeStage(&ecs_);
+
+    LOGI("Engine close");
 }
 
 // -----------------------------------------------------------------------------

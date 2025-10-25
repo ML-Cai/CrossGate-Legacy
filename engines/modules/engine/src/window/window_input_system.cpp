@@ -13,6 +13,7 @@
 #include "cgl/common/formatters.h"
 #include "cgl/trace/logger.h"
 #include "engine/ecs.h"
+#include "engine/error_system.h"
 #include "engine/engine_components.h"
 #include "window/window_components.h"
 #include "window/window_systems.h"
@@ -64,11 +65,18 @@ void cgl::WindowInputSystem::update(cgl::ECSCore* pECS) {
 
 // -----------------------------------------------------------------------------
 void cgl::WindowInputSystem::init(cgl::ECSCore* pECS) {
-    LOGD("WindowInitSystem::init");
     pWindowState_ = pECS->getSingleton<cgl::component::WindowState>();
     pWindowHandle_ = pECS->getSingleton<cgl::component::WindowHandle>();
     assert(pWindowState_ != nullptr);
     assert(pWindowHandle_ != nullptr);
+
+    // check state
+    if (pWindowState_->state != cgl::StateTypes::RUNNING) {
+        cgl::RaiseError(pWindowState_, "The `WindowInputSystem` updates data "
+            "and systems only when the `WindowState` is in the `RUNNING` "
+            "state. Please verify the flow.");
+        return;
+    }
 
     auto pWindow = static_cast<GLFWwindow *>(pWindowHandle_->nativeHandle);
     glfwSetWindowUserPointer(pWindow, this);
@@ -76,6 +84,7 @@ void cgl::WindowInputSystem::init(cgl::ECSCore* pECS) {
     glfwSetMouseButtonCallback(pWindow, mouseButtonCb);
     glfwSetFramebufferSizeCallback(pWindow, framebufferReSszeCb);
 
+    // switch to next stage
     updater_ = &WindowInputSystem::updateEvents;
 }
 
@@ -83,6 +92,14 @@ void cgl::WindowInputSystem::init(cgl::ECSCore* pECS) {
 void cgl::WindowInputSystem::updateEvents(cgl::ECSCore* pECS) {
     assert(pWindowState_ != nullptr);
     assert(pWindowHandle_ != nullptr);
+
+    // check state
+    if (pWindowState_->state != cgl::StateTypes::RUNNING) {
+        cgl::RaiseError(pWindowState_, "The `WindowInputSystem` updates data "
+            "and systems only when the `WindowState` is in the `RUNNING` "
+            "state. Please verify the flow.");
+        return;
+    }
 
     auto pWindow = static_cast<GLFWwindow *>(pWindowHandle_->nativeHandle);
     if (glfwWindowShouldClose(pWindow) > 0) {

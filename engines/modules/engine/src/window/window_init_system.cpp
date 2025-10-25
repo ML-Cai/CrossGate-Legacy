@@ -18,20 +18,24 @@
 
 // -----------------------------------------------------------------------------
 void cgl::WindowInitSystem::update(cgl::ECSCore* pECS) {
-    LOGI("WindowInitSystem::update");
     auto pWindowState = pECS->getSingleton<cgl::component::WindowState>();
     auto pCreateInfo = pECS->getSingleton<cgl::component::WindowCreateInfo>();
     assert(pWindowState != nullptr);
     assert(pCreateInfo != nullptr);
 
-    // reset state
-    pWindowState->state = cgl::StateTypes::INITIALIZING;
+    // check state
+    if ((pWindowState->state != cgl::StateTypes::UNKNOWN) &&
+        (pWindowState->state != cgl::StateTypes::INITIALIZING)) {
+        cgl::RaiseError(pWindowState, "The `WindowInitSystem` updates data and "
+            "systems only when the `WindowState` is in the `UNKNOWN` or "
+            "`INITIALIZING` state. Please verify the flow.");
+        return;
+    }
 
     // create window
     if (this->createWindow(pCreateInfo, pWindowState) == false) {
         return;
     }
-    pWindowState->state = cgl::StateTypes::ACTIVE;
 
     // Add result handle to ecs
     pECS->addSingleton<cgl::component::WindowHandle>(
@@ -46,15 +50,14 @@ bool cgl::WindowInitSystem::createWindow(
     const cgl::component::WindowCreateInfo* pCreateInfo,
     cgl::component::WindowState*            pWindowState
 ) {
-    std::stringstream ss;
-
     if (glfwInit() != GLFW_TRUE) {
         cgl::RaiseError(pWindowState, "Failed in glfwInit()");
         return false;
     }
 
-    LOGD("Create window with size (" << pCreateInfo->width
-         << "x" << pCreateInfo->height << "), title :" << pCreateInfo->title);
+    LOGD("Create window with size "
+         << "(" << pCreateInfo->width  << "x" << pCreateInfo->height << "), "
+         << "title :" << pCreateInfo->title);
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);

@@ -99,7 +99,16 @@ void cgl::AssetsReaderInitSystem::initStage(cgl::ECSCore* pECS) {
     assert(pEngineState != nullptr);
     assert(pAssetsReaderState_ != nullptr);
 
-    pAssetsReaderState_->state = cgl::StateTypes::INITIALIZING;
+
+    // check state
+    if ((pAssetsReaderState_->state != cgl::StateTypes::UNKNOWN) &&
+        (pAssetsReaderState_->state != cgl::StateTypes::INITIALIZING)) {
+        cgl::RaiseError(pAssetsReaderState_, "The `AssetsReaderInitSystem` "
+            "updates data and systems only when the `AssetsReaderState` is in "
+            "the `UNKNOWN` or `INITIALIZING` state. Please verify the flow.");
+        return;
+    }
+
     futures_IAnimeInfoReader_.resize(CGL_VERSIONS.size());
     futures_IAnimeDataReader_.resize(CGL_VERSIONS.size());
     futures_IGraphicsDataReader_.resize(CGL_VERSIONS.size());
@@ -137,7 +146,6 @@ void cgl::AssetsReaderInitSystem::initStage(cgl::ECSCore* pECS) {
     );
 
     // swtich to next stage
-    pAssetsReaderState_->state = cgl::StateTypes::RUNNING;
     updater_ = &AssetsReaderInitSystem::checkStage;
 }
 
@@ -179,7 +187,6 @@ void cgl::AssetsReaderInitSystem::checkStage(cgl::ECSCore* pECS) {
     pAssetsReaderState_->pPaletteReader = futures_IPaletteReader_.get();
 
     // swtich to next stage
-    pAssetsReaderState_->state = cgl::StateTypes::FINISH;
     updater_ = &AssetsReaderInitSystem::nopStage;
 }
 

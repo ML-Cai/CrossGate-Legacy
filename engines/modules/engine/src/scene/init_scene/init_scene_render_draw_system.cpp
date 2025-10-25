@@ -16,35 +16,39 @@
 #include "engine/error_system.h"
 #include "engine/engine_components.h"
 
-using cgl::component::PrimaryDeviceContext;
-using cgl::component::PrimarySwapchain;
+using cgl::component::RenderDeviceState;
+using cgl::component::SceneRenderState;
+using cgl::component::WindowHandle;
 using cgl::component::PrimarySceneRenderFrame;
 using cgl::component::PrimaryRenderSyncObjects;
 
 // -----------------------------------------------------------------------------
-cgl::InitSceneRenderSystem::InitSceneRenderSystem()
+cgl::InitSceneRenderDrawSystem::InitSceneRenderDrawSystem()
     : frameIdx_(0) {
-    updater_ = &InitSceneRenderSystem::init;
+    updater_ = &InitSceneRenderDrawSystem::init;
 }
 
 // -----------------------------------------------------------------------------
-void cgl::InitSceneRenderSystem::init(cgl::ECSCore* pECS) {
-    pState_        = pECS->getSingleton<cgl::component::SceneState>();
-    pWindowHandle_ = pECS->getSingleton<cgl::component::WindowHandle>();
-    pDevCtx_       = pECS->getSingleton<PrimaryDeviceContext>();
-    pSwapchain_    = pECS->getSingleton<PrimarySwapchain>();
-    pFrame_        = pECS->getSingleton<PrimarySceneRenderFrame>();
-    pSyncObjs_     = pECS->getSingleton<PrimaryRenderSyncObjects>();
+void cgl::InitSceneRenderDrawSystem::init(cgl::ECSCore* pECS) {
+    pSceneRenderState_  = pECS->getSingleton<SceneRenderState>();
+    assert(pRenderDeviceState_ != nullptr);
+    if (pSceneRenderState_->state != cgl::StateTypes::RUNNING) {
+        cgl::RaiseError(pSceneRenderState_, "The `InitSceneRenderDrawSystem` "
+            "updates data and systems only when the `RenderState` is in the "
+            "`RUNNING` state. Please verify the flow.");
+        return;
+    }
 
-    assert(pState_ != nullptr);
+    // acquire objects
+    pRenderDeviceState_ = pECS->getSingleton<RenderDeviceState>();
+    pWindowHandle_      = pECS->getSingleton<WindowHandle>();
+    pFrame_             = pECS->getSingleton<PrimarySceneRenderFrame>();
+    pSyncObjs_          = pECS->getSingleton<PrimaryRenderSyncObjects>();
 
-    if ((pWindowHandle_ == nullptr) ||
-        (pDevCtx_ == nullptr) ||
-        (pSwapchain_ == nullptr) ||
-        (pFrame_ == nullptr) ||
-        (pSyncObjs_ == nullptr)
+    if ((pRenderDeviceState_ == nullptr) || (pWindowHandle_ == nullptr) ||
+        (pFrame_ == nullptr) || (pSyncObjs_ == nullptr)
     ) {
-        cgl::RaiseError(pState_,
+        cgl::RaiseError(pSceneRenderState_,
             "One of essential render objects is invalid.");
         return;
     }
@@ -56,36 +60,42 @@ void cgl::InitSceneRenderSystem::init(cgl::ECSCore* pECS) {
 
     for (const auto& key : renderPassKey) {
         if (pFrame_->renderPasses.find(key) == pFrame_->renderPasses.end()) {
-            cgl::RaiseError(pState_,
+            cgl::RaiseError(pSceneRenderState_,
                 "No valid render pass: `", key, "` found in the system");
             return;
         }
     }
 
     // switch to render stage
-    updater_ = &InitSceneRenderSystem::render;
-    pState_->state = cgl::StateTypes::ACTIVE;
+    updater_ = &InitSceneRenderDrawSystem::render;
 }
 
 // -----------------------------------------------------------------------------
 cgl::component::RenderSyncObjects*
-cgl::InitSceneRenderSystem::acquireNextSyncObj() noexcept {
+cgl::InitSceneRenderDrawSystem::acquireNextSyncObj() noexcept {
     uint32_t idx = frameIdx_ % pSyncObjs_->objs.size();
     frameIdx_++;
     return &pSyncObjs_->objs[idx];
 }
 
 // -----------------------------------------------------------------------------
-void cgl::InitSceneRenderSystem::render(cgl::ECSCore* pECS) {
+void cgl::InitSceneRenderDrawSystem::render(cgl::ECSCore* pECS) {
     auto pSyncObj    = acquireNextSyncObj();
     auto pCmdBuffer  = pFrame_->pCmdBufferList->commandBuffer(pSyncObj->index);
     auto pRenderPass = pFrame_->renderPasses[cgl::INIT_SCENE_BASIC_RENDER_PASS].get();
-    auto pSwapchain  = pSwapchain_->pSwapchain.get();
-    auto pDevice     = pDevCtx_->pDevice.get();
+    auto pSwapchain  = pRenderDeviceState_->pSwapchain.get();
+    auto pDevice     = pRenderDeviceState_->pDevice.get();
+
+    if (pSceneRenderState_->state != cgl::StateTypes::RUNNING) {
+        cgl::RaiseError(pSceneRenderState_, "The `InitSceneRenderDrawSystem` "
+            "updates data and systems only when the `SceneRenderState` is in the "
+            "`RUNNING` state. Please verify the flow.");
+        return;
+    }
 
      // Wait fence valid
     if (pSyncObj->pFence->wait() == false) {
-        cgl::RaiseError(pState_, "Failed to wait the fence");
+        cgl::RaiseError(pSceneRenderState_, "Failed to wait the fence");
         return;
     }
 
@@ -94,7 +104,7 @@ void cgl::InitSceneRenderSystem::render(cgl::ECSCore* pECS) {
     if (pSwapchain->acquireNextImageIndex(
             pSyncObj->pImageAvailableSemaphore.get(),
             &imageIdx) == false) {
-        cgl::RaiseError(pState_,
+        cgl::RaiseError(pSceneRenderState_,
             "Failed to acquireNextImageIndex for curren frame");
         return;
     }
@@ -102,7 +112,7 @@ void cgl::InitSceneRenderSystem::render(cgl::ECSCore* pECS) {
     // acquire frame buffer
     auto pFramebuffer = pRenderPass->acquireFramebuffer(imageIdx);
     if (pFramebuffer == nullptr) {
-        cgl::RaiseError(pState_,
+        cgl::RaiseError(pSceneRenderState_,
             "Failed to acquire frame buffer with index: ", imageIdx);
         return;
     }
@@ -110,7 +120,7 @@ void cgl::InitSceneRenderSystem::render(cgl::ECSCore* pECS) {
     // reset objects
     if ((pSyncObj->pFence->reset()) == false ||
         (pCmdBuffer->reset() == false)) {
-        cgl::RaiseError(pState_,
+        cgl::RaiseError(pSceneRenderState_,
             "Failed to reset the objects for rednering");
         return;
     }
@@ -130,7 +140,7 @@ void cgl::InitSceneRenderSystem::render(cgl::ECSCore* pECS) {
             pSyncObj->pImageAvailableSemaphore.get(),
             pSyncObj->pRenderFinishSemaphore.get(),
             pSyncObj->pFence.get()) == false) {
-        cgl::RaiseError(pState_,
+        cgl::RaiseError(pSceneRenderState_,
             "Failed to submit commands to the graphics queue");
         return;
     }
@@ -140,12 +150,13 @@ void cgl::InitSceneRenderSystem::render(cgl::ECSCore* pECS) {
             pSyncObj->pRenderFinishSemaphore.get(),
             pSwapchain,
             imageIdx) == false) {
-        cgl::RaiseError(pState_, "Failed to submit data to the present queue");
+        cgl::RaiseError(pSceneRenderState_,
+            "Failed to submit data to the present queue");
         return;
     }
 }
 
 // -----------------------------------------------------------------------------
-void cgl::InitSceneRenderSystem::update(cgl::ECSCore* pECS) {
+void cgl::InitSceneRenderDrawSystem::update(cgl::ECSCore* pECS) {
     (this->*updater_)(pECS);
 }
