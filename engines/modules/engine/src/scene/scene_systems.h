@@ -28,8 +28,8 @@ class SceneManagerSystem {
     void update(cgl::ECSCore* pECS);
 
  private:
-    void init(cgl::ECSCore* pECS);
-    void _update(cgl::ECSCore* pECS);
+    void initStage(cgl::ECSCore* pECS);
+    void sceneUpdateStage(cgl::ECSCore* pECS);
 
     void switchScene(cgl::ECSCore* pECS);
 

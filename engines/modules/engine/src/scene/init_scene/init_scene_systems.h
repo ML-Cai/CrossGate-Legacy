@@ -21,36 +21,34 @@ class ECSCore;
 constexpr char INIT_SCENE_BASIC_RENDER_PASS[] = "INIT_SCENE_BASIC_RENDER_PASS";
 
 // -----------------------------------------------------------------------------
-class InitSceneInitRenderSystem {
+class InitSceneRenderInitSystem {
  public:
-    InitSceneInitRenderSystem() = default;
+    InitSceneRenderInitSystem() = default;
 
-    ~InitSceneInitRenderSystem() = default;
+    ~InitSceneRenderInitSystem() = default;
 
     void update(cgl::ECSCore* pECS);
 
  private:
     bool initEssentialRenderObjects(cgl::ECSCore* pECS);
-
-    cgl::component::SceneState* pState_;
 };
 
 // -----------------------------------------------------------------------------
-class InitSceneDestroySystem {
+class InitSceneRenderDestroySystem {
  public:
-    InitSceneDestroySystem() = default;
+    InitSceneRenderDestroySystem() = default;
 
-    ~InitSceneDestroySystem() = default;
+    ~InitSceneRenderDestroySystem() = default;
 
     void update(cgl::ECSCore* pECS);
 };
 
 // -----------------------------------------------------------------------------
-class InitSceneRenderSystem {
+class InitSceneRenderDrawSystem {
  public:
-    InitSceneRenderSystem();
+    InitSceneRenderDrawSystem();
 
-    ~InitSceneRenderSystem() = default;
+    ~InitSceneRenderDrawSystem() = default;
 
     void update(cgl::ECSCore* pECS);
 
@@ -58,13 +56,12 @@ class InitSceneRenderSystem {
     void init(cgl::ECSCore* pECS);
     void render(cgl::ECSCore* pECS);
 
-    using UpdateFunc = void (InitSceneRenderSystem::*)(cgl::ECSCore*);
+    using UpdateFunc = void (InitSceneRenderDrawSystem::*)(cgl::ECSCore*);
     UpdateFunc updater_;
 
-    cgl::component::SceneState* pState_;
+    cgl::component::SceneRenderState* pSceneRenderState_;
+    cgl::component::RenderDeviceState* pRenderDeviceState_;
     cgl::component::WindowHandle* pWindowHandle_;
-    cgl::component::PrimaryDeviceContext* pDevCtx_;
-    cgl::component::PrimarySwapchain* pSwapchain_;
     cgl::component::PrimarySceneRenderFrame* pFrame_;
     cgl::component::PrimaryRenderSyncObjects* pSyncObjs_;
 

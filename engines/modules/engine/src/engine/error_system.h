@@ -21,7 +21,7 @@ void RaiseError(T* pState, Args&&... args) {
     pState->state = cgl::StateTypes::ERROR;
     pState->lastError = oss.str();
 
-    LOGE("Error: " << pState->lastError);
+    LOGE(pState->lastError);
 }
 
 }   // namespace

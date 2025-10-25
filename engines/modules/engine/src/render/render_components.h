@@ -22,19 +22,22 @@
 namespace cgl {
 namespace component {
 
-struct PrimaryDeviceContext {
-    cgl::IDevice::Ptr pDevice;
+// -----------------------------------------------------------------------------
+struct RenderDeviceState {
+    cgl::StateTypes state;
+    std::string lastError;
+
+    cgl::IDevice::Ptr pDevice;          // primary device
+    cgl::ISwapchain::Ptr pSwapchain;    // primary swapchain
 };
 
-struct PrimarySwapchain {
-    cgl::ISwapchain::Ptr pSwapchain;
-};
-
+// -----------------------------------------------------------------------------
 struct PrimarySceneRenderFrame {
     cgl::ICommandBufferList::Ptr pCmdBufferList;
     std::unordered_map<std::string, cgl::IRenderPass::Ptr> renderPasses;
 };
 
+// -----------------------------------------------------------------------------
 struct RenderSyncObjects {
     uint32_t index;
     cgl::ISemaphore::Ptr pImageAvailableSemaphore;
@@ -42,14 +45,11 @@ struct RenderSyncObjects {
     cgl::IFence::Ptr pFence;
 };
 
+// -----------------------------------------------------------------------------
 struct PrimaryRenderSyncObjects {
     std::vector<RenderSyncObjects> objs;
 };
 
-struct RenderState {
-    cgl::StateTypes state;
-    std::string lastError;
-};
 
 }   // namespace component
 }   // namespace cgl

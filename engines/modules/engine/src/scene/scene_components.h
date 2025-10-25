@@ -11,11 +11,13 @@
 #include <memory>
 #include "cgl/common/scene_types.h"
 #include "cgl/common/states.h"
+#include "render/render_components.h"
 
 namespace cgl {
 
 struct ECSCore;
 
+// -----------------------------------------------------------------------------
 class IScene {
  public:
     using Ptr = std::unique_ptr<cgl::IScene>;
@@ -41,11 +43,20 @@ cgl::IScene::Ptr CreateInitScene();
 
 namespace component {
 
+// -----------------------------------------------------------------------------
 struct SceneState {
     cgl::StateTypes state;
     cgl::SceneTypes nextScene;
     cgl::IScene::Ptr scene;
     std::string lastError;
+};
+
+// -----------------------------------------------------------------------------
+struct SceneRenderState {
+    cgl::StateTypes state;
+    std::string lastError;
+    cgl::component::PrimarySceneRenderFrame frame;
+    cgl::component::PrimaryRenderSyncObjects syncObjs;
 };
 
 }   // namespace component
