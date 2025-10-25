@@ -88,8 +88,8 @@ void cgl::InitSceneRenderDrawSystem::render(cgl::ECSCore* pECS) {
 
     if (pSceneRenderState_->state != cgl::StateTypes::RUNNING) {
         cgl::RaiseError(pSceneRenderState_, "The `InitSceneRenderDrawSystem` "
-            "updates data and systems only when the `SceneRenderState` is in the "
-            "`RUNNING` state. Please verify the flow.");
+            "updates data and systems only when the `SceneRenderState` is in "
+            "the `RUNNING` state. Please verify the flow.");
         return;
     }
 
