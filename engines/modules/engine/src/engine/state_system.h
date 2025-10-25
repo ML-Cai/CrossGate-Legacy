@@ -49,21 +49,21 @@ struct UpdateSystemParams {
     SYSTEM* pSystem;
     cgl::ECSCore* pEcs;
 
-    STATE* pCheckState; // 檢查執行結果的狀態 (通常是 pSystem 影響的狀態)
+    STATE* pCheckState;
 
-    StateTransitionHint<STATE_2> onSuccess; // 成功時要轉換到的目標狀態
+    StateTransitionHint<STATE_2> onSuccess;
 
-    STATE_3* pOnErrorState; // 發生錯誤時，錯誤信息要傳遞給的目標狀態
+    STATE_3* pOnErrorState;
 };
 
 // -------------------------------------------------------------
 template <typename SYSTEM_T, typename ECS_T, typename S1, typename S2, typename S3>
 UpdateSystemParams(
-    SYSTEM_T*,                             // pSystem
-    ECS_T*,                                // pEcs (通常是 cgl::ECSCore*)
-    S1*,                                   // pCheckState
-    cgl::StateTransitionHint<S2>,          // onSuccess (整體作為一個參數)
-    S3* // pOnErrorState
+    SYSTEM_T*,
+    ECS_T*,
+    S1*,
+    cgl::StateTransitionHint<S2>,
+    S3*
 ) -> UpdateSystemParams<SYSTEM_T, S1, S2, S3>;
 
 // -------------------------------------------------------------
