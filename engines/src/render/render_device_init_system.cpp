@@ -10,7 +10,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include "cgl/trace/logger.h"
-#include "cgl/render/device.h"
+#include "cgl/graphics/device.h"
 #include "engine/ecs.h"
 #include "engine/error_system.h"
 #include "engine/engine_components.h"

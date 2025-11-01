@@ -6,7 +6,7 @@
 //   All rights reserved.
 //------------------------------------------------------------------------------
 
-#include "cgl/render/device.h"
+#include "cgl/graphics/device.h"
 #include "cgl/trace/logger.h"
 
 #include "vulkan/device.h"

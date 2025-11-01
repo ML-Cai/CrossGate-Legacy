@@ -10,7 +10,7 @@
 
 #include <vulkan/vulkan_core.h>
 #include <vector>
-#include "cgl/render/command_buffer_list.h"
+#include "cgl/graphics/command_buffer_list.h"
 
 namespace cgl {
 namespace vk {

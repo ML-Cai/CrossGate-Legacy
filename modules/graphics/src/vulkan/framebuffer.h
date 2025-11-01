@@ -9,7 +9,7 @@
 #pragma once
 
 #include <vulkan/vulkan_core.h>
-#include "cgl/render/framebuffer.h"
+#include "cgl/graphics/framebuffer.h"
 
 namespace cgl {
 namespace vk {

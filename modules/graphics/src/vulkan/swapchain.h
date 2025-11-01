@@ -12,7 +12,7 @@
 #include <unordered_map>
 #include <memory>
 #include <vector>
-#include "cgl/render/swapchain.h"
+#include "cgl/graphics/swapchain.h"
 
 namespace cgl {
 namespace vk {

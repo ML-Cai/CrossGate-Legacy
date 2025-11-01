@@ -9,7 +9,7 @@
 #pragma once
 
 #include <vulkan/vulkan_core.h>
-#include "cgl/render/render_pass.h"
+#include "cgl/graphics/render_pass.h"
 
 
 namespace cgl {

@@ -11,7 +11,7 @@
 #include <vulkan/vulkan_core.h>
 #include <memory>
 #include <vector>
-#include "cgl/render/framebuffer.h"
+#include "cgl/graphics/framebuffer.h"
 #include "vulkan/render_pass.h"
 
 namespace cgl {
