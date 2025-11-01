@@ -22,9 +22,9 @@
         } \
     } while (false);
 
-#define RETURN_FAIL_IF_FALSE(vkcondition, ...) \
+#define RETURN_FALSE_IF_ERROR(condition, ...) \
     do { \
-        if (vkcondition == false) { \
+        if (condition == false) { \
             LOGE(__VA_ARGS__); \
             return false; \
         } \

@@ -47,4 +47,5 @@ cmake --build . --config RelWithDebInfo
 
 ## Run
 
-- GraphicsDataViewer : see [bin\GraphicsDataViewer](bin/GraphicsDataViewer)
+- GraphicsDataViewer : see [tools/GraphicsDataViewer](tools/GraphicsDataViewer)
+- AnimeViewer : see [tools/AnimeViewer](tools/GraphicsDataViewer)

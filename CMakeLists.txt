@@ -43,13 +43,13 @@ endif()
 #-------------------------------------------------------------------------------
 # [build modules]
 #-------------------------------------------------------------------------------
-add_subdirectory(engines/modules/common)
-add_subdirectory(engines/modules/utils)
-add_subdirectory(engines/modules/settings)
-add_subdirectory(engines/modules/trace)
-add_subdirectory(engines/modules/assets)
-add_subdirectory(engines/modules/render)
-add_subdirectory(engines/modules/engine)
+add_subdirectory(modules/common)
+add_subdirectory(modules/utils)
+add_subdirectory(modules/settings)
+add_subdirectory(modules/trace)
+add_subdirectory(modules/assets)
+add_subdirectory(modules/render)
+add_subdirectory(engines/)
 
 add_library(cgl_all INTERFACE)
 add_library(cgl::all ALIAS cgl_all)
