@@ -9,7 +9,7 @@
 #include "assert.h"
 #include <memory>
 #include "cgl/trace/logger.h"
-#include "cgl/render/queue.h"
+#include "cgl/graphics/queue.h"
 #include "render/render_components.h"
 #include "scene/init_scene/init_scene_systems.h"
 #include "engine/ecs.h"

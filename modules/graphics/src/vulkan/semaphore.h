@@ -9,30 +9,26 @@
 #pragma once
 
 #include <vulkan/vulkan_core.h>
-#include "cgl/render/fence.h"
+#include "cgl/graphics/semaphore.h"
 
 namespace cgl {
 namespace vk {
 
-class Fence : public cgl::IFence {
+class Semaphore : public cgl::ISemaphore {
  public:
-    explicit Fence(VkDevice device);
+    explicit Semaphore(VkDevice device);
 
-    virtual ~Fence();
+    virtual ~Semaphore();
 
     bool prepare();
 
     void destroy();
 
-    VkFence fence() const noexcept { return fence_;}
-
-    bool wait() override;
-
-    bool reset() override;
+    VkSemaphore semaphore() const noexcept { return semaphore_;}
 
  private:
     VkDevice device_;
-    VkFence fence_;
+    VkSemaphore semaphore_;
 };
 
 }   // namespace vk

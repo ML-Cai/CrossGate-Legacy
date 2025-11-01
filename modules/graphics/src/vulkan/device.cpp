@@ -11,7 +11,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include "cgl/trace/logger.h"
-#include "cgl/render/queue.h"
+#include "cgl/graphics/queue.h"
 #include "vulkan/common.h"
 #include "vulkan/device.h"
 #include "vulkan/queue.h"

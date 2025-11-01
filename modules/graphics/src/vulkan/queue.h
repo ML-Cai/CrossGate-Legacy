@@ -9,7 +9,7 @@
 #pragma once
 
 #include <vulkan/vulkan_core.h>
-#include "cgl/render/queue.h"
+#include "cgl/graphics/queue.h"
 
 namespace cgl {
 namespace vk {

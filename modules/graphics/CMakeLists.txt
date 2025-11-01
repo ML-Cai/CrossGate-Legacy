@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(PROJECT_NAME "cgl_render")
-set(PROJECT_ALIAS "cgl::render")
+set(PROJECT_NAME "cgl_graphics")
+set(PROJECT_ALIAS "cgl::graphics")
 project(${PROJECT_NAME})
 
 #-------------------------------------------------------------------------------

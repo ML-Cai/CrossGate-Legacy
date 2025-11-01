@@ -12,12 +12,12 @@
 #include <vector>
 #include <unordered_map>
 #include "cgl/common/states.h"
-#include "cgl/render/device.h"
-#include "cgl/render/swapchain.h"
-#include "cgl/render/semaphore.h"
-#include "cgl/render/render_pass.h"
-#include "cgl/render/command_buffer_list.h"
-#include "cgl/render/fence.h"
+#include "cgl/graphics/device.h"
+#include "cgl/graphics/swapchain.h"
+#include "cgl/graphics/semaphore.h"
+#include "cgl/graphics/render_pass.h"
+#include "cgl/graphics/command_buffer_list.h"
+#include "cgl/graphics/fence.h"
 
 namespace cgl {
 namespace component {

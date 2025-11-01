@@ -13,7 +13,7 @@
 #include <memory>
 #include <vector>
 #include <filesystem>
-#include "cgl/render/device.h"
+#include "cgl/graphics/device.h"
 
 namespace cgl {
 namespace vk {
