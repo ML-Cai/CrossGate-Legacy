@@ -23,6 +23,9 @@ class Queue : public cgl::IQueue {
     ~Queue();
 
     bool submit(cgl::ICommandBuffer* pCmdBuffers,
+                cgl::IFence*         pFence) override;
+
+    bool submit(cgl::ICommandBuffer* pCmdBuffers,
                 cgl::ISemaphore*     pWaitSems,
                 cgl::ISemaphore*     pSignalSems,
                 cgl::IFence*         pFence) override;
