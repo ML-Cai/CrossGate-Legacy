@@ -44,6 +44,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE glfw cgl::settings cgl::trace cgl:
 #-------------------------------------------------------------------------------
 # [build Tests]
 #-------------------------------------------------------------------------------
-# if (CGL_WITH_TEST)
-#     add_subdirectory(tests)
-# endif()
+if (CGL_WITH_TEST)
+    add_subdirectory(tests)
+endif()

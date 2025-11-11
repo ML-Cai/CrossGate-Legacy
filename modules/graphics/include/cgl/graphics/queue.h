@@ -36,6 +36,10 @@ class IQueue {
 
     virtual bool submit(
         cgl::ICommandBuffer* pCmdBuffers,
+        cgl::IFence*         pFence) = 0;
+
+    virtual bool submit(
+        cgl::ICommandBuffer* pCmdBuffers,
         cgl::ISemaphore*     pWaitSems,
         cgl::ISemaphore*     pSignalSems,
         cgl::IFence*         pFence) = 0;

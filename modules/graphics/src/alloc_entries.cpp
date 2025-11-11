@@ -14,6 +14,8 @@
 #include "vulkan/semaphore.h"
 #include "vulkan/fence.h"
 #include "vulkan/framebuffer.h"
+#include "vulkan/buffer.h"
+#include "vulkan/staging_buffer.h"
 
 // render pass impls
 #include "vulkan/render_pass/init_scene_render_pass_impl.h"
@@ -174,6 +176,41 @@ cgl::IFramebuffer::Ptr cgl::IFramebuffer::create(
     return std::make_unique<cgl::vk::Framebuffer>(pNativeDevice->device());
 }
 
+//------------------------------------------------------------------------------
+// cgl::IBuffer
+//------------------------------------------------------------------------------
+cgl::IBuffer::Ptr cgl::IBuffer::create(
+    cgl::IDevice*       pDevice,
+    cgl::IBuffer::Types type,
+    size_t              bufferCapacity,
+    const char*         pName
+) {
+    auto pVkDevice = static_cast<cgl::vk::Device *>(pDevice);
+    auto p = std::make_unique<cgl::vk::Buffer>(type, bufferCapacity, pName);
+    if ((p != nullptr) && (p->createInternal(pVkDevice) == true)) {
+        return p;
+    }
+
+    return nullptr;
+}
+
+//------------------------------------------------------------------------------
+// cgl::IStagingBuffer
+//------------------------------------------------------------------------------
+cgl::IStagingBuffer::Ptr cgl::IStagingBuffer::create(
+    cgl::IDevice* pDevice,
+    size_t        bufferCapacity,
+    const char*   pName
+) {
+    auto pVkDevice = static_cast<cgl::vk::Device *>(pDevice);
+    auto p = std::make_unique<cgl::vk::StagingBuffer>(bufferCapacity, pName);
+    if ((p != nullptr) && (p->createInternal(pVkDevice) == true)) {
+        return p;
+    }
+
+    return nullptr;
+}
+
 // //------------------------------------------------------------------------------
 // // cgl::IGridLineRenderer
 // //------------------------------------------------------------------------------
@@ -324,29 +361,6 @@ cgl::IFramebuffer::Ptr cgl::IFramebuffer::create(
 
 //     auto p = std::make_shared<cgl::vk::ImageObjectImpl>(createInfo);
 //     if (p->prepare(pPaletteAtlas)) {
-//         return p;
-//     }
-
-//     return nullptr;
-// }
-
-
-// //------------------------------------------------------------------------------
-// // cgl::IBufferObject
-// //------------------------------------------------------------------------------
-// cgl::IBufferObject::Ptr cgl::IBufferObject::create(
-//     const cgl::IBufferObject::Types type,
-//     const size_t                    bufferSize,
-//     cgl::IDevice*                   pDevice
-// ) {
-//     cgl::IBufferObject::CreateInfo createInfo {
-//         .type       = type,
-//         .bufferSize = bufferSize,
-//         .pDevice    = pDevice
-//     };
-
-//     auto p = std::make_shared<cgl::vk::BufferObjectImpl>(createInfo);
-//     if (p->createInternal()) {
 //         return p;
 //     }
 

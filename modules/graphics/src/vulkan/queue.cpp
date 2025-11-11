@@ -28,6 +28,28 @@ Queue::~Queue() {
 
 bool Queue::submit(
     cgl::ICommandBuffer* pCmdBuffers,
+    cgl::IFence*         pFence
+) {
+    VkCommandBuffer pVkCmdBuffers[] = {
+        static_cast<cgl::vk::CommandBuffer*>(pCmdBuffers)->commandBuffer()
+    };
+
+    VkSubmitInfo submitInfo {
+        .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount   = 1,
+        .pCommandBuffers      = pVkCmdBuffers,
+    };
+
+    auto pVkFence = static_cast<cgl::vk::Fence *>(pFence);
+    RETURN_FAIL_IF_ANY_VK_FAILED(
+        vkQueueSubmit(queue_, 1, &submitInfo, pVkFence->fence()),
+        "Failed to submit data to the queue");
+
+    return true;
+}
+
+bool Queue::submit(
+    cgl::ICommandBuffer* pCmdBuffers,
     cgl::ISemaphore*     pWaitSems,
     cgl::ISemaphore*     pSignalSems,
     cgl::IFence*         pFence

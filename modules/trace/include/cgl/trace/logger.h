@@ -31,13 +31,13 @@ void SetLogLevel(const cgl::LogLevel level);
 
 bool IsLogging(const cgl::LogLevel level);
 
-#define CGL_LOG_HELPER(level, tag, ...)                                 \
-    do {                                                                \
-        if(cgl::IsLogging(cgl::LogLevel::level)) {                      \
-            std::ostringstream ss;                                      \
-            ss << CGL_LOG_PREFIX << tag << __VA_ARGS__ << std::endl;    \
-            std::cerr << ss.str();                                      \
-        }                                                               \
+#define CGL_LOG_HELPER(level, tag, ...)                                     \
+    do {                                                                    \
+        if(cgl::IsLogging(cgl::LogLevel::level)) {                          \
+            std::ostringstream _log_oss;                                    \
+            _log_oss << CGL_LOG_PREFIX << tag << __VA_ARGS__ << std::endl;  \
+            std::cerr << _log_oss.str();                                    \
+        }                                                                   \
     } while(false)
 
 #define CGL_LOG_PREFIX "CGL:"
