@@ -11,18 +11,21 @@
 #include <memory>
 
 namespace cgl {
+namespace graphics {
 
 class IDevice;
 
 class ISemaphore {
  public:
-    using Ptr = std::unique_ptr<cgl::ISemaphore>;
+    using Ptr = std::unique_ptr<cgl::graphics::ISemaphore>;
 
-    static cgl::ISemaphore::Ptr create(cgl::IDevice* pDevice);
+    static cgl::graphics::ISemaphore::Ptr create(
+        cgl::graphics::IDevice* pDevice);
 
     explicit ISemaphore() = default;
 
     virtual ~ISemaphore() = default;
 };
 
+}   // namespace graphics
 }   // namespace cgl

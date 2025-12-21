@@ -15,7 +15,7 @@
 #include "vulkan/common.h"
 
 
-using cgl::vk::Swapchain;
+using cgl::graphics::vulkan::Swapchain;
 
 // -----------------------------------------------------------------------------
 namespace {
@@ -160,13 +160,13 @@ bool VerifySwapPresentMode(
 }   // namespace
 
 // -----------------------------------------------------------------------------
-// cgl::vk::Swapchain
+// cgl::graphics::vulkan::Swapchain
 // -----------------------------------------------------------------------------
-Swapchain::Swapchain(cgl::IDevice* pDevice,
+Swapchain::Swapchain(cgl::graphics::IDevice* pDevice,
                      void* pWindowNativeHandle)
     : swapChain_(VK_NULL_HANDLE),
       curImageIndex_(0) {
-    pNativeDevice_ = reinterpret_cast<cgl::vk::Device *>(pDevice);
+    pNativeDevice_ = reinterpret_cast<cgl::graphics::vulkan::Device *>(pDevice);
 }
 
 Swapchain::~Swapchain() {
@@ -329,8 +329,8 @@ bool Swapchain::createSwapChainImageViews() {
 }
 
 bool Swapchain::acquireNextImageIndex(
-    cgl::ISemaphore* pSemaphore,
-    uint32_t*        pImageIndex
+    cgl::graphics::ISemaphore* pSemaphore,
+    uint32_t*                  pImageIndex
 ) {
     // check input
     if (pSemaphore == nullptr) {
@@ -338,7 +338,7 @@ bool Swapchain::acquireNextImageIndex(
         return false;
     }
 
-    auto pVkSemaphore = static_cast<cgl::vk::Semaphore *>(pSemaphore);
+    auto pVkSemaphore = static_cast<cgl::graphics::vulkan::Semaphore *>(pSemaphore);
     VkResult result = vkAcquireNextImageKHR(
                         pNativeDevice_->device(),
                         swapChain_,

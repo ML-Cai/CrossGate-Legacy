@@ -12,9 +12,10 @@
 #include "cgl/graphics/semaphore.h"
 
 namespace cgl {
-namespace vk {
+namespace graphics {
+namespace vulkan {
 
-class Semaphore : public cgl::ISemaphore {
+class Semaphore : public cgl::graphics::ISemaphore {
  public:
     explicit Semaphore(VkDevice device);
 
@@ -31,5 +32,6 @@ class Semaphore : public cgl::ISemaphore {
     VkSemaphore semaphore_;
 };
 
-}   // namespace vk
+}   // namespace vulkan
+}   // namespace graphics
 }   // namespace cgl

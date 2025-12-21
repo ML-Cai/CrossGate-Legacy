@@ -35,7 +35,7 @@ bool cgl::InitSceneRenderInitSystem::initEssentialRenderObjects(
     }
 
     // create command buffer
-    auto pCmdBufferList = cgl::ICommandBufferList::create(
+    auto pCmdBufferList = cgl::graphics::ICommandBufferList::create(
                             pDevice,
                             pSwapchain->imageCount());
     if (pCmdBufferList == nullptr) {
@@ -43,15 +43,15 @@ bool cgl::InitSceneRenderInitSystem::initEssentialRenderObjects(
     }
 
     // create render pass
-    auto pRenderpass = cgl::IRenderPass::create(
-                        cgl::IRenderPass::Types::InitScene,
+    auto pRenderpass = cgl::graphics::IRenderPass::create(
+                        cgl::graphics::IRenderPass::Types::InitScene,
                         pDevice,
                         pSwapchain);
     if (pRenderpass == nullptr) {
         return false;
     }
 
-    std::unordered_map<std::string, cgl::IRenderPass::Ptr> renderPasses;
+    std::unordered_map<std::string, cgl::graphics::IRenderPass::Ptr> renderPasses;
     renderPasses[cgl::INIT_SCENE_BASIC_RENDER_PASS] = std::move(pRenderpass);
 
     // create sync objects
@@ -63,9 +63,9 @@ bool cgl::InitSceneRenderInitSystem::initEssentialRenderObjects(
              << "] frame.");
 
         syncObjects.emplace_back(i,
-                                 std::move(cgl::ISemaphore::create(pDevice)),
-                                 std::move(cgl::ISemaphore::create(pDevice)),
-                                 std::move(cgl::IFence::create(pDevice)));
+                                 std::move(cgl::graphics::ISemaphore::create(pDevice)),
+                                 std::move(cgl::graphics::ISemaphore::create(pDevice)),
+                                 std::move(cgl::graphics::IFence::create(pDevice)));
         if ((syncObjects.back().pImageAvailableSemaphore == nullptr) ||
             (syncObjects.back().pRenderFinishSemaphore == nullptr) ||
             (syncObjects.back().pFence == nullptr)) {

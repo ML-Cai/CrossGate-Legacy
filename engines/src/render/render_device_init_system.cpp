@@ -36,15 +36,16 @@ void cgl::RenderDeviceInitSystem::update(cgl::ECSCore* pECS) {
     }
 
     // create render device
-    auto pDevice = cgl::IDevice::create(pWinHandle->nativeHandle, true);
+    auto pDevice = cgl::graphics::IDevice::create(pWinHandle->nativeHandle, true);
     if (pDevice == nullptr) {
         cgl::RaiseError(pState, "Failed to primary render device.");
         return;
     }
 
     // create swapchain
-    auto pSwapchain = cgl::ISwapchain::create(pDevice.get(),
-                                              pWinHandle->nativeHandle);
+    auto pSwapchain = cgl::graphics::ISwapchain::create(
+                            pDevice.get(),
+                            pWinHandle->nativeHandle);
     if (pSwapchain == nullptr) {
         cgl::RaiseError(pState, "Failed to primary swapchain.");
         return;

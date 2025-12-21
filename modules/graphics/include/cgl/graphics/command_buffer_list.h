@@ -11,13 +11,14 @@
 #include <memory>
 
 namespace cgl {
+namespace graphics {
 
 class IDevice;
 class ICommandBufferList;
 
 class ICommandBuffer {
  public:
-    using Ptr = std::unique_ptr<cgl::ICommandBuffer>;
+    using Ptr = std::unique_ptr<cgl::graphics::ICommandBuffer>;
 
     explicit ICommandBuffer() = default;
 
@@ -35,16 +36,17 @@ class ICommandBuffer {
 
 class ICommandBufferList {
  public:
-    using Ptr = std::unique_ptr<cgl::ICommandBufferList>;
+    using Ptr = std::unique_ptr<cgl::graphics::ICommandBufferList>;
 
-    static cgl::ICommandBufferList::Ptr create(cgl::IDevice* pDevice,
-                                               uint32_t      bufferCount);
+    static cgl::graphics::ICommandBufferList::Ptr create(
+                cgl::graphics::IDevice* pDevice,
+                uint32_t                bufferCount);
 
     explicit ICommandBufferList() = default;
 
     virtual ~ICommandBufferList() = default;
 
-    virtual cgl::ICommandBuffer* commandBuffer(uint32_t idx) = 0;
+    virtual cgl::graphics::ICommandBuffer* commandBuffer(uint32_t idx) = 0;
 
     virtual uint32_t bufferCount() const noexcept = 0;
 
@@ -52,4 +54,5 @@ class ICommandBufferList {
     virtual bool createCommandBuffers() = 0;
 };
 
+}   // namespace graphics
 }   // namespace cgl

@@ -10,10 +10,10 @@
 #include "vulkan/semaphore.h"
 #include "vulkan/common.h"
 
-using cgl::vk::Semaphore;
+using cgl::graphics::vulkan::Semaphore;
 
 // -----------------------------------------------------------------------------
-// cgl::vk::Semaphore
+// cgl::graphics::vulkan::Semaphore
 // -----------------------------------------------------------------------------
 Semaphore::Semaphore(VkDevice device)
     : device_(device),

@@ -12,9 +12,10 @@
 #include "cgl/graphics/framebuffer.h"
 
 namespace cgl {
-namespace vk {
+namespace graphics {
+namespace vulkan {
 
-class Framebuffer : public cgl::IFramebuffer {
+class Framebuffer : public cgl::graphics::IFramebuffer {
  public:
     explicit Framebuffer(VkDevice device)
         : device_(device), buffer_(VK_NULL_HANDLE) {}
@@ -39,5 +40,6 @@ class Framebuffer : public cgl::IFramebuffer {
     VkFramebuffer buffer_;
 };
 
-}   // namespace vk
+}   // namespace vulkan
+}   // namespace graphics
 }   // namespace cgl

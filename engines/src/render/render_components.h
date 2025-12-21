@@ -27,22 +27,22 @@ struct RenderDeviceState {
     cgl::StateTypes state;
     std::string lastError;
 
-    cgl::IDevice::Ptr pDevice;          // primary device
-    cgl::ISwapchain::Ptr pSwapchain;    // primary swapchain
+    cgl::graphics::IDevice::Ptr pDevice;          // primary device
+    cgl::graphics::ISwapchain::Ptr pSwapchain;    // primary swapchain
 };
 
 // -----------------------------------------------------------------------------
 struct PrimarySceneRenderFrame {
-    cgl::ICommandBufferList::Ptr pCmdBufferList;
-    std::unordered_map<std::string, cgl::IRenderPass::Ptr> renderPasses;
+    cgl::graphics::ICommandBufferList::Ptr pCmdBufferList;
+    std::unordered_map<std::string, cgl::graphics::IRenderPass::Ptr> renderPasses;
 };
 
 // -----------------------------------------------------------------------------
 struct RenderSyncObjects {
     uint32_t index;
-    cgl::ISemaphore::Ptr pImageAvailableSemaphore;
-    cgl::ISemaphore::Ptr pRenderFinishSemaphore;
-    cgl::IFence::Ptr pFence;
+    cgl::graphics::ISemaphore::Ptr pImageAvailableSemaphore;
+    cgl::graphics::ISemaphore::Ptr pRenderFinishSemaphore;
+    cgl::graphics::IFence::Ptr pFence;
 };
 
 // -----------------------------------------------------------------------------

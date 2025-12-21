@@ -16,7 +16,7 @@
 #include "vulkan/device.h"
 #include "vulkan/queue.h"
 
-using cgl::vk::Device;
+using cgl::graphics::vulkan::Device;
 
 // -----------------------------------------------------------------------------
 namespace {
@@ -61,7 +61,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
     void*                                       pUserDataPtr
 ) {
     if (pUserDataPtr != nullptr) {
-        auto pDev = reinterpret_cast<cgl::vk::Device *>(pUserDataPtr);
+        auto pDev = reinterpret_cast<cgl::graphics::vulkan::Device *>(pUserDataPtr);
         pDev->onValidationLayerCallback(severityFlag, typeFlag, pCallbackData);
     }
 
@@ -86,7 +86,7 @@ void AppendDebugMessengerCreateInfo(
 bool QuaryGraphicQueueFamilies(
     VkPhysicalDevice             device,
     VkSurfaceKHR                 surface,
-    cgl::vk::QueueFamilyIndices* pIndices
+    cgl::graphics::vulkan::QueueFamilyIndices* pIndices
 ) {
     uint32_t count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(device, &count, nullptr);
@@ -190,7 +190,7 @@ bool checkDeviceSuitable(
     VkSurfaceKHR     surface,
     std::string*     pErrorMsg
 ) {
-    cgl::vk::QueueFamilyIndices indices;
+    cgl::graphics::vulkan::QueueFamilyIndices indices;
     if (!QuaryGraphicQueueFamilies(phyDevice, surface, &indices)) {
         *pErrorMsg = "Fail to query graphics queue families";
         return false;
@@ -213,7 +213,7 @@ bool checkDeviceSuitable(
 }   // namespace
 
 // -----------------------------------------------------------------------------
-// cgl::vk::Device
+// cgl::graphics::vulkan::Device
 // -----------------------------------------------------------------------------
 Device::Device(bool enableDebug)
     : enableDebug_(enableDebug),
@@ -469,13 +469,13 @@ bool Device::createLogicalDevice() {
     vkGetDeviceQueue(device_, graphicsQueueFamily(), 0, &graphicsQueue);
     vkGetDeviceQueue(device_, presentQueueFamily(), 0, &presentQueue);
 
-    graphicsQueue_ = std::make_unique<cgl::vk::Queue>(
-        cgl::IQueue::Type::GraphicsQueue,
+    graphicsQueue_ = std::make_unique<cgl::graphics::vulkan::Queue>(
+        cgl::graphics::IQueue::Type::GraphicsQueue,
         this->device(),
         graphicsQueue);
 
-    presentQueue_ = std::make_unique<cgl::vk::Queue>(
-        cgl::IQueue::Type::PresentQueue,
+    presentQueue_ = std::make_unique<cgl::graphics::vulkan::Queue>(
+        cgl::graphics::IQueue::Type::PresentQueue,
         this->device(),
         presentQueue);
 
@@ -512,54 +512,6 @@ VkResult Device::findMemoryTypeIndex(
     }
 
     return VK_ERROR_FORMAT_NOT_SUPPORTED;
-}
-
-
-bool Device::createBuffer(
-    const VkDeviceSize          size,
-    const VkBufferUsageFlags    usage,
-    const VkMemoryPropertyFlags properties,
-    VkBuffer*                   pBuffer,
-    VkDeviceMemory*             pBufferMemory
-) {
-    // Create buffer
-    VkBufferCreateInfo bufferInfo {
-        .sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size        = size,
-        .usage       = usage,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE
-    };
-
-    RETURN_FAIL_IF_ANY_VK_FAILED(
-        vkCreateBuffer(device_, &bufferInfo, nullptr, pBuffer),
-        "Failed to create buffer!");
-
-    // Get buffer memory requirements
-    VkMemoryRequirements req;
-    vkGetBufferMemoryRequirements(device_, *pBuffer, &req);
-
-    VkMemoryAllocateInfo allocInfo {
-        .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize  = req.size,
-        .memoryTypeIndex = 0
-    };
-
-    // Alocate memory for the buffer
-    RETURN_FAIL_IF_ANY_VK_FAILED(
-        findMemoryTypeIndex(req.memoryTypeBits, properties,
-                            &allocInfo.memoryTypeIndex),
-        "No valid memory type index found : memoryTypeBits:"
-        << req.memoryTypeBits);
-
-    RETURN_FAIL_IF_ANY_VK_FAILED(
-        vkAllocateMemory(device_, &allocInfo, nullptr, pBufferMemory),
-        "Failed to allocate buffer memory!");
-
-    RETURN_FAIL_IF_ANY_VK_FAILED(
-        vkBindBufferMemory(device_, *pBuffer, *pBufferMemory, 0),
-        "Failed to bind buffer memory");
-
-    return true;
 }
 
 bool Device::create2DImage(

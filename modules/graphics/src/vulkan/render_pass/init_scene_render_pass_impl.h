@@ -15,11 +15,12 @@
 #include "vulkan/render_pass.h"
 
 namespace cgl {
-namespace vk {
+namespace graphics {
+namespace vulkan {
 
 class CommandBuffer;
 
-class InitSceneRenderPass : public cgl::vk::IRenderPass {
+class InitSceneRenderPass : public cgl::graphics::vulkan::IRenderPass {
  public:
     static constexpr uint32_t COLOR_ATTACTMENT_IDX = 0;
 
@@ -29,28 +30,29 @@ class InitSceneRenderPass : public cgl::vk::IRenderPass {
 
     void destroy();
 
-    bool prepare(cgl::ISwapchain* pSwapchain);
+    bool prepare(cgl::graphics::ISwapchain* pSwapchain);
 
-    bool begin(const cgl::Viewport& viewport,
-               cgl::ICommandBuffer* pCmdBuffer,
-               cgl::IFramebuffer*   pFramebuffer) override;
+    bool begin(const cgl::Viewport&           viewport,
+               cgl::graphics::ICommandBuffer* pCmdBuffer,
+               cgl::graphics::IFramebuffer*   pFramebuffer) override;
 
     bool end() override;
 
-    cgl::IFramebuffer* acquireFramebuffer(uint32_t idx) const override {
+    cgl::graphics::IFramebuffer* acquireFramebuffer(uint32_t idx) const override {
         if (idx >= frameBufferList_.size()) return nullptr;
         return frameBufferList_[idx].get();
     }
 
  protected:
-    bool createFramebuffer(cgl::ISwapchain* pSwapchain);
+    bool createFramebuffer(cgl::graphics::ISwapchain* pSwapchain);
 
  private:
-    bool createRenderPass(cgl::ISwapchain* pSwapchain);
+    bool createRenderPass(cgl::graphics::ISwapchain* pSwapchain);
 
-    std::vector<cgl::IFramebuffer::Ptr> frameBufferList_;
-    cgl::ICommandBuffer* pLastICmdBuffer_;
+    std::vector<cgl::graphics::IFramebuffer::Ptr> frameBufferList_;
+    cgl::graphics::ICommandBuffer* pLastICmdBuffer_;
 };
 
-}   // namespace vk
+}   // namespace vulkan
+}   // namespace graphics
 }   // namespace cgl

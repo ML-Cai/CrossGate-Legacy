@@ -16,15 +16,16 @@
 #include "vulkan/framebuffer.h"
 #include "vulkan/buffer.h"
 #include "vulkan/staging_buffer.h"
+#include "vulkan/buffer_allocator.h"
 
 // render pass impls
 #include "vulkan/render_pass/init_scene_render_pass_impl.h"
 // #include "vulkan/render_pass/main_scene_render_pass_impl.h"
 
 //------------------------------------------------------------------------------
-// cgl::IDevice
+// cgl::graphics::IDevice
 //------------------------------------------------------------------------------
-cgl::IDevice::Ptr cgl::IDevice::create(
+cgl::graphics::IDevice::Ptr cgl::graphics::IDevice::create(
     void* windowNativeHandle,
     bool enableDebug
 ) {
@@ -34,7 +35,7 @@ cgl::IDevice::Ptr cgl::IDevice::create(
     }
 
     // create backend
-    auto p = std::make_unique<cgl::vk::Device>(enableDebug);
+    auto p = std::make_unique<cgl::graphics::vulkan::Device>(enableDebug);
     if (p->prepare(windowNativeHandle)) {
         return p;
     }
@@ -43,11 +44,12 @@ cgl::IDevice::Ptr cgl::IDevice::create(
 }
 
 //------------------------------------------------------------------------------
-// cgl::ISwapchain
+// cgl::graphics::ISwapchain
 //------------------------------------------------------------------------------
-cgl::ISwapchain::Ptr cgl::ISwapchain::create(
-    cgl::IDevice* pDevice,
-    void*         pWindowNativeHandle
+cgl::graphics::ISwapchain::Ptr
+cgl::graphics::ISwapchain::create(
+    cgl::graphics::IDevice* pDevice,
+    void*                   pWindowNativeHandle
 ) {
     // check input
     if ((pDevice == nullptr) || (pWindowNativeHandle == nullptr)) {
@@ -55,7 +57,8 @@ cgl::ISwapchain::Ptr cgl::ISwapchain::create(
     }
 
     // create backend
-    auto p = std::make_unique<cgl::vk::Swapchain>(pDevice, pWindowNativeHandle);
+    auto p = std::make_unique<cgl::graphics::vulkan::Swapchain>(
+                pDevice, pWindowNativeHandle);
     if (p->prepare(pWindowNativeHandle)) {
         return p;
     }
@@ -63,12 +66,12 @@ cgl::ISwapchain::Ptr cgl::ISwapchain::create(
 }
 
 //------------------------------------------------------------------------------
-// cgl::IRenderPass
+// cgl::graphics::IRenderPass
 //------------------------------------------------------------------------------
-cgl::IRenderPass::Ptr cgl::IRenderPass::create(
-    cgl::IRenderPass::Types      type,
-    cgl::IDevice*                pDevice,
-    cgl::ISwapchain*             pSwapchain
+cgl::graphics::IRenderPass::Ptr cgl::graphics::IRenderPass::create(
+    cgl::graphics::IRenderPass::Types type,
+    cgl::graphics::IDevice*           pDevice,
+    cgl::graphics::ISwapchain*        pSwapchain
 ) {
     // check input
     if ((pDevice == nullptr) || (pSwapchain == nullptr)) {
@@ -76,31 +79,27 @@ cgl::IRenderPass::Ptr cgl::IRenderPass::create(
         return nullptr;
     }
 
-    auto pNativeDevice = static_cast<cgl::vk::Device *>(pDevice);
+    auto pNativeDevice = static_cast<cgl::graphics::vulkan::Device *>(pDevice);
 
     // create backend
-    if (type == cgl::IRenderPass::Types::InitScene) {
-        auto p = std::make_unique<cgl::vk::InitSceneRenderPass>(pNativeDevice->device());
+    if (type == cgl::graphics::IRenderPass::Types::InitScene) {
+        auto p = std::make_unique<cgl::graphics::vulkan::InitSceneRenderPass>(
+                    pNativeDevice->device());
         if (p->prepare(pSwapchain)) {
             return p;
         }
     }
-    // else  if (type == cgl::IRenderPass::Types::MainScene) {
-    //     auto p = std::make_unique<cgl::vk::MainSceneRenderPass>(createInfo);
-    //     if (p->prepare()) {
-    //         return p;
-    //     }
-    // }
 
     return nullptr;
 }
 
 //------------------------------------------------------------------------------
-// cgl::ICommandBufferList
+// cgl::graphics::ICommandBufferList
 //------------------------------------------------------------------------------
-cgl::ICommandBufferList::Ptr cgl::ICommandBufferList::create(
-    cgl::IDevice* pDevice,
-    uint32_t      bufferCount
+cgl::graphics::ICommandBufferList::Ptr
+cgl::graphics::ICommandBufferList::create(
+    cgl::graphics::IDevice* pDevice,
+    uint32_t                bufferCount
 ) {
     // check input
     if ((pDevice == nullptr) || (bufferCount == 0)) {
@@ -108,7 +107,8 @@ cgl::ICommandBufferList::Ptr cgl::ICommandBufferList::create(
     }
 
     // create backend
-    auto p = std::make_unique<cgl::vk::CommandBufferList>(pDevice, bufferCount);
+    auto p = std::make_unique<cgl::graphics::vulkan::CommandBufferList>(
+                pDevice, bufferCount);
     if (p->prepare()) {
         return p;
     }
@@ -117,20 +117,20 @@ cgl::ICommandBufferList::Ptr cgl::ICommandBufferList::create(
 }
 
 //------------------------------------------------------------------------------
-// cgl::IFence
+// cgl::graphics::IFence
 //------------------------------------------------------------------------------
-cgl::IFence::Ptr cgl::IFence::create(
-    cgl::IDevice* pDevice
+cgl::graphics::IFence::Ptr cgl::graphics::IFence::create(
+    cgl::graphics::IDevice* pDevice
 ) {
     // check input
     if (pDevice == nullptr) {
         return nullptr;
     }
 
-    auto pNativeDevice = static_cast<cgl::vk::Device *>(pDevice);
+    auto pNativeDevice = static_cast<cgl::graphics::vulkan::Device *>(pDevice);
 
     // create backend
-    auto p = std::make_unique<cgl::vk::Fence>(pNativeDevice->device());
+    auto p = std::make_unique<cgl::graphics::vulkan::Fence>(pNativeDevice->device());
     if (p->prepare()) {
         return p;
     }
@@ -139,19 +139,21 @@ cgl::IFence::Ptr cgl::IFence::create(
 }
 
 //------------------------------------------------------------------------------
-// cgl::ISemaphore
+// cgl::graphics::ISemaphore
 //------------------------------------------------------------------------------
-cgl::ISemaphore::Ptr cgl::ISemaphore::create(
-    cgl::IDevice* pDevice
+cgl::graphics::ISemaphore::Ptr
+cgl::graphics::ISemaphore::create(
+    cgl::graphics::IDevice* pDevice
 ) {
     // check input
     if (pDevice == nullptr) {
         return nullptr;
     }
-    auto pNativeDevice = static_cast<cgl::vk::Device *>(pDevice);
+    auto pNativeDevice = static_cast<cgl::graphics::vulkan::Device *>(pDevice);
 
     // create backend
-    auto p = std::make_unique<cgl::vk::Semaphore>(pNativeDevice->device());
+    auto p = std::make_unique<cgl::graphics::vulkan::Semaphore>(
+                pNativeDevice->device());
     if (p->prepare()) {
         return p;
     }
@@ -160,209 +162,52 @@ cgl::ISemaphore::Ptr cgl::ISemaphore::create(
 }
 
 //------------------------------------------------------------------------------
-// cgl::IFramebuffer
+// cgl::graphics::IFramebuffer
 //------------------------------------------------------------------------------
-cgl::IFramebuffer::Ptr cgl::IFramebuffer::create(
-    cgl::IDevice*     pDevice,
-    cgl::IRenderPass* pRenderpass
+cgl::graphics::IFramebuffer::Ptr
+cgl::graphics::IFramebuffer::create(
+    cgl::graphics::IDevice*     pDevice,
+    cgl::graphics::IRenderPass* pRenderpass
 ) {
     // check input
     if ((pDevice == nullptr) || (pRenderpass == nullptr)) {
         return nullptr;
     }
-    auto pNativeDevice = static_cast<cgl::vk::Device *>(pDevice);
+    auto pNativeDevice = static_cast<cgl::graphics::vulkan::Device *>(pDevice);
 
     // create backend
-    return std::make_unique<cgl::vk::Framebuffer>(pNativeDevice->device());
+    return std::make_unique<cgl::graphics::vulkan::Framebuffer>(
+                pNativeDevice->device());
 }
 
 //------------------------------------------------------------------------------
-// cgl::IBuffer
+// cgl::graphics::IStagingBuffer
 //------------------------------------------------------------------------------
-cgl::IBuffer::Ptr cgl::IBuffer::create(
-    cgl::IDevice*       pDevice,
-    cgl::IBuffer::Types type,
-    size_t              bufferCapacity,
-    const char*         pName
+cgl::graphics::IStagingBuffer::Ptr
+cgl::graphics::IStagingBuffer::create(
+    cgl::graphics::IDevice* pDevice,
+    size_t                  bufferCapacity,
+    const char*             pName
 ) {
-    auto pVkDevice = static_cast<cgl::vk::Device *>(pDevice);
-    auto p = std::make_unique<cgl::vk::Buffer>(type, bufferCapacity, pName);
-    if ((p != nullptr) && (p->createInternal(pVkDevice) == true)) {
+    auto pVkDevice = static_cast<cgl::graphics::vulkan::Device *>(pDevice);
+    auto p = std::make_unique<cgl::graphics::vulkan::StagingBuffer>(
+                bufferCapacity, pName);
+    if ((p != nullptr) && (p->create(pVkDevice) == true)) {
         return p;
     }
 
     return nullptr;
 }
 
-//------------------------------------------------------------------------------
-// cgl::IStagingBuffer
-//------------------------------------------------------------------------------
-cgl::IStagingBuffer::Ptr cgl::IStagingBuffer::create(
-    cgl::IDevice* pDevice,
-    size_t        bufferCapacity,
-    const char*   pName
+// -----------------------------------------------------------------------------
+// cgl::IBufferAllocator::create
+// -----------------------------------------------------------------------------
+cgl::graphics::IBufferAllocator::Ptr cgl::graphics::IBufferAllocator::create(
+    cgl::graphics::IBuffer::Types bufferType,
+    cgl::graphics::IDevice*       pDevice,
+    size_t                        poolSize
 ) {
-    auto pVkDevice = static_cast<cgl::vk::Device *>(pDevice);
-    auto p = std::make_unique<cgl::vk::StagingBuffer>(bufferCapacity, pName);
-    if ((p != nullptr) && (p->createInternal(pVkDevice) == true)) {
-        return p;
-    }
-
-    return nullptr;
+    auto pVkDevice = static_cast<cgl::graphics::vulkan::Device *>(pDevice);
+    return cgl::graphics::vulkan::BufferAllocator::create(
+                bufferType, pVkDevice, poolSize);
 }
-
-// //------------------------------------------------------------------------------
-// // cgl::IGridLineRenderer
-// //------------------------------------------------------------------------------
-// cgl::IGridLineRenderer::Ptr cgl::IGridLineRenderer::create(
-//     cgl::IDevice*     pDevice,
-//     cgl::IRenderPass* pRenderPass
-// ) {
-//     // check input
-//     if ((pDevice == nullptr) || (pRenderPass == nullptr)) {
-//         return nullptr;
-//     }
-
-//     // create backend
-//     cgl::IGridLineRenderer::CreateInfo createInfo {
-//         .pDevice     = pDevice,
-//         .pRenderPass = pRenderPass,
-//     };
-
-//     auto p = cgl::CreateGridLineRendererImpl(createInfo);
-//     if ((p != nullptr) && (p->init() == true) && (p->initBackend() == true)) {
-//         return p;
-//     }
-
-//     return nullptr;
-// }
-
-// //------------------------------------------------------------------------------
-// // cgl::IMapRenderer
-// //------------------------------------------------------------------------------
-// cgl::IMapRenderer::Ptr cgl::IMapRenderer::create(
-//     cgl::IDevice*     pDevice,
-//     cgl::IRenderPass* pRenderPass
-// ) {
-//     // check input
-//     if ((pDevice == nullptr) || (pRenderPass == nullptr)) {
-//         return nullptr;
-//     }
-
-//     // create backend
-//     cgl::IMapRenderer::CreateInfo createInfo {
-//         .pDevice     = pDevice,
-//         .pRenderPass = pRenderPass,
-//     };
-
-//     auto p = cgl::CreateMapRendererImpl(createInfo);
-//     if ((p != nullptr) && (p->init() == true) && (p->initBackend() == true)) {
-//         return p;
-//     }
-
-//     return nullptr;
-// }
-
-// //------------------------------------------------------------------------------
-// // cgl::IFlatImageRenderer
-// //------------------------------------------------------------------------------
-// cgl::IFlatImageRenderer::Ptr cgl::IFlatImageRenderer::create(
-//     cgl::IDevice*        pDevice,
-//     cgl::IRenderPass*    pRenderPass,
-//     cgl::ImageResourceID imgResourceId
-// ) {
-//     // check input
-//     if ((pDevice == nullptr) || (pRenderPass == nullptr)) {
-//         return nullptr;
-//     }
-
-//     // create backend
-//     cgl::IFlatImageRenderer::CreateInfo createInfo {
-//         .pDevice       = pDevice,
-//         .pRenderPass   = pRenderPass,
-//         .imgResourceId = imgResourceId
-//     };
-
-//     auto p = cgl::CreateFlatImageRendererImpl(createInfo);
-//     if ((p != nullptr) && (p->init() == true) && (p->initBackend() == true)) {
-//         return p;
-//     }
-
-//     return nullptr;
-// }
-
-// //------------------------------------------------------------------------------
-// // cgl::ITextureObject
-// //------------------------------------------------------------------------------
-// cgl::ITextureObject::Ptr cgl::ITextureObject::create(
-//     cgl::IDevice*            pDevice,
-//     cgl::IFileImageResource* pFileImgRes
-// ) {
-//     // check input
-//     if ((pDevice == nullptr) || (pFileImgRes == nullptr)) {
-//         return nullptr;
-//     }
-
-//     // create backend
-//     cgl::ITextureObject::CreateInfo createInfo {
-//         .type        = cgl::ITextureObject::Types::Flat2DImage,
-//         .pDevice     = pDevice,
-//         .pFileImgRes = pFileImgRes,
-//     };
-
-//     auto p = std::make_shared<cgl::vk::ImageObjectImpl>(createInfo);
-//     if (p->prepare(pFileImgRes)) {
-//         return p;
-//     }
-
-//     return nullptr;
-// }
-
-// cgl::ITextureObject::Ptr cgl::ITextureObject::create(
-//     cgl::IDevice*               pDevice,
-//     const cgl::MapTextureAtlas* pMapTextureAtlas
-// ) {
-//     // check input
-//     if ((pDevice == nullptr) || (pMapTextureAtlas == nullptr)) {
-//         return nullptr;
-//     }
-
-//     // create backend
-//     cgl::ITextureObject::CreateInfo createInfo {
-//         .type             = cgl::ITextureObject::Types::Flat2DImage,
-//         .pDevice          = pDevice,
-//         .pMapTextureAtlas = pMapTextureAtlas,
-//     };
-
-//     auto p = std::make_shared<cgl::vk::ImageObjectImpl>(createInfo);
-//     if (p->prepare(pMapTextureAtlas)) {
-//         return p;
-//     }
-
-//     return nullptr;
-// }
-
-
-// cgl::ITextureObject::Ptr cgl::ITextureObject::create(
-//     cgl::IDevice*            pDevice,
-//     const cgl::PaletteAtlas* pPaletteAtlas
-// ) {
-//     // check input
-//     if ((pDevice == nullptr) || (pPaletteAtlas == nullptr)) {
-//         return nullptr;
-//     }
-
-//     // create backend
-//     cgl::ITextureObject::CreateInfo createInfo {
-//         .type          = cgl::ITextureObject::Types::Flat2DImage,
-//         .pDevice       = pDevice,
-//         .pPaletteAtlas = pPaletteAtlas,
-//     };
-
-//     auto p = std::make_shared<cgl::vk::ImageObjectImpl>(createInfo);
-//     if (p->prepare(pPaletteAtlas)) {
-//         return p;
-//     }
-
-//     return nullptr;
-// }

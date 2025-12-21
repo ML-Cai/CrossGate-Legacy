@@ -22,12 +22,13 @@ template<typename T_JOB, typename T_BUFFER_1, typename T_BUFFER_2>
 bool TransferBuffer(
     const T_JOB*          pJobs,
     size_t                jobCount,
-    cgl::ICommandBuffer*  pCmdBuffer
+    cgl::graphics::ICommandBuffer*  pCmdBuffer
 ) {
     if ((pJobs == nullptr) || (pCmdBuffer == nullptr)) {
         return false;
     }
-    auto pVkCmdBuffer = static_cast<cgl::vk::CommandBuffer*>(pCmdBuffer);
+    auto pVkCmdBuffer = static_cast<cgl::graphics::vulkan::CommandBuffer*>(
+                            pCmdBuffer);
 
     for (size_t i = 0 ; i < jobCount ; i++) {
         VkBufferCopy copyRegion {
@@ -39,7 +40,8 @@ bool TransferBuffer(
         auto pVkSrcBuffer = static_cast<T_BUFFER_1*>(pJobs[i].srcBuffer);
         auto pVkDstBuffer = static_cast<T_BUFFER_2*>(pJobs[i].dstBuffer);
 
-        LOGD("Copy buffer " << pVkSrcBuffer->buffer() << " to " << pVkDstBuffer->buffer()
+        LOGD("Copy buffer (`" << pVkSrcBuffer->name() << "`) "
+             << pVkSrcBuffer->buffer() << " to " << pVkDstBuffer->buffer()
              << " , region [srcOffset: " << copyRegion.srcOffset
              << ", dstOffset: " << copyRegion.dstOffset
              << ", size: " << copyRegion.size
@@ -58,30 +60,30 @@ bool TransferBuffer(
 }   // namespace
 
 // -----------------------------------------------------------------------------
-bool cgl::TransferBuffer(
-    const cgl::BufferUploadJob* pJobs,
-    size_t                jobCount,
-    cgl::ICommandBuffer*  pCmdBuffer
+bool cgl::graphics::TransferBuffer(
+    const cgl::graphics::BufferUploadJob* pJobs,
+    size_t                                jobCount,
+    cgl::graphics::ICommandBuffer*        pCmdBuffer
 ) {
     return ::TransferBuffer<
-                cgl::BufferUploadJob,
-                cgl::vk::StagingBuffer,
-                cgl::vk::Buffer>(
+                cgl::graphics::BufferUploadJob,
+                cgl::graphics::vulkan::StagingBuffer,
+                cgl::graphics::vulkan::Buffer>(
                     pJobs,
                     jobCount,
                     pCmdBuffer);
 }
 
 // -----------------------------------------------------------------------------
-bool cgl::TransferBuffer(
-    const cgl::BufferReadbackJob* pJobs,
-    size_t                  jobCount,
-    cgl::ICommandBuffer*    pCmdBuffer
+bool cgl::graphics::TransferBuffer(
+    const cgl::graphics::BufferReadbackJob* pJobs,
+    size_t                                  jobCount,
+    cgl::graphics::ICommandBuffer*          pCmdBuffer
 ) {
     return ::TransferBuffer<
-                cgl::BufferReadbackJob,
-                cgl::vk::Buffer,
-                cgl::vk::StagingBuffer>(
+                cgl::graphics::BufferReadbackJob,
+                cgl::graphics::vulkan::Buffer,
+                cgl::graphics::vulkan::StagingBuffer>(
                     pJobs,
                     jobCount,
                     pCmdBuffer);

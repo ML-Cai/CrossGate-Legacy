@@ -12,9 +12,10 @@
 #include "cgl/graphics/fence.h"
 
 namespace cgl {
-namespace vk {
+namespace graphics {
+namespace vulkan {
 
-class Fence : public cgl::IFence {
+class Fence : public cgl::graphics::IFence {
  public:
     explicit Fence(VkDevice device);
 
@@ -35,5 +36,6 @@ class Fence : public cgl::IFence {
     VkFence fence_;
 };
 
-}   // namespace vk
+}   // namespace vulkan
+}   // namespace graphics
 }   // namespace cgl

@@ -10,10 +10,10 @@
 #include "vulkan/fence.h"
 #include "vulkan/common.h"
 
-using cgl::vk::Fence;
+using cgl::graphics::vulkan::Fence;
 
 // -----------------------------------------------------------------------------
-// cgl::vk::Fence
+// cgl::graphics::vulkan::Fence
 // -----------------------------------------------------------------------------
 Fence::Fence(VkDevice device)
     : fence_(VK_NULL_HANDLE) {

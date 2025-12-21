@@ -11,14 +11,15 @@
 #include <memory>
 
 namespace cgl {
+namespace graphics {
 
 class IDevice;
 
 class IFence {
  public:
-    using Ptr = std::unique_ptr<cgl::IFence>;
+    using Ptr = std::unique_ptr<cgl::graphics::IFence>;
 
-    static cgl::IFence::Ptr create(cgl::IDevice* pDevice);
+    static cgl::graphics::IFence::Ptr create(cgl::graphics::IDevice* pDevice);
 
     explicit IFence() = default;
 
@@ -30,4 +31,5 @@ class IFence {
 
 };
 
+}   // namespace graphics
 }   // namespace cgl

@@ -14,12 +14,12 @@
 #include "vulkan/command_buffer_list.h"
 #include "vulkan/common.h"
 
-using cgl::vk::Queue;
+using cgl::graphics::vulkan::Queue;
 
 // -----------------------------------------------------------------------------
-// cgl::vk::Queue
+// cgl::graphics::vulkan::Queue
 // -----------------------------------------------------------------------------
-Queue::Queue(cgl::IQueue::Type type, VkDevice device, VkQueue queue)
+Queue::Queue(cgl::graphics::IQueue::Type type, VkDevice device, VkQueue queue)
     : queueType_(type), device_(device), queue_(queue) {
 }
 
@@ -27,11 +27,12 @@ Queue::~Queue() {
 }
 
 bool Queue::submit(
-    cgl::ICommandBuffer* pCmdBuffers,
-    cgl::IFence*         pFence
+    cgl::graphics::ICommandBuffer* pCmdBuffers,
+    cgl::graphics::IFence*         pFence
 ) {
     VkCommandBuffer pVkCmdBuffers[] = {
-        static_cast<cgl::vk::CommandBuffer*>(pCmdBuffers)->commandBuffer()
+        static_cast<cgl::graphics::vulkan::CommandBuffer*>(
+            pCmdBuffers)->commandBuffer()
     };
 
     VkSubmitInfo submitInfo {
@@ -40,7 +41,7 @@ bool Queue::submit(
         .pCommandBuffers      = pVkCmdBuffers,
     };
 
-    auto pVkFence = static_cast<cgl::vk::Fence *>(pFence);
+    auto pVkFence = static_cast<cgl::graphics::vulkan::Fence *>(pFence);
     RETURN_FAIL_IF_ANY_VK_FAILED(
         vkQueueSubmit(queue_, 1, &submitInfo, pVkFence->fence()),
         "Failed to submit data to the queue");
@@ -49,21 +50,22 @@ bool Queue::submit(
 }
 
 bool Queue::submit(
-    cgl::ICommandBuffer* pCmdBuffers,
-    cgl::ISemaphore*     pWaitSems,
-    cgl::ISemaphore*     pSignalSems,
-    cgl::IFence*         pFence
+    cgl::graphics::ICommandBuffer* pCmdBuffers,
+    cgl::graphics::ISemaphore*     pWaitSems,
+    cgl::graphics::ISemaphore*     pSignalSems,
+    cgl::graphics::IFence*         pFence
 ) {
     VkCommandBuffer pVkCmdBuffers[] = {
-        static_cast<cgl::vk::CommandBuffer*>(pCmdBuffers)->commandBuffer()
+        static_cast<cgl::graphics::vulkan::CommandBuffer*>(
+            pCmdBuffers)->commandBuffer()
     };
 
     VkSemaphore pVkSignalSems[] = {
-        static_cast<cgl::vk::Semaphore*>(pSignalSems)->semaphore()
+        static_cast<cgl::graphics::vulkan::Semaphore*>(pSignalSems)->semaphore()
     };
 
     VkSemaphore pVkWaitSems[] = {
-        static_cast<cgl::vk::Semaphore*>(pWaitSems)->semaphore()
+        static_cast<cgl::graphics::vulkan::Semaphore*>(pWaitSems)->semaphore()
     };
 
     VkPipelineStageFlags waitStages[] = {
@@ -81,7 +83,7 @@ bool Queue::submit(
         .pSignalSemaphores    = pVkSignalSems,
     };
 
-    auto pVkFence = static_cast<cgl::vk::Fence *>(pFence);
+    auto pVkFence = static_cast<cgl::graphics::vulkan::Fence *>(pFence);
     RETURN_FAIL_IF_ANY_VK_FAILED(
         vkQueueSubmit(queue_, 1, &submitInfo, pVkFence->fence()),
         "Failed to submit data to the queue");
@@ -90,15 +92,15 @@ bool Queue::submit(
 }
 
 bool Queue::present(
-    cgl::ISemaphore* pWaitSems,
-    cgl::ISwapchain* pSwapchain,
-    uint32_t         imageIdx
+    cgl::graphics::ISemaphore* pWaitSems,
+    cgl::graphics::ISwapchain* pSwapchain,
+    uint32_t                   imageIdx
 ) {
     VkSemaphore pVkWaitSems[] = {
-        static_cast<cgl::vk::Semaphore*>(pWaitSems)->semaphore()
+        static_cast<cgl::graphics::vulkan::Semaphore*>(pWaitSems)->semaphore()
     };
 
-    auto pVkSwapchain = static_cast<cgl::vk::Swapchain *>(pSwapchain);
+    auto pVkSwapchain = static_cast<cgl::graphics::vulkan::Swapchain *>(pSwapchain);
     VkSwapchainKHR swapChains[] = {pVkSwapchain->swapChain()};
     VkPresentInfoKHR presentInfo {
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,

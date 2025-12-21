@@ -16,8 +16,8 @@
 #include "vulkan/common.h"
 #include "vulkan/render_pass/init_scene_render_pass_impl.h"
 
-using cgl::vk::Device;
-using cgl::vk::InitSceneRenderPass;
+using cgl::graphics::vulkan::Device;
+using cgl::graphics::vulkan::InitSceneRenderPass;
 
 // -----------------------------------------------------------------------------
 namespace {
@@ -30,7 +30,7 @@ const VkFormat DEPTH_FORMAT = VK_FORMAT_D32_SFLOAT;
 // cgl::vk::InitSceneRenderPass
 // -----------------------------------------------------------------------------
 InitSceneRenderPass::InitSceneRenderPass(VkDevice device)
-    : cgl::vk::IRenderPass(device),
+    : cgl::graphics::vulkan::IRenderPass(device),
       pLastICmdBuffer_(nullptr) {
 }
 
@@ -42,7 +42,7 @@ void InitSceneRenderPass::destroy() {
     CGL_SAFE_DESTROY_RENDER_PASS(this->device(), renderPass_);
 }
 
-bool InitSceneRenderPass::prepare(cgl::ISwapchain* pSwapchain) {
+bool InitSceneRenderPass::prepare(cgl::graphics::ISwapchain* pSwapchain) {
     LOGI("Prepare InitSceneRenderPass ...");
 
     if (pSwapchain == nullptr) {
@@ -55,10 +55,12 @@ bool InitSceneRenderPass::prepare(cgl::ISwapchain* pSwapchain) {
     return true;
 }
 
-bool InitSceneRenderPass::createRenderPass(cgl::ISwapchain* pSwapchain) {
+bool InitSceneRenderPass::createRenderPass(
+    cgl::graphics::ISwapchain* pSwapchain
+) {
     LOGD("Create InitSceneRenderPass ...");
 
-    auto pVkSwapchain = static_cast<cgl::vk::Swapchain *>(pSwapchain);
+    auto pVkSwapchain = static_cast<cgl::graphics::vulkan::Swapchain *>(pSwapchain);
 
     VkAttachmentDescription colorAttachment {
         .format         = pVkSwapchain->imageFormat(),
@@ -112,9 +114,11 @@ bool InitSceneRenderPass::createRenderPass(cgl::ISwapchain* pSwapchain) {
     return true;
 }
 
-bool InitSceneRenderPass::createFramebuffer(cgl::ISwapchain* pSwapchain) {
+bool InitSceneRenderPass::createFramebuffer(
+    cgl::graphics::ISwapchain* pSwapchain
+) {
     bool allBufferReady = false;
-    auto pVkSwapchain = static_cast<cgl::vk::Swapchain *>(pSwapchain);
+    auto pVkSwapchain = static_cast<cgl::graphics::vulkan::Swapchain *>(pSwapchain);
 
     for (uint32_t i = 0; i < pVkSwapchain->imageCount() ; i++) {
         VkImageView attachments[] = {
@@ -141,7 +145,7 @@ bool InitSceneRenderPass::createFramebuffer(cgl::ISwapchain* pSwapchain) {
             "Failed to create the framebuffer");
 
         // create cgl buffer object and assign VkFramebuffer to it
-        auto pFramebuffer = std::make_unique<cgl::vk::Framebuffer>(device());
+        auto pFramebuffer = std::make_unique<cgl::graphics::vulkan::Framebuffer>(device());
         if (pFramebuffer == nullptr) {
             LOGE("Failed to create framebuffer("
                  << framebufferInfo.width << "x" << framebufferInfo.height
@@ -149,7 +153,7 @@ bool InitSceneRenderPass::createFramebuffer(cgl::ISwapchain* pSwapchain) {
             break;
         }
 
-        auto pFramebufferImpl = reinterpret_cast<cgl::vk::Framebuffer *>(
+        auto pFramebufferImpl = reinterpret_cast<cgl::graphics::vulkan::Framebuffer *>(
                                     pFramebuffer.get());
         pFramebufferImpl->setBuffer(buffer);
         frameBufferList_.emplace_back(std::move(pFramebuffer));
@@ -160,7 +164,7 @@ bool InitSceneRenderPass::createFramebuffer(cgl::ISwapchain* pSwapchain) {
     // buffer.
     if (!allBufferReady) {
         for (auto& buf : frameBufferList_) {
-            auto pFramebufferImpl = reinterpret_cast<cgl::vk::Framebuffer *>(
+            auto pFramebufferImpl = reinterpret_cast<cgl::graphics::vulkan::Framebuffer *>(
                                     buf.get());
             vkDestroyFramebuffer(this->device(),
                                  pFramebufferImpl->buffer(),
@@ -172,9 +176,9 @@ bool InitSceneRenderPass::createFramebuffer(cgl::ISwapchain* pSwapchain) {
 }
 
 bool InitSceneRenderPass::begin(
-    const cgl::Viewport& viewport,
-    cgl::ICommandBuffer* pICmdBuffer,
-    cgl::IFramebuffer*   pIFramebuffer
+    const cgl::Viewport&           viewport,
+    cgl::graphics::ICommandBuffer* pICmdBuffer,
+    cgl::graphics::IFramebuffer*   pIFramebuffer
 ) {
     // check input
     if ((pICmdBuffer == nullptr) || (pIFramebuffer == nullptr)) {
@@ -182,7 +186,7 @@ bool InitSceneRenderPass::begin(
         return false;
     }
 
-    auto pFrameBuffer = static_cast<cgl::vk::Framebuffer*>(pIFramebuffer);
+    auto pFrameBuffer = static_cast<cgl::graphics::vulkan::Framebuffer*>(pIFramebuffer);
     VkClearValue clearValue {
         .color = {0.0f, 0.0f, 0.0f, 1.0f}
     };
@@ -199,7 +203,8 @@ bool InitSceneRenderPass::begin(
         .pClearValues    = &clearValue,
     };
 
-    auto pVkCmdBuffer = static_cast<cgl::vk::CommandBuffer*>(pICmdBuffer);
+    auto pVkCmdBuffer = static_cast<cgl::graphics::vulkan::CommandBuffer*>(
+                            pICmdBuffer);
     vkCmdBeginRenderPass(pVkCmdBuffer->commandBuffer(), &renderPassInfo,
                          VK_SUBPASS_CONTENTS_INLINE);
 
@@ -214,7 +219,8 @@ bool InitSceneRenderPass::end() {
         return false;
     }
 
-    auto pCmdBuffer = static_cast<cgl::vk::CommandBuffer*>(pLastICmdBuffer_);
+    auto pCmdBuffer = static_cast<cgl::graphics::vulkan::CommandBuffer*>(
+                        pLastICmdBuffer_);
     vkCmdEndRenderPass(pCmdBuffer->commandBuffer());
 
     return true;

@@ -13,9 +13,10 @@
 
 
 namespace cgl {
-namespace vk {
+namespace graphics {
+namespace vulkan {
 
-class IRenderPass : public cgl::IRenderPass {
+class IRenderPass : public cgl::graphics::IRenderPass {
  public:
     explicit IRenderPass(VkDevice device)
         : device_(device), renderPass_(VK_NULL_HANDLE) {}
@@ -34,5 +35,6 @@ class IRenderPass : public cgl::IRenderPass {
     VkDevice device_;
 };
 
-}   // namespace vk
+}   // namespace vulkan
+}   // namespace graphics
 }   // namespace cgl
