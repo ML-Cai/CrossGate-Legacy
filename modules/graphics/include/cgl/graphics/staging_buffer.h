@@ -11,6 +11,7 @@
 #include <memory>
 
 namespace cgl {
+namespace graphics {
 
 class IDevice;
 
@@ -20,9 +21,9 @@ class IStagingBuffer {
     using Ptr = std::unique_ptr<IStagingBuffer>;
 
     static IStagingBuffer::Ptr create(
-        cgl::IDevice*  pDevice,
-        const size_t   bufferCapacity,
-        const char*    pName = "");
+        cgl::graphics::IDevice* pDevice,
+        const size_t            bufferCapacity,
+        const char*             pName = "");
 
     IStagingBuffer() = default;
 
@@ -39,6 +40,6 @@ class IStagingBuffer {
     virtual void* data() const noexcept = 0;
 };
 
-
 // -----------------------------------------------------------------------------
+}   // namespace graphics
 }   // namespace cgl

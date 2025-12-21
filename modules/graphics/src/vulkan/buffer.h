@@ -15,36 +15,52 @@
 
 namespace cgl {
 namespace vk {
-
 class Device;
+}
+}
 
-class Buffer : public cgl::IBuffer {
+
+
+namespace cgl {
+namespace graphics {
+namespace vulkan {
+
+class Buffer : public cgl::graphics::IBuffer {
  public:
-    Buffer(cgl::IBuffer::Types type,
-           size_t              bufferCapacity,
-           const char*         pName);
+    explicit Buffer(
+        VkDevice vkDevice,
+        VkBuffer vkbuffer,
+        VkDeviceMemory vkBufferMem,
+        VkMemoryRequirements vkMemReqs,
+        cgl::graphics::IBuffer::Types bufferType,
+        size_t bufferCapacity,
+        size_t bufferOffset,
+        const std::string& name);
 
     ~Buffer();
 
-    cgl::IBuffer::Types type() const noexcept override { return type_; }
+    cgl::graphics::IBuffer::Types type() const noexcept override { return type_; }
 
     size_t capacity() const noexcept override { return bufferCapacity_; }
 
-    void destroy();
+    size_t offset() const noexcept override { return bufferOffset_; }
 
-    bool createInternal(cgl::vk::Device* pDevice);
+    std::string_view name() const noexcept override { return name_; }
 
-    VkBuffer buffer() const { return buffer_; }
+    VkBuffer buffer() const { return vkBuffer_; }
 
  private:
-    const cgl::IBuffer::Types type_;
-    const uint64_t  bufferCapacity_;
-    std::string     name_;
-    VkDevice        device_;
-    VkBuffer        buffer_;
-    VkDeviceMemory  bufferMem_;
-
+    VkDevice vkDevice_;
+    VkBuffer vkBuffer_;
+    VkDeviceMemory vkBufferMem_;
+    VkMemoryRequirements vkMemReqs_;
+    bool isRefMem_;
+    cgl::graphics::IBuffer::Types type_;
+    size_t bufferCapacity_;
+    size_t bufferOffset_;
+    std::string name_;
 };
 
-}   // namespace vk
+}   // namespace vulkan
+}   // namespace graphics
 }   // namespace cgl

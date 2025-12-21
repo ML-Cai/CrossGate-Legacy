@@ -13,14 +13,15 @@
 #include "cgl/common/results.h"
 
 namespace cgl {
+namespace graphics {
 
 class IQueue;
 
 class IDevice {
  public:
-    using Ptr = std::unique_ptr<cgl::IDevice>;
+    using Ptr = std::unique_ptr<cgl::graphics::IDevice>;
 
-    cgl::IDevice::Ptr static create(
+    cgl::graphics::IDevice::Ptr static create(
         void* windowNativeHandle,
         bool enableDebug);
 
@@ -30,11 +31,12 @@ class IDevice {
 
     virtual bool getLastError(std::string* pError = nullptr) = 0;
 
-    virtual cgl::IQueue* presentQueue() = 0;
+    virtual cgl::graphics::IQueue* presentQueue() = 0;
 
-    virtual cgl::IQueue* graphicsQueue() = 0;
+    virtual cgl::graphics::IQueue* graphicsQueue() = 0;
 
     virtual cgl::Results waitIdle() = 0;
 };
 
+}   // namespace graphics
 }   // namespace cgl

@@ -13,12 +13,13 @@
 #include "cgl/graphics/command_buffer_list.h"
 
 namespace cgl {
-namespace vk {
 
 class IDevice;
+namespace graphics {
+namespace vulkan {
 
 // -----------------------------------------------------------------------------
-class CommandBuffer : public cgl::ICommandBuffer {
+class CommandBuffer : public cgl::graphics::ICommandBuffer {
  public:
     explicit CommandBuffer(VkDevice device, VkCommandPool pool, uint32_t idx);
 
@@ -48,9 +49,10 @@ class CommandBuffer : public cgl::ICommandBuffer {
 };
 
 // -----------------------------------------------------------------------------
-class CommandBufferList : public cgl::ICommandBufferList {
+class CommandBufferList : public cgl::graphics::ICommandBufferList {
  public:
-    explicit CommandBufferList(cgl::IDevice* pDevice, uint32_t bufferCount);
+    explicit CommandBufferList(cgl::graphics::IDevice* pDevice,
+                               uint32_t bufferCount);
 
     virtual ~CommandBufferList();
 
@@ -60,7 +62,7 @@ class CommandBufferList : public cgl::ICommandBufferList {
 
     VkCommandPool commandPool() const { return cmdPool_; }
 
-    cgl::ICommandBuffer* commandBuffer(uint32_t idx) override {
+    cgl::graphics::ICommandBuffer* commandBuffer(uint32_t idx) override {
         return cmdBuffers_[idx].get();
     }
 
@@ -75,11 +77,12 @@ class CommandBufferList : public cgl::ICommandBufferList {
     VkDevice device_;
     VkCommandPool cmdPool_;
     uint32_t graphicsQueueFamily_;
-    std::vector<cgl::ICommandBuffer::Ptr> cmdBuffers_;
+    std::vector<cgl::graphics::ICommandBuffer::Ptr> cmdBuffers_;
 
     bool createCommandPool();
 };
 
 
-}   // namespace vk
+}   // namespace vulkan
+}   // namespace graphics
 }   // namespace cgl

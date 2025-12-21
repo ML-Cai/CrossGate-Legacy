@@ -12,17 +12,18 @@
 #include <memory>
 
 namespace cgl {
+namespace graphics {
 
 class IDevice;
-class IWindow;
 class ISemaphore;
 
 class ISwapchain {
  public:
-    using Ptr = std::unique_ptr<cgl::ISwapchain>;
+    using Ptr = std::unique_ptr<cgl::graphics::ISwapchain>;
 
-    static cgl::ISwapchain::Ptr create(cgl::IDevice* pDevice,
-                                       void* pWindowNativeHandle);
+    static cgl::graphics::ISwapchain::Ptr create(
+        cgl::graphics::IDevice* pDevice,
+        void* pWindowNativeHandle);
 
     explicit ISwapchain() = default;
 
@@ -33,10 +34,11 @@ class ISwapchain {
     virtual cgl::Size2u extent() const = 0;
 
     virtual bool acquireNextImageIndex(
-        cgl::ISemaphore* pSemaphore,
+        cgl::graphics::ISemaphore* pSemaphore,
         uint32_t*        pImageIndex = nullptr) = 0;
 
     virtual uint32_t acquireCurrentImageIndex() const = 0;
 };
 
+}   // namespace graphics
 }   // namespace cgl

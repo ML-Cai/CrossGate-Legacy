@@ -11,34 +11,38 @@
 #include <memory>
 
 namespace cgl {
+namespace graphics {
 
-class ICommandBuffer;
 class IBuffer;
+class ICommandBuffer;
 class IStagingBuffer;
 
 // -----------------------------------------------------------------------------
 struct BufferUploadJob {
-    cgl::IStagingBuffer* srcBuffer;
-    uint64_t             srcOffset;
-    cgl::IBuffer*        dstBuffer;
-    uint64_t             dstOffset;
-    uint64_t             size;
+    cgl::graphics::IStagingBuffer* srcBuffer;
+    uint64_t                       srcOffset;
+    cgl::graphics::IBuffer*        dstBuffer;
+    uint64_t                       dstOffset;
+    uint64_t                       size;
 };
 
 struct BufferReadbackJob {
-    cgl::IBuffer*        srcBuffer;
-    uint64_t             srcOffset;
-    cgl::IStagingBuffer* dstBuffer;
-    uint64_t             dstOffset;
-    uint64_t             size;
+    cgl::graphics::IBuffer*        srcBuffer;
+    uint64_t                       srcOffset;
+    cgl::graphics::IStagingBuffer* dstBuffer;
+    uint64_t                       dstOffset;
+    uint64_t                       size;
 };
 
-bool TransferBuffer(const cgl::BufferUploadJob* pJobs, size_t jobCount,
-                    cgl::ICommandBuffer* pCmdBuffer);
+bool TransferBuffer(const cgl::graphics::BufferUploadJob* pJobs,
+                    size_t jobCount,
+                    cgl::graphics::ICommandBuffer* pCmdBuffer);
 
-bool TransferBuffer(const cgl::BufferReadbackJob* pJobs, size_t jobCount,
-                    cgl::ICommandBuffer* pCmdBuffer);
+bool TransferBuffer(const cgl::graphics::BufferReadbackJob* pJobs,
+                    size_t jobCount,
+                    cgl::graphics::ICommandBuffer* pCmdBuffer);
 
 
 // -----------------------------------------------------------------------------
+}   // namespace graphics
 }   // namespace cgl

@@ -17,6 +17,7 @@
 #include "cgl/graphics/command_buffer_list.h"
 #include "cgl/graphics/buffer_upload_manager.h"
 #include "cgl/graphics/transfer_buffer.h"
+#include "cgl/graphics/buffer_allocator.h"
 
 
 // -----------------------------------------------------------------------------
@@ -33,15 +34,16 @@ class TransferBufferTest : public testing::Test {
         window_ = glfwCreateWindow(1, 1, "test", nullptr, nullptr);
         EXPECT_NE(window_, nullptr);
 
-        pDevice_ = cgl::IDevice::create(window_, true);
-        pFence_ = cgl::IFence::create(pDevice_.get());
-        pCmdBufferList_ = cgl::ICommandBufferList::create(pDevice_.get(), 3);
+        pDevice_ = cgl::graphics::IDevice::create(window_, true);
+        pFence_ = cgl::graphics::IFence::create(pDevice_.get());
+        pCmdBufferList_ = cgl::graphics::ICommandBufferList::create(
+                            pDevice_.get(), 3);
     }
 
     GLFWwindow *window_;
-    cgl::IDevice::Ptr pDevice_;
-    cgl::IFence::Ptr pFence_;
-    cgl::ICommandBufferList::Ptr pCmdBufferList_;
+    cgl::graphics::IDevice::Ptr pDevice_;
+    cgl::graphics::IFence::Ptr pFence_;
+    cgl::graphics::ICommandBufferList::Ptr pCmdBufferList_;
 };
 
 void GenTestData(uint8_t *pData, size_t size) {
@@ -53,10 +55,10 @@ void GenTestData(uint8_t *pData, size_t size) {
 // -----------------------------------------------------------------------------
 template<typename T_JOB>
 bool SubmitAndWait(
-    cgl::IDevice*            pDevice,
-    cgl::IFence*             pFence,
-    cgl::ICommandBufferList* pCmdBufferList,
-    const T_JOB&             job
+    cgl::graphics::IDevice*            pDevice,
+    cgl::graphics::IFence*             pFence,
+    cgl::graphics::ICommandBufferList* pCmdBufferList,
+    const T_JOB&                       job
 ) {
     if (pFence->reset() == false) {
         return false;
@@ -67,7 +69,7 @@ bool SubmitAndWait(
         return false;
     }
 
-    if (cgl::TransferBuffer(&job, 1, cmdBuffer) == false) {
+    if (cgl::graphics::TransferBuffer(&job, 1, cmdBuffer) == false) {
         return false;
     }
 
@@ -92,21 +94,20 @@ bool SubmitAndWait(
 
 // -----------------------------------------------------------------------------
 TEST_F(TransferBufferTest, TransferTest) {
-    auto pDevice = pDevice_.get();
-    auto pMgr = cgl::IBufferUploadManager::create(pDevice, 3);
-    EXPECT_NE(pMgr, nullptr);
-
     // generate rand data
     constexpr size_t DATA_SIZE = 1024 * 1024;
     static uint8_t data[DATA_SIZE];
     GenTestData(data, DATA_SIZE);
 
     // create buffer
-    auto pUploadBuffer   = cgl::IStagingBuffer::create(pDevice, DATA_SIZE);
-    auto pReadbackBuffer = cgl::IStagingBuffer::create(pDevice, DATA_SIZE);
-    auto pDevBuffer      = cgl::IBuffer::create(
-                                pDevice,
-                                cgl::IBuffer::Types::VertexBuffer, DATA_SIZE);
+    auto pDevice = pDevice_.get();
+    auto pAllocator = cgl::graphics::IBufferAllocator::create(
+                        cgl::graphics::IBuffer::Types::VertexBuffer,
+                        pDevice,
+                        DATA_SIZE);
+    auto pUploadBuffer   = cgl::graphics::IStagingBuffer::create(pDevice, DATA_SIZE);
+    auto pReadbackBuffer = cgl::graphics::IStagingBuffer::create(pDevice, DATA_SIZE);
+    auto pDevBuffer      = pAllocator->alloc(DATA_SIZE);
 
     // copy data to upload buffer
     EXPECT_EQ(pUploadBuffer->capacity(), DATA_SIZE);
@@ -115,7 +116,7 @@ TEST_F(TransferBufferTest, TransferTest) {
     // copy upload buffer to device buffer
     EXPECT_TRUE(
         SubmitAndWait(pDevice_.get(), pFence_.get(), pCmdBufferList_.get(),
-            cgl::BufferUploadJob {
+            cgl::graphics::BufferUploadJob {
                 .srcBuffer = pUploadBuffer.get(),
                 .srcOffset = 0,
                 .dstBuffer = pDevBuffer.get(),
@@ -126,7 +127,7 @@ TEST_F(TransferBufferTest, TransferTest) {
     // readback from buffer
     EXPECT_TRUE(
         SubmitAndWait(pDevice_.get(), pFence_.get(), pCmdBufferList_.get(),
-            cgl::BufferReadbackJob {
+            cgl::graphics::BufferReadbackJob {
                 .srcBuffer = pDevBuffer.get(),
                 .srcOffset = 0,
                 .dstBuffer = pReadbackBuffer.get(),
@@ -141,10 +142,6 @@ TEST_F(TransferBufferTest, TransferTest) {
 
 // -----------------------------------------------------------------------------
 TEST_F(TransferBufferTest, PartialUploadTest) {
-    auto pDevice = pDevice_.get();
-    auto pMgr = cgl::IBufferUploadManager::create(pDevice, 3);
-    EXPECT_NE(pMgr, nullptr);
-
     // generate rand data
     constexpr size_t DATA_SIZE = 1024 * 1024;
     constexpr size_t COPY_SIZE = DATA_SIZE / 2;
@@ -152,13 +149,17 @@ TEST_F(TransferBufferTest, PartialUploadTest) {
     GenTestData(data, DATA_SIZE);
 
     // create buffer
-    auto pUploadBuffer   = cgl::IStagingBuffer::create(pDevice, DATA_SIZE);
-    auto pReadbackBuffer = cgl::IStagingBuffer::create(pDevice, DATA_SIZE);
-    auto pDevBuffer      = cgl::IBuffer::create(
-                                pDevice,
-                                cgl::IBuffer::Types::VertexBuffer, DATA_SIZE);
+    auto pDevice = pDevice_.get();
+    auto pAllocator = cgl::graphics::IBufferAllocator::create(
+                        cgl::graphics::IBuffer::Types::VertexBuffer,
+                        pDevice,
+                        DATA_SIZE);
+    auto pUploadBuffer   = cgl::graphics::IStagingBuffer::create(pDevice, DATA_SIZE);
+    auto pReadbackBuffer = cgl::graphics::IStagingBuffer::create(pDevice, DATA_SIZE);
+    auto pDevBuffer      = pAllocator->alloc(DATA_SIZE);
 
     // copy data to upload buffer
+    EXPECT_NE(pDevBuffer, nullptr);
     EXPECT_EQ(pUploadBuffer->capacity(), DATA_SIZE);
     EXPECT_EQ(pUploadBuffer->update(data, DATA_SIZE, 0), true);
 
@@ -170,7 +171,7 @@ TEST_F(TransferBufferTest, PartialUploadTest) {
     //  *---*       *---*
     EXPECT_TRUE(
         SubmitAndWait(pDevice_.get(), pFence_.get(), pCmdBufferList_.get(),
-            cgl::BufferUploadJob {
+            cgl::graphics::BufferUploadJob {
                 .srcBuffer = pUploadBuffer.get(),
                 .srcOffset = 0,
                 .dstBuffer = pDevBuffer.get(),
@@ -181,7 +182,7 @@ TEST_F(TransferBufferTest, PartialUploadTest) {
     // readback from buffer
     EXPECT_TRUE(
         SubmitAndWait(pDevice_.get(), pFence_.get(), pCmdBufferList_.get(),
-            cgl::BufferReadbackJob {
+            cgl::graphics::BufferReadbackJob {
                 .srcBuffer = pDevBuffer.get(),
                 .srcOffset = 0,
                 .dstBuffer = pReadbackBuffer.get(),
@@ -204,7 +205,7 @@ TEST_F(TransferBufferTest, PartialUploadTest) {
     //  *---*       *---*
     EXPECT_TRUE(
         SubmitAndWait(pDevice_.get(), pFence_.get(), pCmdBufferList_.get(),
-            cgl::BufferUploadJob {
+            cgl::graphics::BufferUploadJob {
                 .srcBuffer = pUploadBuffer.get(),
                 .srcOffset = COPY_SIZE,
                 .dstBuffer = pDevBuffer.get(),
@@ -215,7 +216,7 @@ TEST_F(TransferBufferTest, PartialUploadTest) {
     // readback from buffer
     EXPECT_TRUE(
         SubmitAndWait(pDevice_.get(), pFence_.get(), pCmdBufferList_.get(),
-            cgl::BufferReadbackJob {
+            cgl::graphics::BufferReadbackJob {
                 .srcBuffer = pDevBuffer.get(),
                 .srcOffset = 0,
                 .dstBuffer = pReadbackBuffer.get(),

@@ -16,7 +16,8 @@
 #include "cgl/graphics/device.h"
 
 namespace cgl {
-namespace vk {
+namespace graphics {
+namespace vulkan {
 
 struct QueueFamilyIndices {
     uint32_t graphicsFamily;
@@ -31,9 +32,10 @@ struct QueueFamilyIndices {
     }
 };
 
-class Device : public cgl::IDevice  {
+
+class Device : public cgl::graphics::IDevice  {
  public:
-    using Ptr = std::unique_ptr<cgl::IDevice>;
+    using Ptr = std::unique_ptr<cgl::graphics::IDevice>;
 
     explicit Device(bool enableDebug);
 
@@ -60,6 +62,12 @@ class Device : public cgl::IDevice  {
 
     VkDevice device() const { return device_; }
 
+    VkDevice handle() const { return device_; }
+
+    VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties() const {
+        return physicalDeviceMemProperties_;
+    }
+
     uint32_t graphicsQueueFamily() const {
         return queueFamilyIndices_.graphicsFamily;
     }
@@ -68,21 +76,15 @@ class Device : public cgl::IDevice  {
         return queueFamilyIndices_.presentFamily;
     }
 
-    cgl::IQueue* presentQueue() override {
+    cgl::graphics::IQueue* presentQueue() override {
         return presentQueue_.get();
     }
 
-    cgl::IQueue* graphicsQueue() override {
+    cgl::graphics::IQueue* graphicsQueue() override {
         return graphicsQueue_.get();
     }
 
     cgl::Results waitIdle() override;
-
-    bool createBuffer(const VkDeviceSize          size,
-                      const VkBufferUsageFlags    usage,
-                      const VkMemoryPropertyFlags properties,
-                      VkBuffer*                   pBuffer,
-                      VkDeviceMemory*             pBufferMemory);
 
     bool create2DImage(const uint32_t              width,
                        const uint32_t              height,
@@ -114,10 +116,10 @@ class Device : public cgl::IDevice  {
     VkPhysicalDeviceMemoryProperties physicalDeviceMemProperties_;
     VkDevice device_;
 
-    std::unique_ptr<cgl::IQueue> graphicsQueue_;
-    std::unique_ptr<cgl::IQueue> presentQueue_;
+    std::unique_ptr<cgl::graphics::IQueue> graphicsQueue_;
+    std::unique_ptr<cgl::graphics::IQueue> presentQueue_;
 
-    cgl::vk::QueueFamilyIndices queueFamilyIndices_;
+    cgl::graphics::vulkan::QueueFamilyIndices queueFamilyIndices_;
 
     bool createInstance();
     bool setupValidationLayer();
@@ -132,5 +134,6 @@ class Device : public cgl::IDevice  {
 };
 
 
-}   // namespace vk
+}   // namespace vulkan
+}   // namespace graphics
 }   // namespace cgl

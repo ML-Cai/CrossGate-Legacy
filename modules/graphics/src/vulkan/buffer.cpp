@@ -12,66 +12,36 @@
 #include "vulkan/buffer.h"
 #include "vulkan/common.h"
 
-using cgl::vk::Buffer;
+using cgl::graphics::vulkan::Buffer;
 
 // -----------------------------------------------------------------------------
+// cgl::vk::Buffer namespace
+// -----------------------------------------------------------------------------
 Buffer::Buffer(
-    cgl::IBuffer::Types type,
-    size_t              bufferCapacity,
-    const char*         pName)
-    : type_(type),
+    VkDevice vkDevice,
+    VkBuffer vkBuffer,
+    VkDeviceMemory vkBufferMem,
+    VkMemoryRequirements vkMemReqs,
+    cgl::graphics::IBuffer::Types bufferType,
+    size_t bufferCapacity,
+    size_t bufferOffset,
+    const std::string& name)
+    : vkDevice_(vkDevice),
+      vkBuffer_(vkBuffer),
+      vkBufferMem_(vkBufferMem),
+      vkMemReqs_(vkMemReqs),
+      type_(bufferType),
       bufferCapacity_(bufferCapacity),
-      name_(pName),
-      device_(VK_NULL_HANDLE),
-      buffer_(VK_NULL_HANDLE),
-      bufferMem_(VK_NULL_HANDLE) {
+      bufferOffset_(bufferOffset),
+      name_(name) {
+    isRefMem_ = (vkBufferMem != VK_NULL_HANDLE);
 }
 
+// -----------------------------------------------------------------------------
 Buffer::~Buffer() {
-    destroy();
-}
+    CGL_SAFE_FREE_BUFFER(vkDevice_, vkBuffer_);
 
-void Buffer::destroy() {
-    CGL_SAFE_FREE_BUFFER(device_, buffer_);
-    CGL_SAFE_FREE_MEMORY(device_, bufferMem_);
-}
-
-bool Buffer::createInternal(cgl::vk::Device* pDevice) {
-    LOGD("Create buffer(" << name_ << ") with size:" << capacity());
-
-    if ((pDevice == nullptr) || (capacity() == 0)) {
-        LOGE("Invalid create args for cgl::vk::Buffer");
-        return false;
+    if (isRefMem_ == false) {
+        CGL_SAFE_FREE_MEMORY(vkDevice_, vkBufferMem_);
     }
-
-    device_ = pDevice->device();
-
-    VkBufferUsageFlags bufferUsage;
-    switch (type_) {
-        case cgl::IBuffer::Types::VertexBuffer:
-            bufferUsage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-            break;
-        case cgl::IBuffer::Types::IndexBuffer:
-            bufferUsage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-            break;
-        case cgl::IBuffer::Types::UniformBuffer:
-            bufferUsage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-            break;
-        default:
-            LOGE("Invalid buffer object type:" << static_cast<int>(type_));
-            return false;
-    }
-
-    RETURN_FALSE_IF_ERROR(
-        pDevice->createBuffer(
-            this->capacity(),
-            (bufferUsage |
-             VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-             VK_BUFFER_USAGE_TRANSFER_SRC_BIT),
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            &buffer_,
-            &bufferMem_),
-        "Failed to create staging buffer from device.");
-
-    return true;
 }

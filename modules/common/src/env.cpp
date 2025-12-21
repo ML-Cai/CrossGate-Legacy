@@ -22,7 +22,8 @@ bool cgl::env::exist(const std::string_view name) noexcept {
 
 // -----------------------------------------------------------------------------
 const uint8_t cgl::env::LogLevel() noexcept {
-    constexpr uint8_t DEFAULT_LOG_LEVEL = 2; // Info level
+    // constexpr uint8_t DEFAULT_LOG_LEVEL = 2; // Info level
+    constexpr uint8_t DEFAULT_LOG_LEVEL = 4; // Trace level
 
     static const uint8_t level = []() {
         const char* var = std::getenv(cgl::ENV_VAR_CGL_LOG_LEVEL.data());

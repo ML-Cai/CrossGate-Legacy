@@ -11,20 +11,23 @@
 #include <memory>
 
 namespace cgl {
+namespace graphics {
 
 class IDevice;
 class IRenderPass;
 
 class IFramebuffer {
  public:
-    using Ptr = std::unique_ptr<cgl::IFramebuffer>;
+    using Ptr = std::unique_ptr<cgl::graphics::IFramebuffer>;
 
-    static cgl::IFramebuffer::Ptr create(cgl::IDevice*     pDevice,
-                                         cgl::IRenderPass* pRenderpass);
+    static cgl::graphics::IFramebuffer::Ptr create(
+        cgl::graphics::IDevice*     pDevice,
+        cgl::graphics::IRenderPass* pRenderpass);
 
     explicit IFramebuffer() = default;
 
     virtual ~IFramebuffer() = default;
 };
 
+}   // namespace graphics
 }   // namespace cgl

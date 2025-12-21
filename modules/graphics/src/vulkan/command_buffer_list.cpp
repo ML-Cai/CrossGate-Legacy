@@ -12,17 +12,17 @@
 #include "vulkan/command_buffer_list.h"
 #include "vulkan/common.h"
 
-using cgl::vk::CommandBufferList;
-using cgl::vk::CommandBuffer;
+using cgl::graphics::vulkan::CommandBufferList;
+using cgl::graphics::vulkan::CommandBuffer;
 
 // -----------------------------------------------------------------------------
 // cgl::vk::CommandBufferList
 // -----------------------------------------------------------------------------
 CommandBufferList::CommandBufferList(
-    cgl::IDevice* pDevice,
-    uint32_t      bufferCount)
+    cgl::graphics::IDevice* pDevice,
+    uint32_t                bufferCount)
     : cmdPool_(VK_NULL_HANDLE) {
-    auto pNativeDevice   = reinterpret_cast<cgl::vk::Device *>(pDevice);
+    auto pNativeDevice   = reinterpret_cast<cgl::graphics::vulkan::Device *>(pDevice);
     device_              = pNativeDevice->device();
     graphicsQueueFamily_ = pNativeDevice->graphicsQueueFamily();
     cmdBuffers_.resize(bufferCount);
@@ -64,7 +64,7 @@ bool CommandBufferList::createCommandPool() {
 
 bool CommandBufferList::createCommandBuffers() {
     for (size_t i = 0 ; i < cmdBuffers_.size() ; i++) {
-        auto cmdBuffer = std::make_unique<cgl::vk::CommandBuffer>(
+        auto cmdBuffer = std::make_unique<cgl::graphics::vulkan::CommandBuffer>(
                             device_, cmdPool_, static_cast<uint32_t>(i));
 
         if (!cmdBuffer->prepare()) {

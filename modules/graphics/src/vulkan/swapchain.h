@@ -15,13 +15,14 @@
 #include "cgl/graphics/swapchain.h"
 
 namespace cgl {
-namespace vk {
+namespace graphics {
+namespace vulkan {
 
 class Device;
 
-class Swapchain : public cgl::ISwapchain {
+class Swapchain : public cgl::graphics::ISwapchain {
  public:
-    explicit Swapchain(cgl::IDevice* pDevice,
+    explicit Swapchain(cgl::graphics::IDevice* pDevice,
                        void* pWindowNativeHandle);
 
     virtual ~Swapchain();
@@ -39,8 +40,8 @@ class Swapchain : public cgl::ISwapchain {
     }
 
     bool acquireNextImageIndex(
-        cgl::ISemaphore* pSemaphore,
-        uint32_t*        pImageIndex = nullptr) override;
+        cgl::graphics::ISemaphore* pSemaphore,
+        uint32_t*                  pImageIndex = nullptr) override;
 
     uint32_t acquireCurrentImageIndex() const override;
 
@@ -59,7 +60,7 @@ class Swapchain : public cgl::ISwapchain {
     VkSwapchainKHR swapChain() const { return swapChain_; }
 
  private:
-    cgl::vk::Device* pNativeDevice_;
+    cgl::graphics::vulkan::Device* pNativeDevice_;
     uint32_t curImageIndex_;
     VkSwapchainKHR swapChain_;
     VkExtent2D extent_;
@@ -71,5 +72,6 @@ class Swapchain : public cgl::ISwapchain {
     bool createSwapChainImageViews();
 };
 
-}   // namespace vk
+}   // namespace vulkan
+}   // namespace graphics
 }   // namespace cgl

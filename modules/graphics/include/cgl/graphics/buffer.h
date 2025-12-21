@@ -9,8 +9,10 @@
 #pragma once
 
 #include <memory>
+#include <string_view>
 
 namespace cgl {
+namespace graphics {
 
 class IDevice;
 
@@ -32,21 +34,22 @@ class IBuffer {
     #undef CGL_X
     };
 
-    static IBuffer::Ptr create(
-        cgl::IDevice*       pDevice,
-        cgl::IBuffer::Types type,
-        size_t              bufferCapacity,
-        const char*         pName = "");
-
     IBuffer() = default;
 
     virtual ~IBuffer() = default;
 
-    virtual cgl::IBuffer::Types type() const noexcept = 0;
+    virtual cgl::graphics::IBuffer::Types type() const noexcept = 0;
 
     virtual size_t capacity() const noexcept = 0;
+
+    virtual size_t offset() const noexcept = 0;
+
+    virtual std::string_view name() const noexcept = 0;
 };
 
-std::string_view ToStr(const cgl::IBuffer::Types& type);
+// -----------------------------------------------------------------------------
+std::string_view ToStr(const cgl::graphics::IBuffer::Types& type);
 
+// -----------------------------------------------------------------------------
+}   // namespace graphics
 }   // namespace cgl
