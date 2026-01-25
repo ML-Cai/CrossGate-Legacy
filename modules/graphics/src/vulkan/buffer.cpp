@@ -15,7 +15,7 @@
 using cgl::graphics::vulkan::Buffer;
 
 // -----------------------------------------------------------------------------
-// cgl::vk::Buffer namespace
+// cgl::graphics::vulkan::Buffe namespace
 // -----------------------------------------------------------------------------
 Buffer::Buffer(
     VkDevice vkDevice,

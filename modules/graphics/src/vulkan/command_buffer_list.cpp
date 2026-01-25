@@ -16,7 +16,7 @@ using cgl::graphics::vulkan::CommandBufferList;
 using cgl::graphics::vulkan::CommandBuffer;
 
 // -----------------------------------------------------------------------------
-// cgl::vk::CommandBufferList
+// cgl::graphics::vulkan::CommandBufferList
 // -----------------------------------------------------------------------------
 CommandBufferList::CommandBufferList(
     cgl::graphics::IDevice* pDevice,
@@ -79,7 +79,7 @@ bool CommandBufferList::createCommandBuffers() {
 
 
 // -----------------------------------------------------------------------------
-// cgl::vk::CommandBuffer
+// cgl::graphics::vulkan::CommandBuffer
 // -----------------------------------------------------------------------------
 CommandBuffer::CommandBuffer(VkDevice device, VkCommandPool pool, uint32_t idx)
     : device_(device),

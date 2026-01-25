@@ -41,7 +41,7 @@ VkResult findMemoryTypeIndex(
 }   // namespace
 
 // -----------------------------------------------------------------------------
-// cgl::vk::Buffer namespace
+// cgl::graphics::vulkan::StagingBuffer namespace
 // -----------------------------------------------------------------------------
 StagingBuffer::StagingBuffer(size_t bufferCapacity, const char* pName)
     : bufferCapacity_(bufferCapacity),
@@ -69,7 +69,7 @@ bool StagingBuffer::createNativeBuffer(
     const VkMemoryPropertyFlags properties
 ) {
     if ((pVkDevice == nullptr) || (capacity() == 0)) {
-        LOGE("Invalid create args for cgl::vk::Buffer");
+        LOGE("Invalid create args for cgl::graphics::vulkan::StagingBuffer");
         return false;
     }
 
@@ -121,7 +121,7 @@ bool StagingBuffer::create(cgl::graphics::vulkan::Device* pVkDevice) {
     LOGD("Create staging buffer(`" << name() << "`) with size:" << capacity());
 
     if ((pVkDevice == nullptr) || (capacity() == 0)) {
-        LOGE("Invalid create args for cgl::vk::StagingBuffer");
+        LOGE("Invalid create args for cgl::graphics::vulkan::StagingBuffer");
         return false;
     }
 

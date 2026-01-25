@@ -69,9 +69,9 @@ cgl::graphics::ISwapchain::create(
 // cgl::graphics::IRenderPass
 //------------------------------------------------------------------------------
 cgl::graphics::IRenderPass::Ptr cgl::graphics::IRenderPass::create(
-    cgl::graphics::IRenderPass::Types type,
-    cgl::graphics::IDevice*           pDevice,
-    cgl::graphics::ISwapchain*        pSwapchain
+    std::string_view           renderPassKey,
+    cgl::graphics::IDevice*    pDevice,
+    cgl::graphics::ISwapchain* pSwapchain
 ) {
     // check input
     if ((pDevice == nullptr) || (pSwapchain == nullptr)) {
@@ -82,7 +82,7 @@ cgl::graphics::IRenderPass::Ptr cgl::graphics::IRenderPass::create(
     auto pNativeDevice = static_cast<cgl::graphics::vulkan::Device *>(pDevice);
 
     // create backend
-    if (type == cgl::graphics::IRenderPass::Types::InitScene) {
+    if (renderPassKey == cgl::graphics::IRenderPass::BuiltinKeys::InitScene) {
         auto p = std::make_unique<cgl::graphics::vulkan::InitSceneRenderPass>(
                     pNativeDevice->device());
         if (p->prepare(pSwapchain)) {

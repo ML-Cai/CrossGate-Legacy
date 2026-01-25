@@ -9,6 +9,7 @@
 #pragma once
 
 #include <memory>
+#include <string_view>
 #include "cgl/common/viewport.h"
 
 namespace cgl {
@@ -23,15 +24,15 @@ class IRenderPass {
  public:
     using Ptr = std::unique_ptr<cgl::graphics::IRenderPass>;
 
-    enum class Types {
-        InitScene,
-        MainScene,
+    struct BuiltinKeys {
+        static constexpr std::string_view InitScene = "InitScene";
     };
 
+
     static cgl::graphics::IRenderPass::Ptr create(
-        cgl::graphics::IRenderPass::Types type,
-        cgl::graphics::IDevice*           pDevice,
-        cgl::graphics::ISwapchain*        pSwapchain);
+        std::string_view           renderPassKey,
+        cgl::graphics::IDevice*    pDevice,
+        cgl::graphics::ISwapchain* pSwapchain);
 
     explicit IRenderPass() = default;
 
