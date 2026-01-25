@@ -44,7 +44,7 @@ bool cgl::InitSceneRenderInitSystem::initEssentialRenderObjects(
 
     // create render pass
     auto pRenderpass = cgl::graphics::IRenderPass::create(
-                        cgl::graphics::IRenderPass::Types::InitScene,
+                        cgl::graphics::IRenderPass::BuiltinKeys::InitScene,
                         pDevice,
                         pSwapchain);
     if (pRenderpass == nullptr) {

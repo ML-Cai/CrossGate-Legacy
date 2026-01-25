@@ -27,7 +27,7 @@ const VkFormat DEPTH_FORMAT = VK_FORMAT_D32_SFLOAT;
 }   // namespace
 
 // -----------------------------------------------------------------------------
-// cgl::vk::InitSceneRenderPass
+// cgl::graphics::vulkan::InitSceneRenderPass
 // -----------------------------------------------------------------------------
 InitSceneRenderPass::InitSceneRenderPass(VkDevice device)
     : cgl::graphics::vulkan::IRenderPass(device),
