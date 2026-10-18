@@ -146,6 +146,7 @@ void cgl::AssetsReaderInitSystem::initStage(cgl::ECSCore* pECS) {
     );
 
     // swtich to next stage
+    pAssetsReaderState_->state = cgl::StateTypes::INITIALIZING;
     updater_ = &AssetsReaderInitSystem::checkStage;
 }
 
@@ -167,9 +168,7 @@ void cgl::AssetsReaderInitSystem::checkStage(cgl::ECSCore* pECS) {
         return;
     }
 
-    // move all readers to the state after all ready.
-    LOGI("All assets reader initialization tasks ready");
-
+    // Move readers only after every task has completed.
     for (const auto version : CGL_VERSIONS) {
         const auto idx = static_cast<size_t>(version);
         pAssetsReaderState_->pAnimeInfoReader[version]
@@ -183,8 +182,24 @@ void cgl::AssetsReaderInitSystem::checkStage(cgl::ECSCore* pECS) {
 
         pAssetsReaderState_->pGfxInfoReader[version]
             = futures_IGraphicsInfoReader_[idx].get();
+
+        if (!pAssetsReaderState_->pAnimeInfoReader[version] ||
+            !pAssetsReaderState_->pAnimeDataReader[version] ||
+            !pAssetsReaderState_->pGfxInfoReader[version] ||
+            !pAssetsReaderState_->pGfxDataReader[version]) {
+            cgl::RaiseError(pAssetsReaderState_,
+                "Failed to initialize asset readers for ", version,
+                ". Check EngineRootPath in settings.ini.");
+            return;
+        }
     }
     pAssetsReaderState_->pPaletteReader = futures_IPaletteReader_.get();
+    if (!pAssetsReaderState_->pPaletteReader) {
+        cgl::RaiseError(pAssetsReaderState_, "Failed to create palette reader.");
+        return;
+    }
+    pAssetsReaderState_->state = cgl::StateTypes::RUNNING;
+    LOGI("All assets readers initialized successfully");
 
     // swtich to next stage
     updater_ = &AssetsReaderInitSystem::nopStage;
@@ -197,5 +212,9 @@ void cgl::AssetsReaderInitSystem::nopStage(cgl::ECSCore* pECS) {
 
 // -----------------------------------------------------------------------------
 void cgl::AssetsReaderInitSystem::update(cgl::ECSCore* pECS) {
-    (this->*updater_)(pECS);
+    try {
+        (this->*updater_)(pECS);
+    } catch (const std::exception& error) {
+        cgl::RaiseError(pAssetsReaderState_, "Asset initialization failed: ", error.what());
+    }
 }

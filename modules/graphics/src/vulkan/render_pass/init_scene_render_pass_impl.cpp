@@ -39,6 +39,7 @@ InitSceneRenderPass::~InitSceneRenderPass() {
 }
 
 void InitSceneRenderPass::destroy() {
+    frameBufferList_.clear();
     CGL_SAFE_DESTROY_RENDER_PASS(this->device(), renderPass_);
 }
 
@@ -117,7 +118,6 @@ bool InitSceneRenderPass::createRenderPass(
 bool InitSceneRenderPass::createFramebuffer(
     cgl::graphics::ISwapchain* pSwapchain
 ) {
-    bool allBufferReady = false;
     auto pVkSwapchain = static_cast<cgl::graphics::vulkan::Swapchain *>(pSwapchain);
 
     for (uint32_t i = 0; i < pVkSwapchain->imageCount() ; i++) {
@@ -137,7 +137,7 @@ bool InitSceneRenderPass::createFramebuffer(
 
         // create vulkan buffer
         VkFramebuffer buffer;
-        BREAK_IF_ANY_VK_FAILED(
+        RETURN_FAIL_IF_ANY_VK_FAILED(
             vkCreateFramebuffer(this->device(),
                                 &framebufferInfo,
                                 nullptr,
@@ -157,22 +157,9 @@ bool InitSceneRenderPass::createFramebuffer(
                                     pFramebuffer.get());
         pFramebufferImpl->setBuffer(buffer);
         frameBufferList_.emplace_back(std::move(pFramebuffer));
-        allBufferReady = true;
     }
 
-    // check if all framebuffer create successfully, or release all allocated
-    // buffer.
-    if (!allBufferReady) {
-        for (auto& buf : frameBufferList_) {
-            auto pFramebufferImpl = reinterpret_cast<cgl::graphics::vulkan::Framebuffer *>(
-                                    buf.get());
-            vkDestroyFramebuffer(this->device(),
-                                 pFramebufferImpl->buffer(),
-                                 nullptr);
-        }
-    }
-
-    return allBufferReady;
+    return frameBufferList_.size() == pVkSwapchain->imageCount();
 }
 
 bool InitSceneRenderPass::begin(

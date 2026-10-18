@@ -116,6 +116,16 @@ TEST(settings_test, LoadFileWithExtraWhitespace) {
     std::filesystem::remove(test_ini_path);
 }
 
+TEST(settings_test, RejectInvalidNumericValue) {
+    const std::string path = "test_invalid_numeric.ini";
+    {
+        std::ofstream file(path);
+        file << "[Display]\nViewportScale=invalid\n";
+    }
+    EXPECT_EQ(cgl::LoadSettings(path), nullptr);
+    std::filesystem::remove(path);
+}
+
 // -----------------------------------------------------------------------------
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

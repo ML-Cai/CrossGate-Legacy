@@ -31,7 +31,7 @@ cgl::InitSceneRenderDrawSystem::InitSceneRenderDrawSystem()
 // -----------------------------------------------------------------------------
 void cgl::InitSceneRenderDrawSystem::init(cgl::ECSCore* pECS) {
     pSceneRenderState_  = pECS->getSingleton<SceneRenderState>();
-    assert(pRenderDeviceState_ != nullptr);
+    assert(pSceneRenderState_ != nullptr);
     if (pSceneRenderState_->state != cgl::StateTypes::RUNNING) {
         cgl::RaiseError(pSceneRenderState_, "The `InitSceneRenderDrawSystem` "
             "updates data and systems only when the `RenderState` is in the "
@@ -138,7 +138,7 @@ void cgl::InitSceneRenderDrawSystem::render(cgl::ECSCore* pECS) {
     if (pDevice->graphicsQueue()->submit(
             pCmdBuffer,
             pSyncObj->pImageAvailableSemaphore.get(),
-            pSyncObj->pRenderFinishSemaphore.get(),
+            pSyncObjs_->presentSemaphores[imageIdx].get(),
             pSyncObj->pFence.get()) == false) {
         cgl::RaiseError(pSceneRenderState_,
             "Failed to submit commands to the graphics queue");
@@ -147,7 +147,7 @@ void cgl::InitSceneRenderDrawSystem::render(cgl::ECSCore* pECS) {
 
     // present
     if (pDevice->presentQueue()->present(
-            pSyncObj->pRenderFinishSemaphore.get(),
+            pSyncObjs_->presentSemaphores[imageIdx].get(),
             pSwapchain,
             imageIdx) == false) {
         cgl::RaiseError(pSceneRenderState_,
