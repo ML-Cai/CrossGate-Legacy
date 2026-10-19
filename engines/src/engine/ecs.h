@@ -16,6 +16,8 @@
 #include <unordered_set>
 #include <typeindex>
 #include <any>
+#include <vector>
+#include <tuple>
 
 namespace cgl {
 

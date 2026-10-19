@@ -16,7 +16,16 @@
 #include "scene/scene_systems.h"
 
 // -----------------------------------------------------------------------------
-cgl::SceneManagerSystem::SceneManagerSystem() {
+cgl::IScene::Ptr cgl::CreateScene(SceneTypes type) {
+    switch (type) {
+    case SceneTypes::InitScene: return CreateInitScene();
+    case SceneTypes::AnimationScene: return CreateAnimationScene();
+    default: return nullptr;
+    }
+}
+
+cgl::SceneManagerSystem::SceneManagerSystem(SceneFactory factory)
+    : factory_(std::move(factory)) {
     updater_ = &cgl::SceneManagerSystem::initStage;
 }
 
@@ -34,31 +43,30 @@ void cgl::SceneManagerSystem::initStage(cgl::ECSCore* pECS) {
 
 // -----------------------------------------------------------------------------
 void cgl::SceneManagerSystem::switchScene(cgl::ECSCore* pECS) {
-    if ((pSceneState_->scene == nullptr) ||
-        (pSceneState_->scene->sceneType() != pSceneState_->nextScene)) {
-
-        // handle exit event of previous scene.
-        if (pSceneState_->scene != nullptr) {
-            pSceneState_->scene->onExit(pECS);
-        }
-
-        // create new scene
-        cgl::IScene::Ptr scene;
-        switch (pSceneState_->nextScene) {
-        case cgl::SceneTypes::InitScene:
-            scene = cgl::CreateInitScene();
-            break;
-        default:
-            cgl::RaiseError(pSceneState_,
-                "Failed to create new scene: ", pSceneState_->nextScene);
-            return;
-        }
-
-        scene->onEnter(pECS);
-        pSceneState_->scene = std::move(scene);
-    }
-
+    // Consume first so a request made by onEnter survives until the next update.
+    const auto requested = pSceneState_->nextScene;
     pSceneState_->nextScene = cgl::SceneTypes::Unknown;
+    cgl::IScene::Ptr next;
+    try {
+        next = factory_(requested);
+    } catch (const std::exception& error) {
+        cgl::RaiseError(pSceneState_, "Scene creation failed: ", error.what());
+        return;
+    }
+    if (!next || next->sceneType() != requested) {
+        cgl::RaiseError(pSceneState_, "Unsupported scene: ", requested);
+        return;
+    }
+    // Validate the destination before exiting the current scene. Requesting the
+    // current type deliberately restarts it through the same exit/entry path.
+    if (pSceneState_->scene) {
+        pSceneState_->scene->onExit(pECS);
+        pSceneState_->scene.reset();
+        if (pSceneState_->state == cgl::StateTypes::ERROR) return;
+    }
+    pSceneState_->scene = std::move(next);
+    pSceneState_->scene->onEnter(pECS);
+
 }
 
 // -----------------------------------------------------------------------------

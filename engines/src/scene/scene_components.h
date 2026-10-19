@@ -11,11 +11,13 @@
 #include <memory>
 #include "cgl/common/scene_types.h"
 #include "cgl/common/states.h"
-#include "render/render_components.h"
+#include <string>
+#include "cgl/common/viewport.h"
 
 namespace cgl {
 
-struct ECSCore;
+class ECSCore;
+namespace graphics { class ICommandBuffer; }
 
 // -----------------------------------------------------------------------------
 class IScene {
@@ -32,6 +34,9 @@ class IScene {
 
     virtual void update(cgl::ECSCore* pECS) noexcept = 0;
 
+    // Record scene content inside the engine-owned render pass.
+    virtual void draw(ECSCore*, graphics::ICommandBuffer*, const Viewport&) noexcept {}
+
     cgl::SceneTypes sceneType() const noexcept { return sceneType_; }
 
  private:
@@ -39,6 +44,7 @@ class IScene {
 };
 
 cgl::IScene::Ptr CreateInitScene();
+cgl::IScene::Ptr CreateAnimationScene();
 
 
 namespace component {
@@ -49,14 +55,6 @@ struct SceneState {
     cgl::SceneTypes nextScene;
     cgl::IScene::Ptr scene;
     std::string lastError;
-};
-
-// -----------------------------------------------------------------------------
-struct SceneRenderState {
-    cgl::StateTypes state;
-    std::string lastError;
-    cgl::component::PrimarySceneRenderFrame frame;
-    cgl::component::PrimaryRenderSyncObjects syncObjs;
 };
 
 }   // namespace component

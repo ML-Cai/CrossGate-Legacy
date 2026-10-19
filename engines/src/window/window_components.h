@@ -22,6 +22,11 @@ struct WindowCreateInfo {
     std::string title;
 };
 
+struct KeyboardInputState {
+    bool restartSceneRequested = false;
+    bool restartKeyDown = false;
+};
+
 // -----------------------------------------------------------------------------
 struct WindowHandle {
     void* nativeHandle;     // handle of GLFWwindow

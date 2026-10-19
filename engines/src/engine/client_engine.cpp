@@ -21,6 +21,7 @@
 #include "window/window_systems.h"
 #include "render/render_components.h"
 #include "render/render_systems.h"
+#include "render/frame_render_systems.h"
 #include "scene/scene_systems.h"
 #include "scene/scene_components.h"
 
@@ -49,6 +50,7 @@ class ClientEngine : public cgl::IEngine {
     cgl::WindowInitSystem winInitSys_;
     cgl::WindowInputSystem winInputSys_;
     cgl::RenderDeviceInitSystem renderDeviceInitSys_;
+    cgl::FrameRenderDrawSystem renderDrawSys_;
     cgl::SceneManagerSystem sceneMgrSys_;
 
     // state objects
@@ -95,6 +97,8 @@ void ClientEngine::initSingletonStage(cgl::ECSCore* pEcs) {
     ecs().addSingleton<cgl::component::RenderDeviceState>(
         cgl::StateTypes::UNKNOWN, "");
     pRenderDevState_ = ecs().getSingleton<cgl::component::RenderDeviceState>();
+    ecs().addSingleton<cgl::component::FrameRenderState>(cgl::StateTypes::INITIALIZING, "");
+    ecs().addSingleton<cgl::component::KeyboardInputState>();
 
     // add window create info
     ecs().addSingleton<cgl::component::WindowCreateInfo>(
@@ -129,6 +133,15 @@ void ClientEngine::initModulesStage(cgl::ECSCore* pEcs) {
         return;
     }
 
+    cgl::FrameRenderInitSystem frameInit;
+    frameInit.update(pEcs);
+    auto* frame = pEcs->getSingleton<cgl::component::FrameRenderState>();
+    if (frame->state == cgl::StateTypes::ERROR) {
+        cgl::RaiseError(pEngineState_, frame->lastError);
+        return;
+    }
+    frame->state = cgl::StateTypes::RUNNING;
+
     // init scene manager
     if (!CGL_UPDATE_SYS_AND_TRANSIT_STATE({
             .pSystem     = &sceneMgrSys_,
@@ -157,6 +170,13 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
 
         if (anyStateError()) break;
         sceneMgrSys_.update(pEcs);
+        if (anyStateError()) break;
+        renderDrawSys_.update(pEcs);
+        auto* frame = pEcs->getSingleton<cgl::component::FrameRenderState>();
+        if (frame->state == cgl::StateTypes::ERROR) {
+            cgl::RaiseError(pEngineState_, frame->lastError);
+            break;
+        }
         ++frames;
     }
 }
@@ -167,6 +187,9 @@ void ClientEngine::closeStage(cgl::ECSCore* pEcs) {
     // destroy scene
     cgl::SceneManagerDestroySystem sceneMgrDestroySys;
     sceneMgrDestroySys.update(pEcs);
+
+    cgl::FrameRenderDestroySystem frameDestroy;
+    frameDestroy.update(pEcs);
 
     // destory render device
     cgl::RenderDeviceDestroySystem renderDeviceDestroySys;

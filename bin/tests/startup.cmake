@@ -38,6 +38,11 @@ elseif(INVALID_ANIMATION)
 elseif(NOT "${status}" STREQUAL "0" OR NOT log MATCHES "Character animation ready:")
     message(FATAL_ERROR "Client failed to initialize (${status}):\n${log}")
 endif()
+if(NOT INVALID_RESOURCES AND NOT INVALID_ANIMATION AND
+   (NOT log MATCHES "Init scene exited" OR NOT log MATCHES "Animation scene entered" OR
+    NOT log MATCHES "Animation scene exited"))
+    message(FATAL_ERROR "Client did not complete the loading/animation scene lifecycle:\n${log}")
+endif()
 if(NOT log MATCHES "Engine close" OR log MATCHES "VUID-|Validation Error")
     message(FATAL_ERROR "Unclean shutdown or Vulkan validation error:\n${log}")
 endif()
