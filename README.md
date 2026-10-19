@@ -87,11 +87,13 @@ cmake --build . --config RelWithDebInfo
   ```
 
   The path resolves against `General.EngineRootPath`; absolute paths also work.
-  Empty `FilePath` keeps the animation preview. Arrow keys pan the map, and `R`
+  Empty `FilePath` keeps the animation preview. The camera follows the character; `R`
   restarts it at the center. `Display.ViewportScale` controls the initial map scale
   (0.125 through 16). Ground, buildings and trees share an image atlas; the
   configured animation character sorts with objects by its ground anchor.
-  WASD moves the character at 100 world pixels/second, with equal diagonal speed.
+  WASD moves the character through the map at 100 world pixels/second, with equal
+  diagonal speed. The character stays centered while terrain and objects scroll
+  opposite to travel. Arrow keys do not detach or pan the camera in map mode.
   It faces the direction of travel and switches between walk and idle on key release.
   Movement stays within the map bounds and ignores object/terrain collision.
   Map mode uses all eight idle/walk directions of `Animation.SerialNum`;

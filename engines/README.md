@@ -39,9 +39,10 @@ unsupported.
 MapScene owns a MapCamera singleton and one character entity with MapPosition,
 Sprite and AnimationPlayer. Its clip comes from AnimationLibrary and uses the
 existing Animation settings. The clip retains its canvas offset relative to the
-ground anchor. Arrow keys pan the camera at 300 screen pixels/second; WASD moves
-the character at 100 world pixels/second. Both clamp to map bounds. This is free
-preview movement, without collision or pathfinding. R resets camera and character.
+ground anchor. WASD moves the character at 100 world pixels/second with
+normalized diagonals. The camera follows its ground anchor, scrolling the map
+opposite to movement while the character stays centered. Movement clamps to map
+bounds, without collision or pathfinding. R resets camera and character.
 
 The Classic 64x47 projection has file x increasing northeast and file y southeast
 (`worldX = 32 * (x+y)`, `worldY = 23.5 * (y-x)`), following the MAP ordering at
@@ -61,15 +62,18 @@ UpdateCharacterMovement before UpdateAnimations. Screen-relative WASD movement i
 normalized, then converted into fractional MAP coordinates. Facing follows actual
 displacement (including map-edge clamping); releasing keys retains facing and
 switches to idle. Turning preserves the normalized walking phase; starting/stopping
-resets the cycle. No tile flags or object geometry affect movement. The camera stays
-independent and uses arrow keys. Standalone animation preview settings are unchanged.
+resets the cycle. No tile flags or object geometry affect movement. The camera follows the
+character ground anchor every update, keeping it at the
+viewport center even at map edges; terrain and objects scroll opposite to travel.
+Arrow keys do not pan in map mode. Standalone animation preview settings are unchanged.
 All cached animation texture arrays together are limited to 256 MiB of RGBA data
 (excluding renderer/staging overhead); missing idle/walk clips or budget overflow
 fail during scene entry through the existing error/cleanup path.
 
 CharacterMovementTest covers all eight directions, normalized speed, phase continuity,
 stop/idle, map edges, invalid input and unavailable clips. The real map lifecycle
-test submits both walk and idle renderers, checks clip identity, then restarts and
+test checks centering and opposite terrain displacement for all eight directions,
+submits both walk and idle renderers, checks clip identity, then restarts and
 releases the caches.
 
 Camera/character movement changes positions without rebuilding textures. Scene
