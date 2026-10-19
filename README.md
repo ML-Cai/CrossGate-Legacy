@@ -91,7 +91,14 @@ cmake --build . --config RelWithDebInfo
   restarts it at the center. `Display.ViewportScale` controls the initial map scale
   (0.125 through 16). Ground, buildings and trees share an image atlas; the
   configured animation character sorts with objects by its ground anchor.
-  WASD moves the character for previewing occlusion (no collision/pathfinding).
+  WASD moves the character at 100 world pixels/second, with equal diagonal speed.
+  It faces the direction of travel and switches between walk and idle on key release.
+  Movement stays within the map bounds and ignores object/terrain collision.
+  Map mode uses all eight idle/walk directions of `Animation.SerialNum`;
+  `Direction` sets its initial facing and `Motion` only applies to the standalone
+  animation preview. Characters without these idle/walk clips fail at scene loading.
+  Clips load once before play and remain cached across R restarts. Large characters
+  (including default 101406) use substantially more texture memory than human 100000.
   R resets both camera and character. Classic placeholder/debug objects are skipped;
   other resource versions and CUT maps are not yet supported. Hover over ground
   to see a yellow diamond outline. It follows the camera and configured scale,

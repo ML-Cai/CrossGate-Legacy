@@ -2,6 +2,7 @@
 #include "map/map_camera.h"
 #include "map/map_render_data.h"
 #include "map/map_hover.h"
+#include "map/character_movement.h"
 #include <gtest/gtest.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -322,10 +323,24 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
         world_.getSingleton<cgl::component::KeyboardInputState>()->moveX = 1;
         manager_.update(&world_);
         world_.getSingleton<cgl::component::KeyboardInputState>()->moveX = 0;
-        world_.forEach<cgl::component::MapPosition>([&](auto, auto* position) {
+        world_.forEach<cgl::component::MapPosition, cgl::component::CharacterMovement,
+            cgl::component::Sprite>([&](auto, auto* position, auto* movement, auto* sprite) {
             EXPECT_GT(position->cell.x, 49.5);
             EXPECT_GT(position->cell.y, 49.5);
+            EXPECT_TRUE(movement->moving);
+            EXPECT_EQ(movement->facing, 2);
+            EXPECT_EQ(sprite->clip, movement->walk[2]);
+            EXPECT_EQ(sprite->clip, library_.acquire({world_.getSingleton<cgl::component::EngineState>()->settings->animation.SerialNum, 2, 1}, readers, device, pass));
         });
+        draw_.update(&world_); // Submit the walking renderer before switching clips.
+        manager_.update(&world_);
+        world_.forEach<cgl::component::CharacterMovement, cgl::component::Sprite>(
+            [&](auto, auto* movement, auto* sprite) {
+            EXPECT_FALSE(movement->moving);
+            EXPECT_EQ(movement->facing, 2);
+            EXPECT_EQ(sprite->clip, movement->idle[2]);
+        });
+        draw_.update(&world_);
     }
     device->waitIdle();
     cgl::SceneManagerDestroySystem{}.update(&world_);

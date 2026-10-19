@@ -5,6 +5,7 @@
 #include "animation/animation_system.h"
 #include "map/map_render_data.h"
 #include "map/map_hover.h"
+#include "map/character_movement.h"
 #include "engine/ecs.h"
 #include "engine/engine_components.h"
 #include "engine/error_system.h"
@@ -33,12 +34,23 @@ public:
             world->addSingleton<cgl::component::MapCamera>(center, scale);
             world->addSingleton<cgl::component::MapHover>();
             outline_ = maps_.acquireHoverOutline(scale, render.pDevice.get(), pass);
-            auto clip = animations_.acquire({settings.animation.SerialNum, settings.animation.Direction, settings.animation.Motion},
-                readers, render.pDevice.get(), pass);
+            if (settings.animation.Direction >= 8)
+                throw std::runtime_error("Invalid initial character direction");
+            cgl::component::CharacterMovement movement;
+            movement.facing = settings.animation.Direction;
+            // Load before entering the frame loop: turning never uploads GPU resources.
+            for (uint32_t direction = 0; direction < 8; ++direction) {
+                movement.idle[direction] = animations_.acquire({settings.animation.SerialNum, direction, 0},
+                    readers, render.pDevice.get(), pass);
+                movement.walk[direction] = animations_.acquire({settings.animation.SerialNum, direction, 1},
+                    readers, render.pDevice.get(), pass);
+            }
+            auto clip = movement.idle[movement.facing];
             character_ = world->createEntity();
             world->addComponent<cgl::component::MapPosition>(character_, center);
             world->addComponent<cgl::component::Sprite>(character_, std::move(clip));
             world->addComponent<cgl::component::AnimationPlayer>(character_);
+            world->addComponent<cgl::component::CharacterMovement>(character_, std::move(movement));
             cgl::UpdateAnimations(*world, 0);
             LOGI("Map scene entered");
         } catch (const std::exception& error) {
@@ -60,8 +72,8 @@ public:
         auto* input = world->getSingleton<cgl::component::KeyboardInputState>();
         cgl::PanMapCamera(*world->getSingleton<cgl::component::MapCamera>(), input->panX, input->panY,
             seconds, map_->layout.width, map_->layout.height);
-        auto& position = world->getComponent<cgl::component::MapPosition>(character_)->cell;
-        cgl::MoveMapPoint(position, input->moveX, input->moveY, seconds, 100, map_->layout.width, map_->layout.height);
+        cgl::UpdateCharacterMovement(*world, input->moveX, input->moveY, seconds,
+            map_->layout.width, map_->layout.height);
         cgl::UpdateAnimations(*world, seconds);
         const auto& window = *world->getSingleton<cgl::component::WindowHandle>();
         updateHover(world, {0, 0, window.width, window.height});
