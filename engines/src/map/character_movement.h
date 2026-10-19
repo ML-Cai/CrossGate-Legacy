@@ -20,14 +20,19 @@ struct CharacterMovement {
 }
 
 namespace cgl {
-// WASD changes MAP axes: D/A = +/-x, S/W = +/-y. Rendering interpolates
-// between integer cells; release or a turn takes effect at the next cell center.
+// Input directions are screen-relative: W/up, A/left, S/down, D/right.
+// Quantize the inverse isometric direction to an integer neighboring MAP cell.
+// Rendering interpolates; release or a turn takes effect at the next cell center.
 inline void UpdateCharacterMovement(ECSCore& world, double horizontal, double vertical,
     double seconds, uint32_t width, uint32_t height) {
     if (!width || !height || !std::isfinite(seconds) || seconds <= 0 ||
         !std::isfinite(horizontal) || !std::isfinite(vertical)) return;
-    const int dx = (horizontal > 0) - (horizontal < 0);
-    const int dy = (vertical > 0) - (vertical < 0);
+    const int horizontalSign = (horizontal > 0) - (horizontal < 0);
+    const int verticalSign = (vertical > 0) - (vertical < 0);
+    const int mapX = horizontalSign - verticalSign;
+    const int mapY = horizontalSign + verticalSign;
+    const int dx = (mapX > 0) - (mapX < 0);
+    const int dy = (mapY > 0) - (mapY < 0);
     world.forEach<component::MapPosition, component::CharacterMovement,
         component::Sprite, component::AnimationPlayer>(
         [&](Entity, auto* position, auto* movement, auto* sprite, auto* player) {

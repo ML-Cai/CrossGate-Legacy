@@ -326,19 +326,19 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
         world_.forEach<cgl::component::MapPosition, cgl::component::CharacterMovement,
             cgl::component::Sprite>([&](auto, auto* position, auto* movement, auto* sprite) {
             EXPECT_GT(position->cell.x, 50);
-            EXPECT_DOUBLE_EQ(position->cell.y, 50);
+            EXPECT_GT(position->cell.y, 50);
             EXPECT_TRUE(movement->moving);
-            EXPECT_EQ(movement->facing, 1);
-            EXPECT_EQ(sprite->clip, movement->walk[1]);
-            EXPECT_EQ(sprite->clip, library_.acquire({world_.getSingleton<cgl::component::EngineState>()->settings->animation.SerialNum, 1, 1}, readers, device, pass));
+            EXPECT_EQ(movement->facing, 2);
+            EXPECT_EQ(sprite->clip, movement->walk[2]);
+            EXPECT_EQ(sprite->clip, library_.acquire({world_.getSingleton<cgl::component::EngineState>()->settings->animation.SerialNum, 2, 1}, readers, device, pass));
         });
         draw_.update(&world_); // Submit the walking renderer before switching clips.
         manager_.update(&world_);
         world_.forEach<cgl::component::CharacterMovement, cgl::component::Sprite>(
             [&](auto, auto* movement, auto* sprite) {
             EXPECT_FALSE(movement->moving);
-            EXPECT_EQ(movement->facing, 1);
-            EXPECT_EQ(sprite->clip, movement->idle[1]);
+            EXPECT_EQ(movement->facing, 2);
+            EXPECT_EQ(sprite->clip, movement->idle[2]);
         });
         draw_.update(&world_);
         constexpr int directions[8][2] = {{0,-1},{1,-1},{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1}};
@@ -359,7 +359,8 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
                 EXPECT_NEAR(screen.y, viewport.height * .5, 1e-9);
             });
             const auto groundAfter = cgl::MapToScreen({40,40}, *currentCamera, viewport);
-            const auto delta = cgl::MapToWorld({double(direction[0]),double(direction[1])});
+            const int mx = direction[0] - direction[1], my = direction[0] + direction[1];
+            const auto delta = cgl::MapToWorld({double((mx>0)-(mx<0)),double((my>0)-(my<0))});
             EXPECT_NEAR(groundAfter.x - groundBefore.x, -delta.x, 1e-9);
             EXPECT_NEAR(groundAfter.y - groundBefore.y, -delta.y, 1e-9);
             EXPECT_EQ(world_.getSingleton<cgl::component::MapHover>()->cell,

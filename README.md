@@ -91,9 +91,9 @@ cmake --build . --config RelWithDebInfo
   restarts it at the center. `Display.ViewportScale` controls the initial map scale
   (0.125 through 16). Ground, buildings and trees share an image atlas; the
   configured animation character sorts with objects by its ground anchor.
-  WASD moves between integer MAP cells: D/A changes X (+/-), S/W changes Y (+/-).
-  On screen, D is northeast, S southeast, A southwest and W northwest; key pairs
-  reach the other four neighbors. Speed is 4 MAP coordinate units/second, so a
+  WASD uses screen directions: W up, A left, S down, D right. W+A goes northwest,
+  W+D northeast, S+D southeast and S+A southwest. Each input selects an integer
+  neighboring MAP cell after inverse isometric direction conversion. Speed is 4 MAP coordinate units/second, so a
   one-axis step takes 0.25 seconds and a two-axis step takes sqrt(2)/4 seconds.
   Walking interpolates smoothly; releasing finishes the current step before idle,
   and turning takes effect at the next cell center. The character stays centered

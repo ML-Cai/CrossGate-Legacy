@@ -117,27 +117,36 @@ struct MovingCharacter {
 }
 
 
-TEST(CharacterMovementTest, EightGridDirectionsInterpolateAndFinishOnRelease) {
-    constexpr int inputs[8][3] = {{0,-1,7},{1,-1,0},{1,0,1},{1,1,2},{0,1,3},{-1,1,4},{-1,0,5},{-1,-1,6}};
+
+TEST(CharacterMovementTest, WASDAndAllFourKeyPairsFollowScreenDirections) {
+    // Input x/y, destination MAP delta, animation facing (clockwise from north).
+    // W, W+D, D, S+D, S, S+A, A, W+A.
+    constexpr int inputs[8][5] = {
+        {0,-1,1,-1,0},{1,-1,1,0,1},{1,0,1,1,2},{1,1,0,1,3},
+        {0,1,-1,1,4},{-1,1,-1,0,5},{-1,0,-1,-1,6},{-1,-1,0,-1,7}};
     for (const auto& input : inputs) {
+        SCOPED_TRACE(input[4]);
         MovingCharacter actor;
         actor.update(input[0],input[1], .05);
         EXPECT_TRUE(actor.movement()->stepping);
-        EXPECT_EQ(actor.movement()->facing,input[2]);
+        EXPECT_EQ(actor.movement()->facing,input[4]);
         EXPECT_NEAR(std::hypot(actor.position().x-50, actor.position().y-50), .2, 1e-10);
-        EXPECT_EQ(actor.sprite()->clip,actor.movement()->walk[input[2]]);
+        EXPECT_EQ(actor.sprite()->clip,actor.movement()->walk[input[4]]);
         actor.update(0,0,1);
-        EXPECT_DOUBLE_EQ(actor.position().x,50+input[0]);
-        EXPECT_DOUBLE_EQ(actor.position().y,50+input[1]);
+        EXPECT_DOUBLE_EQ(actor.position().x,50+input[2]);
+        EXPECT_DOUBLE_EQ(actor.position().y,50+input[3]);
+        const auto delta=cgl::MapToWorld({double(input[2]),double(input[3])});
+        EXPECT_EQ((delta.x>0)-(delta.x<0),input[0]);
+        EXPECT_EQ((delta.y>0)-(delta.y<0),input[1]);
         EXPECT_FALSE(actor.movement()->moving);
         EXPECT_FALSE(actor.movement()->stepping);
-        EXPECT_EQ(actor.sprite()->clip,actor.movement()->idle[input[2]]);
+        EXPECT_EQ(actor.sprite()->clip,actor.movement()->idle[input[4]]);
     }
 }
 
 TEST(CharacterMovementTest, ReleaseCompletesCurrentStepWithoutStartingAnother) {
     MovingCharacter actor;
-    actor.update(1,0,.1);
+    actor.update(1,-1,.1); // W+D: screen NE, MAP x+1.
     actor.update(0,0,.05);
     EXPECT_NEAR(actor.position().x,50.6,1e-10);
     EXPECT_TRUE(actor.movement()->moving);
@@ -150,17 +159,31 @@ TEST(CharacterMovementTest, ReleaseCompletesCurrentStepWithoutStartingAnother) {
     EXPECT_EQ(actor.player()->timeMs,250);
 }
 
+TEST(CharacterMovementTest, SecondKeyChangesDirectionAtTheNextCellCenter) {
+    MovingCharacter actor;
+    actor.update(0,-1,.1); // W starts MAP (+1,-1).
+    actor.update(-1,-1,.01); // A joins W, but current step keeps facing north.
+    EXPECT_EQ(actor.movement()->facing,0);
+    actor.update(-1,-1,.3);
+    EXPECT_EQ(actor.movement()->facing,7);
+    EXPECT_EQ(actor.movement()->targetX,51);
+    EXPECT_EQ(actor.movement()->targetY,48);
+    actor.update(0,0,1);
+    EXPECT_DOUBLE_EQ(actor.position().x,51);
+    EXPECT_DOUBLE_EQ(actor.position().y,48);
+}
+
 TEST(CharacterMovementTest, TurnWaitsForCellCenterAndPreservesWalkingPhase) {
     MovingCharacter actor;
-    actor.update(1,0,.1);
+    actor.update(1,-1,.1);
     actor.player()->timeMs=750;
     auto longer=std::make_shared<cgl::AnimationClip>();
     longer->durationMs=2000; longer->frameCount=8;
     actor.movement()->walk[7]=longer;
-    actor.update(0,-1,.05);
+    actor.update(-1,-1,.05);
     EXPECT_EQ(actor.movement()->facing,1);
     EXPECT_DOUBLE_EQ(actor.position().y,50);
-    actor.update(0,-1,.15);
+    actor.update(-1,-1,.15);
     EXPECT_EQ(actor.movement()->facing,7);
     EXPECT_DOUBLE_EQ(actor.position().x,51);
     EXPECT_NEAR(actor.position().y,49.8,1e-10);
@@ -170,8 +193,8 @@ TEST(CharacterMovementTest, TurnWaitsForCellCenterAndPreservesWalkingPhase) {
 
 TEST(CharacterMovementTest, FramePartitionAndLongHeldInputDoNotDrift) {
     MovingCharacter a,b;
-    a.update(1,1,2);
-    for(int i=0;i<200;++i) b.update(1,1,.01);
+    a.update(1,0,2);
+    for(int i=0;i<200;++i) b.update(1,0,.01);
     EXPECT_NEAR(a.position().x,b.position().x,1e-9);
     EXPECT_NEAR(a.position().y,b.position().y,1e-9);
     a.update(0,0,1); b.update(0,0,1);
@@ -183,14 +206,14 @@ TEST(CharacterMovementTest, FramePartitionAndLongHeldInputDoNotDrift) {
 TEST(CharacterMovementTest, BoundaryRejectsWholeStepWithoutSlidingOrLeavingMap) {
     MovingCharacter actor;
     actor.position()={99,50};
-    actor.update(1,1,1);
+    actor.update(1,0,1);
     EXPECT_FALSE(actor.movement()->moving);
     EXPECT_DOUBLE_EQ(actor.position().y,50);
-    actor.update(0,1,1000);
+    actor.update(1,1,1000);
     EXPECT_DOUBLE_EQ(actor.position().x,99);
     EXPECT_DOUBLE_EQ(actor.position().y,99);
     EXPECT_FALSE(actor.movement()->moving);
-    actor.update(-1,0,.25);
+    actor.update(-1,1,.25);
     actor.update(0,0,.1);
     EXPECT_DOUBLE_EQ(actor.position().x,98);
 }
@@ -209,7 +232,7 @@ TEST(CharacterMovementTest, InvalidTimeInputAndSpeedDoNotAdvanceAnActiveStep) {
 
 TEST(CharacterMovementTest, MissingClipDoesNotStartAStep) {
     MovingCharacter actor;
-    actor.movement()->walk[1].reset();
+    actor.movement()->walk[2].reset();
     actor.update(1,0);
     EXPECT_DOUBLE_EQ(actor.position().x,50);
     EXPECT_FALSE(actor.movement()->stepping);

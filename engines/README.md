@@ -59,9 +59,10 @@ pieces and finer multi-tile occlusion would need separate artwork/geometry rules
 CharacterMovement stores integer cell/target coordinates, step progress, speed,
 facing, movement state and shared idle/walk clips. MapScene spawns at integer
 (width/2, height/2), rounded down, and preloads all eight directions before play.
-UpdateCharacterMovement runs before UpdateAnimations. D/A changes MAP X and S/W
-changes MAP Y; projection makes these NE/SW and SE/NW on screen. Two-key inputs
-select the other four neighbors. A step takes its MAP-coordinate distance divided
+UpdateCharacterMovement runs before UpdateAnimations. WASD is screen-relative:
+W/A/S/D means north/west/south/east. W+A/W+D/S+D/S+A means NW/NE/SE/SW. The input
+signs are converted to a neighboring MAP cell with dx=sign(horizontal-vertical),
+dy=sign(horizontal+vertical). A step takes its MAP-coordinate distance divided
 by cellsPerSecond (default 4): 0.25 seconds for one axis, sqrt(2)/4 for two axes.
 Input is sampled at cell boundaries. Release completes the current step; a turn
 cannot redirect a step halfway through. Remaining frame time can advance further
