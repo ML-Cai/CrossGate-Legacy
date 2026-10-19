@@ -51,11 +51,9 @@ public:
     using UpdateFunc = void (WindowInputSystem::*)(cgl::ECSCore*);
     UpdateFunc updater_;
 
-    static void cursorPosCb(GLFWwindow* pWindow, double x, double y);
     static void mouseButtonCb(GLFWwindow* pWindow, int btn, int act, int);
     static void framebufferReSszeCb(GLFWwindow* window, int w, int h);
 
-    cgl::component::CursorPositionState cursorPosState_[2];
     cgl::component::WindowState* pWindowState_;
     cgl::component::WindowHandle* pWindowHandle_;
 };

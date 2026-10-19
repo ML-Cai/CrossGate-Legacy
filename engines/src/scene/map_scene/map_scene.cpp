@@ -4,6 +4,7 @@
 #include "animation/animation_components.h"
 #include "animation/animation_system.h"
 #include "map/map_render_data.h"
+#include "map/map_hover.h"
 #include "engine/ecs.h"
 #include "engine/engine_components.h"
 #include "engine/error_system.h"
@@ -30,6 +31,8 @@ public:
                 readers, render.pDevice.get(), pass);
             const cgl::MapPoint center{(map_->layout.width - 1) * 0.5, (map_->layout.height - 1) * 0.5};
             world->addSingleton<cgl::component::MapCamera>(center, scale);
+            world->addSingleton<cgl::component::MapHover>();
+            outline_ = maps_.acquireHoverOutline(scale, render.pDevice.get(), pass);
             auto clip = animations_.acquire({settings.animation.SerialNum, settings.animation.Direction, settings.animation.Motion},
                 readers, render.pDevice.get(), pass);
             character_ = world->createEntity();
@@ -46,6 +49,8 @@ public:
         if (character_) world->destroyEntity(character_);
         character_ = 0;
         world->removeSingleton<cgl::component::MapCamera>();
+        world->removeSingleton<cgl::component::MapHover>();
+        outline_.reset();
         map_.reset(); // Engine caches retain resources for pending submissions.
         drawItems_.clear();
         LOGI("Map scene exited");
@@ -58,6 +63,8 @@ public:
         auto& position = world->getComponent<cgl::component::MapPosition>(character_)->cell;
         cgl::MoveMapPoint(position, input->moveX, input->moveY, seconds, 100, map_->layout.width, map_->layout.height);
         cgl::UpdateAnimations(*world, seconds);
+        const auto& window = *world->getSingleton<cgl::component::WindowHandle>();
+        updateHover(world, {0, 0, window.width, window.height});
         if (input->restartSceneRequested) {
             input->restartSceneRequested = false;
             world->getSingleton<cgl::component::SceneState>()->nextScene = cgl::SceneTypes::MapScene;
@@ -65,6 +72,7 @@ public:
     }
     void draw(cgl::ECSCore* world, cgl::graphics::ICommandBuffer* command, const cgl::Viewport& viewport) noexcept override {
         try {
+            updateHover(world, viewport);
             const auto& camera = *world->getSingleton<cgl::component::MapCamera>();
             drawItems_.clear();
             const auto bounds = cgl::VisibleMapBounds(camera, viewport, map_->layout.width, map_->layout.height, map_->reachX, map_->reachY);
@@ -91,11 +99,31 @@ public:
                 });
             std::sort(drawItems_.begin(), drawItems_.end(), cgl::MapDrawLess);
             for (const auto& item : drawItems_) record(item, camera, command, viewport);
+            const auto& hovered = world->getSingleton<cgl::component::MapHover>()->cell;
+            if (hovered && outline_) {
+                const auto center = cgl::MapToScreen({double(hovered->x), double(hovered->y)}, camera, viewport);
+                const double scale = camera.scale / outline_->scale;
+                outline_->renderer->draw(command, viewport, 0,
+                    float(center.x - outline_->width * scale * 0.5),
+                    float(center.y - outline_->height * scale * 0.5), float(scale));
+            }
         } catch (const std::exception& error) {
             cgl::RaiseError(world->getSingleton<cgl::component::SceneState>(), "Map drawing failed: ", error.what());
         }
     }
 private:
+    void updateHover(cgl::ECSCore* world, const cgl::Viewport& viewport) noexcept {
+        auto& hover = world->getSingleton<cgl::component::MapHover>()->cell;
+        hover.reset();
+        const auto* cursor = world->getSingleton<cgl::component::CursorPositionState>();
+        if (!cursor || !cursor->inside) return;
+        const auto& window = *world->getSingleton<cgl::component::WindowHandle>();
+        const auto point = cgl::WindowToViewport({cursor->x, cursor->y},
+            {double(cursor->windowWidth), double(cursor->windowHeight)},
+            {double(window.width), double(window.height)}, viewport);
+        if (point) hover = cgl::PickMapCell(*point,
+            *world->getSingleton<cgl::component::MapCamera>(), viewport, map_->layout);
+    }
     static void record(const cgl::MapDrawItem& item, const cgl::component::MapCamera& camera,
                         cgl::graphics::ICommandBuffer* command, const cgl::Viewport& viewport) {
         auto position = cgl::MapToScreen(item.cell, camera, viewport);
@@ -108,6 +136,7 @@ private:
     cgl::MapLibrary& maps_;
     cgl::AnimationLibrary& animations_;
     std::shared_ptr<const cgl::MapResources> map_;
+    std::shared_ptr<const cgl::MapHoverOutline> outline_;
     cgl::Entity character_ = 0;
     std::vector<cgl::MapDrawItem> drawItems_;
 };

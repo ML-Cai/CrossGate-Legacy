@@ -106,6 +106,7 @@ void ClientEngine::initSingletonStage(cgl::ECSCore* pEcs) {
     pRenderDevState_ = ecs().getSingleton<cgl::component::RenderDeviceState>();
     ecs().addSingleton<cgl::component::FrameRenderState>(cgl::StateTypes::INITIALIZING, "");
     ecs().addSingleton<cgl::component::KeyboardInputState>();
+    ecs().addSingleton<cgl::component::CursorPositionState>();
     ecs().addSingleton<cgl::component::FrameTime>();
 
     // add window create info

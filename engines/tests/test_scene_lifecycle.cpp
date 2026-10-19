@@ -1,6 +1,7 @@
 #include "assets/map_library.h"
 #include "map/map_camera.h"
 #include "map/map_render_data.h"
+#include "map/map_hover.h"
 #include <gtest/gtest.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -110,6 +111,7 @@ protected:
         world_.addSingleton<cgl::component::WindowState>(cgl::StateTypes::UNKNOWN, "");
         world_.addSingleton<cgl::component::WindowCreateInfo>(800, 600, "scene test");
         world_.addSingleton<cgl::component::KeyboardInputState>();
+        world_.addSingleton<cgl::component::CursorPositionState>();
         world_.addSingleton<cgl::component::FrameTime>();
         world_.addSingleton<cgl::component::RenderDeviceState>(cgl::StateTypes::UNKNOWN, "");
         world_.addSingleton<cgl::component::FrameRenderState>(cgl::StateTypes::INITIALIZING, "");
@@ -159,8 +161,23 @@ protected:
         return cgl::CreateScene(type, library_, &maps_);
     }};
     cgl::FrameRenderDrawSystem draw_;
+    cgl::WindowInputSystem input_;
     std::string initialDiagnostic_;
 };
+
+TEST_F(DesktopSceneTest, HiddenWindowPollingClearsStaleCursorPresence) {
+    auto* window = static_cast<GLFWwindow*>(world_.getSingleton<cgl::component::WindowHandle>()->nativeHandle);
+    ASSERT_EQ(glfwGetWindowAttrib(window, GLFW_VISIBLE), GLFW_FALSE);
+    auto* cursor = world_.getSingleton<cgl::component::CursorPositionState>();
+    cursor->inside = true;
+    cursor->windowWidth = cursor->windowHeight = 0;
+    input_.update(&world_); // Initial publication without needing a cursor callback.
+    EXPECT_FALSE(cursor->inside);
+    int width = 0, height = 0;
+    glfwGetWindowSize(window, &width, &height);
+    EXPECT_EQ(cursor->windowWidth, width);
+    EXPECT_EQ(cursor->windowHeight, height);
+}
 
 TEST_F(DesktopSceneTest, RepeatedRestartKeepsFrameResourcesAndReaders) {
     auto* scene = world_.getSingleton<cgl::component::SceneState>();
@@ -245,6 +262,26 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
     EXPECT_TRUE(original->images.contains(10058)); // Building image, not just ground.
     EXPECT_FALSE(original->images.contains(2));
     EXPECT_FALSE(original->images.contains(251));
+    const cgl::Viewport viewport{0,0,800,600};
+    auto* cursor = world_.getSingleton<cgl::component::CursorPositionState>();
+    ASSERT_NE(world_.getSingleton<cgl::component::MapHover>(), nullptr);
+    EXPECT_FALSE(world_.getSingleton<cgl::component::MapHover>()->cell);
+    const auto hoverPoint = cgl::MapToScreen({50,49}, *camera, viewport);
+    cursor->windowWidth = 400; cursor->windowHeight = 300;
+    cursor->x = hoverPoint.x / 2; cursor->y = hoverPoint.y / 2;
+    cursor->inside = true;
+    manager_.update(&world_);
+    EXPECT_EQ(world_.getSingleton<cgl::component::MapHover>()->cell, (cgl::MapCellCoord{50,49}));
+    for (int i = 0; i < 3; ++i) draw_.update(&world_);
+    cursor->inside = false;
+    manager_.update(&world_);
+    EXPECT_FALSE(world_.getSingleton<cgl::component::MapHover>()->cell);
+    cursor->inside = true;
+    cursor->x = 400; // Outside logical client bounds.
+    manager_.update(&world_);
+    EXPECT_FALSE(world_.getSingleton<cgl::component::MapHover>()->cell);
+    cursor->x = hoverPoint.x / 2;
+    std::weak_ptr<const cgl::MapHoverOutline> originalOutline = maps_.acquireHoverOutline(camera->scale, device, pass);
     std::weak_ptr<const cgl::AnimationClip> originalClip;
     bool firstCharacterVisit = true;
     auto verifyCharacter = [&] {
@@ -268,6 +305,8 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
         world_.getSingleton<cgl::component::FrameTime>()->deltaSeconds = 0.5;
         manager_.update(&world_);
         EXPECT_GT(world_.getSingleton<cgl::component::MapCamera>()->center.x, 49.5);
+        EXPECT_EQ(world_.getSingleton<cgl::component::MapHover>()->cell,
+            cgl::PickMapCell(hoverPoint, *world_.getSingleton<cgl::component::MapCamera>(), viewport, original->layout));
         for (int i = 0; i < 4; ++i) draw_.update(&world_);
         world_.getSingleton<cgl::component::KeyboardInputState>()->panX = 0;
         world_.getSingleton<cgl::component::KeyboardInputState>()->restartSceneRequested = true;
@@ -278,6 +317,8 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
         EXPECT_DOUBLE_EQ(world_.getSingleton<cgl::component::MapCamera>()->center.x, 49.5);
         EXPECT_EQ(maps_.acquire(path, readers, device, pass), original);
         verifyCharacter();
+        EXPECT_EQ(world_.getSingleton<cgl::component::MapHover>()->cell, (cgl::MapCellCoord{50,49}));
+        EXPECT_EQ(maps_.acquireHoverOutline(1, device, pass), originalOutline.lock());
         world_.getSingleton<cgl::component::KeyboardInputState>()->moveX = 1;
         manager_.update(&world_);
         world_.getSingleton<cgl::component::KeyboardInputState>()->moveX = 0;
@@ -289,6 +330,8 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
     device->waitIdle();
     cgl::SceneManagerDestroySystem{}.update(&world_);
     EXPECT_EQ(world_.getSingleton<cgl::component::MapCamera>(), nullptr);
+    EXPECT_EQ(world_.getSingleton<cgl::component::MapHover>(), nullptr);
+    EXPECT_FALSE(originalOutline.expired());
     unsigned remaining = 0;
     world_.forEach<cgl::component::MapPosition>([&](auto, auto*) { ++remaining; });
     EXPECT_EQ(remaining, 0);
@@ -297,6 +340,7 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
     EXPECT_FALSE(weak.expired());
     maps_.clear();
     EXPECT_TRUE(weak.expired());
+    EXPECT_TRUE(originalOutline.expired());
     EXPECT_FALSE(originalClip.expired());
     library_.clear();
     EXPECT_TRUE(originalClip.expired());

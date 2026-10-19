@@ -39,8 +39,9 @@ struct WindowHandle {
 
 // -----------------------------------------------------------------------------
 struct CursorPositionState {
-    float x;
-    float y;
+    double x = 0, y = 0;
+    uint32_t windowWidth = 0, windowHeight = 0; // Logical GLFW client units.
+    bool inside = false; // Hovered and focused; false on leave/minimize/focus loss.
 };
 
 // -----------------------------------------------------------------------------

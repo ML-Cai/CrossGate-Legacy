@@ -52,8 +52,7 @@ cgl::InputActionTypes fromGLFWInputAction(int32_t glfw_action_value) {
 
 // -----------------------------------------------------------------------------
 cgl::WindowInputSystem::WindowInputSystem()
-    : cursorPosState_{},
-      pWindowState_(nullptr),
+    : pWindowState_(nullptr),
       pWindowHandle_(nullptr) {
     updater_ = &WindowInputSystem::init;
 }
@@ -80,12 +79,12 @@ void cgl::WindowInputSystem::init(cgl::ECSCore* pECS) {
 
     auto pWindow = static_cast<GLFWwindow *>(pWindowHandle_->nativeHandle);
     glfwSetWindowUserPointer(pWindow, this);
-    glfwSetCursorPosCallback(pWindow, cursorPosCb);
     glfwSetMouseButtonCallback(pWindow, mouseButtonCb);
     glfwSetFramebufferSizeCallback(pWindow, framebufferReSszeCb);
 
     // switch to next stage
     updater_ = &WindowInputSystem::updateEvents;
+    updateEvents(pECS);
 }
 
 // -----------------------------------------------------------------------------
@@ -127,30 +126,15 @@ void cgl::WindowInputSystem::updateEvents(cgl::ECSCore* pECS) {
             float(glfwGetKey(pWindow, GLFW_KEY_UP) == GLFW_PRESS);
     }
 
-    // check cursor pos updated or not
-    float x = cursorPosState_[0].x;
-    float y = cursorPosState_[0].y;
-    float dx = x - cursorPosState_[1].x;
-    float dy = y - cursorPosState_[1].y;
-    if (dx != 0.0f || dy != 0.0f) {
-        cursorPosState_[1].x = x;
-        cursorPosState_[1].y = y;
-    }
-}
-
-// -----------------------------------------------------------------------------
-void cgl::WindowInputSystem::cursorPosCb(
-    GLFWwindow* pWindow,
-    double      xpos,
-    double      ypos
-) {
-    auto userPtr = glfwGetWindowUserPointer(pWindow);
-    auto thiz = static_cast<cgl::WindowInputSystem*>(userPtr);
-
-    float x = static_cast<float>(xpos);
-    float y = static_cast<float>(ypos);
-    thiz->cursorPosState_[0].x = x;
-    thiz->cursorPosState_[0].y = y;
+    auto* cursor = pECS->getSingleton<cgl::component::CursorPositionState>();
+    int width = 0, height = 0;
+    glfwGetWindowSize(pWindow, &width, &height);
+    glfwGetCursorPos(pWindow, &cursor->x, &cursor->y);
+    cursor->windowWidth = width > 0 ? uint32_t(width) : 0;
+    cursor->windowHeight = height > 0 ? uint32_t(height) : 0;
+    cursor->inside = width > 0 && height > 0 && !glfwGetWindowAttrib(pWindow, GLFW_ICONIFIED) &&
+        glfwGetWindowAttrib(pWindow, GLFW_HOVERED) && glfwGetWindowAttrib(pWindow, GLFW_FOCUSED) &&
+        cursor->x >= 0 && cursor->y >= 0 && cursor->x < width && cursor->y < height;
 }
 
 // -----------------------------------------------------------------------------
