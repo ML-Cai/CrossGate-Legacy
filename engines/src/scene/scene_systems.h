@@ -13,7 +13,7 @@
 namespace cgl {
 
 class ECSCore;
-IScene::Ptr CreateScene(SceneTypes type);
+IScene::Ptr CreateScene(SceneTypes type, AnimationLibrary& library);
 
 namespace component {
 
@@ -25,7 +25,8 @@ struct SceneState;
 class SceneManagerSystem {
  public:
     using SceneFactory = std::function<IScene::Ptr(SceneTypes)>;
-    explicit SceneManagerSystem(SceneFactory factory = CreateScene);
+    explicit SceneManagerSystem(AnimationLibrary& library);
+    explicit SceneManagerSystem(SceneFactory factory);
 
     ~SceneManagerSystem() = default;
 

@@ -4,6 +4,8 @@
 #include "engine/ecs.h"
 #include "engine/engine_components.h"
 #include "assets/assets_components.h"
+#include "assets/animation_library.h"
+#include "animation/animation_components.h"
 #include "render/frame_render_systems.h"
 #include "render/render_systems.h"
 #include "scene/scene_systems.h"
@@ -105,6 +107,7 @@ protected:
         world_.addSingleton<cgl::component::WindowState>(cgl::StateTypes::UNKNOWN, "");
         world_.addSingleton<cgl::component::WindowCreateInfo>(800, 600, "scene test");
         world_.addSingleton<cgl::component::KeyboardInputState>();
+        world_.addSingleton<cgl::component::FrameTime>();
         world_.addSingleton<cgl::component::RenderDeviceState>(cgl::StateTypes::UNKNOWN, "");
         world_.addSingleton<cgl::component::FrameRenderState>(cgl::StateTypes::INITIALIZING, "");
         world_.addSingleton<cgl::component::AssetsReaderState>(cgl::StateTypes::UNKNOWN, "");
@@ -129,6 +132,11 @@ protected:
         auto* render = world_.getSingleton<cgl::component::RenderDeviceState>();
         if (render && render->pDevice) render->pDevice->waitIdle();
         cgl::SceneManagerDestroySystem{}.update(&world_);
+        // Keep teardown safe even when an entity-cleanup assertion fails.
+        std::vector<cgl::Entity> leftovers;
+        world_.forEach<cgl::component::Sprite>([&](auto entity, auto*) { leftovers.push_back(entity); });
+        for (auto entity : leftovers) world_.destroyEntity(entity);
+        library_.clear();
         if (world_.getSingleton<cgl::component::FrameRenderState>()) cgl::FrameRenderDestroySystem{}.update(&world_);
         if (render && render->pDevice) {
             std::string diagnostic;
@@ -141,7 +149,8 @@ protected:
         glfwTerminate();
     }
     cgl::ECSCore world_;
-    cgl::SceneManagerSystem manager_;
+    cgl::AnimationLibrary library_;
+    cgl::SceneManagerSystem manager_{library_};
     cgl::FrameRenderDrawSystem draw_;
     std::string initialDiagnostic_;
 };
@@ -161,6 +170,22 @@ TEST_F(DesktopSceneTest, RepeatedRestartKeepsFrameResourcesAndReaders) {
     auto* pass = frame->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
     auto* readers = world_.getSingleton<cgl::component::AssetsReaderState>();
     auto* reader = readers->pAnimeDataReader[cgl::CrossGateVersion::CG_VERSION_Classic].get();
+    std::weak_ptr<const cgl::AnimationClip> original;
+    bool firstVisit = true;
+    auto verifySprites = [&] {
+        std::vector<cgl::Entity> entities;
+        world_.forEach<cgl::component::Sprite>([&](auto entity, auto*) { entities.push_back(entity); });
+        ASSERT_EQ(entities.size(), 2);
+        auto& first = *world_.getComponent<cgl::component::Sprite>(entities[0]);
+        auto& second = *world_.getComponent<cgl::component::Sprite>(entities[1]);
+        EXPECT_EQ(first.clip, second.clip);
+        if (firstVisit) { original = first.clip; firstVisit = false; }
+        EXPECT_FALSE(original.expired());
+        EXPECT_EQ(original.lock(), first.clip);
+        EXPECT_NE(world_.getComponent<cgl::component::AnimationPlayer>(entities[0])->frame,
+                  world_.getComponent<cgl::component::AnimationPlayer>(entities[1])->frame);
+    };
+    verifySprites();
     for (int restart = 0; restart < 3; ++restart) {
         for (int i = 0; i < 4; ++i) draw_.update(&world_);
         auto* oldScene = scene->scene.get();
@@ -173,7 +198,16 @@ TEST_F(DesktopSceneTest, RepeatedRestartKeepsFrameResourcesAndReaders) {
         EXPECT_EQ(frame->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get(), pass);
         EXPECT_EQ(readers->pAnimeDataReader[cgl::CrossGateVersion::CG_VERSION_Classic].get(), reader);
         EXPECT_NE(world_.getSingleton<cgl::component::FrameRenderState>()->state, cgl::StateTypes::ERROR);
+        verifySprites(); // Detect entity accumulation or clip re-upload on restart.
     }
     draw_.update(&world_);
+    world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice->waitIdle();
+    cgl::SceneManagerDestroySystem{}.update(&world_);
+    unsigned remaining = 0;
+    world_.forEach<cgl::component::Sprite>([&](auto, auto*) { ++remaining; });
+    EXPECT_EQ(remaining, 0);
+    EXPECT_FALSE(original.expired()); // Cache survives scene exit.
+    library_.clear();
+    EXPECT_TRUE(original.expired()); // Final cache cleanup releases the GPU asset.
 }
 }

@@ -1,20 +1,20 @@
-#include "scene/animation_scene/character_animation.h"
+#include "assets/animation_library.h"
 #include "assets/assets_components.h"
-#include "cgl/settings/settings.h"
 #include "cgl/trace/logger.h"
 #include <algorithm>
-#include <cmath>
 #include <stdexcept>
 
 namespace cgl {
-void CharacterAnimation::load(const Settings& settings, component::AssetsReaderState& readers,
-                               graphics::IDevice* device, graphics::IRenderPass* pass) {
-    if (!std::isfinite(settings.display.ViewportScale) || settings.display.ViewportScale <= 0)
-        throw std::runtime_error("ViewportScale must be positive and finite");
+std::shared_ptr<const AnimationClip> AnimationLibrary::acquire(
+    const AnimationRequest& request, component::AssetsReaderState& readers,
+    graphics::IDevice* device, graphics::IRenderPass* pass) {
+    if (!device || !pass || (device_ && device_ != device) || (pass_ && pass_ != pass))
+        throw std::invalid_argument("Animation library requires one live device/render pass");
+    if (const auto found = clips_.find(request); found != clips_.end()) return found->second;
     constexpr auto version = CrossGateVersion::CG_VERSION_Classic;
-    const auto serial = settings.animation.SerialNum;
-    if (settings.animation.Direction >= uint32_t(DirectionTypes::COUNT) ||
-        settings.animation.Motion >= uint32_t(MotionTypes::COUNT)) {
+    const auto serial = request.serial;
+    if (request.direction >= uint32_t(DirectionTypes::COUNT) ||
+        request.motion >= uint32_t(MotionTypes::COUNT)) {
         throw std::runtime_error("Invalid animation direction or motion in settings.ini");
     }
     auto require = [](bool condition, const char* message) {
@@ -26,7 +26,7 @@ void CharacterAnimation::load(const Settings& settings, component::AssetsReaderS
     AnimeResourceData animation;
     require(readers.pAnimeDataReader[version]->query(info, &animation) == Results::Success,
             "Could not read animation data");
-    const AnimeDataMapKey key{DirectionTypes(settings.animation.Direction), MotionTypes(settings.animation.Motion)};
+    const AnimeDataMapKey key{DirectionTypes(request.direction), MotionTypes(request.motion)};
     const auto motion = animation.motionMap.find(key);
     require(motion != animation.motionMap.end(), "Requested direction/motion is unavailable for this character");
     const auto& clip = motion->second;
@@ -83,24 +83,17 @@ void CharacterAnimation::load(const Settings& settings, component::AssetsReaderS
     auto renderer = graphics::ISpriteRenderer::create(device, pass,
         uint32_t(width), uint32_t(height), uint32_t(frames.size()), rgba);
     require(bool(renderer), "Could not upload animation or create sprite pipeline");
-    width_ = uint32_t(width);
-    height_ = uint32_t(height);
-    frameCount_ = uint32_t(frames.size());
-    durationMs_ = clip.duration;
-    scale_ = settings.display.ViewportScale;
-    started_ = std::chrono::steady_clock::now();
-    renderer_ = std::move(renderer);
-    LOGI("Character animation ready: serial=" << serial << ", frames=" << frameCount_
-         << ", duration=" << durationMs_ << "ms, canvas=" << width_ << "x" << height_);
-}
-
-void CharacterAnimation::draw(graphics::ICommandBuffer* command, const Viewport& viewport) const {
-    if (!renderer_) return;
-    const double elapsed = std::chrono::duration<double, std::milli>(
-        std::chrono::steady_clock::now() - started_).count();
-    const auto frame = uint32_t(std::fmod(elapsed, double(durationMs_)) * frameCount_ / durationMs_);
-    renderer_->draw(command, viewport, frame,
-        (float(viewport.width) - width_ * scale_) / 2,
-        (float(viewport.height) - height_ * scale_) / 2, scale_);
+    auto result = std::make_shared<AnimationClip>();
+    result->renderer = std::move(renderer);
+    result->width = uint32_t(width);
+    result->height = uint32_t(height);
+    result->frameCount = uint32_t(frames.size());
+    result->durationMs = clip.duration;
+    clips_.emplace(request, result);
+    device_ = device;
+    pass_ = pass;
+    LOGI("Character animation ready: serial=" << serial << ", frames=" << frames.size()
+         << ", duration=" << clip.duration << "ms, canvas=" << width << "x" << height);
+    return result;
 }
 }

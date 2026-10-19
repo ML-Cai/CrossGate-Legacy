@@ -16,13 +16,16 @@
 #include "scene/scene_systems.h"
 
 // -----------------------------------------------------------------------------
-cgl::IScene::Ptr cgl::CreateScene(SceneTypes type) {
+cgl::IScene::Ptr cgl::CreateScene(SceneTypes type, AnimationLibrary& library) {
     switch (type) {
     case SceneTypes::InitScene: return CreateInitScene();
-    case SceneTypes::AnimationScene: return CreateAnimationScene();
+    case SceneTypes::AnimationScene: return CreateAnimationScene(library);
     default: return nullptr;
     }
 }
+
+cgl::SceneManagerSystem::SceneManagerSystem(AnimationLibrary& library)
+    : SceneManagerSystem([&library](SceneTypes type) { return CreateScene(type, library); }) {}
 
 cgl::SceneManagerSystem::SceneManagerSystem(SceneFactory factory)
     : factory_(std::move(factory)) {
