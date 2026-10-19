@@ -328,17 +328,17 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
             EXPECT_GT(position->cell.x, 50);
             EXPECT_GT(position->cell.y, 50);
             EXPECT_TRUE(movement->moving);
-            EXPECT_EQ(movement->facing, 2);
-            EXPECT_EQ(sprite->clip, movement->walk[2]);
-            EXPECT_EQ(sprite->clip, library_.acquire({world_.getSingleton<cgl::component::EngineState>()->settings->animation.SerialNum, 2, 1}, readers, device, pass));
+            EXPECT_EQ(movement->facing, 3);
+            EXPECT_EQ(sprite->clip, movement->walk[3]);
+            EXPECT_EQ(sprite->clip, library_.acquire({world_.getSingleton<cgl::component::EngineState>()->settings->animation.SerialNum, 3, 1}, readers, device, pass));
         });
         draw_.update(&world_); // Submit the walking renderer before switching clips.
         manager_.update(&world_);
         world_.forEach<cgl::component::CharacterMovement, cgl::component::Sprite>(
             [&](auto, auto* movement, auto* sprite) {
             EXPECT_FALSE(movement->moving);
-            EXPECT_EQ(movement->facing, 2);
-            EXPECT_EQ(sprite->clip, movement->idle[2]);
+            EXPECT_EQ(movement->facing, 3);
+            EXPECT_EQ(sprite->clip, movement->idle[3]);
         });
         draw_.update(&world_);
         constexpr int directions[8][2] = {{0,-1},{1,-1},{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1}};
