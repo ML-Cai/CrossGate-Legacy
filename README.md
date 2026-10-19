@@ -47,5 +47,14 @@ cmake --build . --config RelWithDebInfo
 
 ## Run
 
+- cgl-client: run `build/bin/cgl-client.exe`. The current client opens an 800x600
+  black Vulkan window and initializes the resource readers. Close the window to exit.
+  It reads `settings.ini` beside the executable; set `General.EngineRootPath` to
+  the game directory containing `bin/`. Relative roots resolve against the INI
+  directory. Use `--settings path/to/settings.ini` to choose another configuration,
+  or `--frames 240` for an automatically terminating startup check.
+  With tests enabled, `ctest --test-dir build -R cgl_client --output-on-failure`
+  verifies startup and missing-resource cleanup. These tests require a Vulkan-capable
+  desktop; the successful startup test also requires the configured game files.
 - GraphicsDataViewer : see [tools/GraphicsDataViewer](tools/GraphicsDataViewer)
 - AnimeViewer : see [tools/AnimeViewer](tools/GraphicsDataViewer)

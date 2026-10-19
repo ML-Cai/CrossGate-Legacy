@@ -15,3 +15,19 @@ foreach(SOURCE ${SOURCES})
 
     message(STATUS "Add bin ${EXE_NAME}")
 endforeach()
+
+if(CGL_WITH_TEST)
+    add_test(NAME cgl_client_startup
+        COMMAND ${CMAKE_COMMAND}
+            -DCLIENT=$<TARGET_FILE:cgl-client>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/startup.cmake)
+    set_tests_properties(cgl_client_startup PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;integration")
+    add_test(NAME cgl_client_invalid_resources
+        COMMAND ${CMAKE_COMMAND}
+            -DCLIENT=$<TARGET_FILE:cgl-client>
+            -DINVALID_RESOURCES=ON
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/startup.cmake)
+    set_tests_properties(cgl_client_invalid_resources PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;integration")
+endif()

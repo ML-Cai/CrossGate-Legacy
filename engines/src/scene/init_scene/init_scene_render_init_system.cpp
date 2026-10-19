@@ -64,13 +64,18 @@ bool cgl::InitSceneRenderInitSystem::initEssentialRenderObjects(
 
         syncObjects.emplace_back(i,
                                  std::move(cgl::graphics::ISemaphore::create(pDevice)),
-                                 std::move(cgl::graphics::ISemaphore::create(pDevice)),
                                  std::move(cgl::graphics::IFence::create(pDevice)));
         if ((syncObjects.back().pImageAvailableSemaphore == nullptr) ||
-            (syncObjects.back().pRenderFinishSemaphore == nullptr) ||
             (syncObjects.back().pFence == nullptr)) {
             return false;
         }
+    }
+
+    std::vector<cgl::graphics::ISemaphore::Ptr> presentSemaphores;
+    for (uint32_t i = 0; i < pSwapchain->imageCount(); ++i) {
+        auto semaphore = cgl::graphics::ISemaphore::create(pDevice);
+        if (!semaphore) return false;
+        presentSemaphores.push_back(std::move(semaphore));
     }
 
     // append singleton obj
@@ -79,7 +84,7 @@ bool cgl::InitSceneRenderInitSystem::initEssentialRenderObjects(
         std::move(renderPasses)
     );
     pECS->addSingleton<cgl::component::PrimaryRenderSyncObjects>(
-        std::move(syncObjects)
+        std::move(syncObjects), std::move(presentSemaphores)
     );
 
     return true;

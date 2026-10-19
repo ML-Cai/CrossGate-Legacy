@@ -9,6 +9,7 @@
 #pragma once
 
 #include <memory>
+#include <cstdint>
 #include "string_view"
 
 namespace cgl {
@@ -23,7 +24,8 @@ class IEngine {
 
     virtual ~IEngine() = default;
 
-    virtual void run() = 0;
+    // A nonzero frame limit is useful for unattended rendering checks.
+    virtual bool run(uint32_t frameLimit = 0) = 0;
 };
 
 }   // namespace cgl

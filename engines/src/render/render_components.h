@@ -41,13 +41,14 @@ struct PrimarySceneRenderFrame {
 struct RenderSyncObjects {
     uint32_t index;
     cgl::graphics::ISemaphore::Ptr pImageAvailableSemaphore;
-    cgl::graphics::ISemaphore::Ptr pRenderFinishSemaphore;
     cgl::graphics::IFence::Ptr pFence;
 };
 
 // -----------------------------------------------------------------------------
 struct PrimaryRenderSyncObjects {
     std::vector<RenderSyncObjects> objs;
+    // Presentation can outlive a frame fence. Reuse after reacquiring the image.
+    std::vector<cgl::graphics::ISemaphore::Ptr> presentSemaphores;
 };
 
 

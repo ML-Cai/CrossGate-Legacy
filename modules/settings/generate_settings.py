@@ -153,6 +153,7 @@ class CPPGenerator:
 // =============================================================================
 
 #include <iostream>
+#include <exception>
 #include <fstream>
 #include <string>
 #include <unordered_map>
@@ -187,6 +188,7 @@ class CPPGenerator:
 cgl::SettingsPtr cgl::LoadSettings(
     const std::string_view int_path
 ) noexcept {
+    try {
     cgl::SettingsPtr settings = std::make_unique<cgl::Settings>();
     cgl::INI ini;
 
@@ -230,6 +232,11 @@ cgl::SettingsPtr cgl::LoadSettings(
         self.append(
 """
     return settings;
+    } catch (const std::exception& error) {
+        std::cerr << "Error: Invalid settings file: " << int_path
+                  << ": " << error.what() << std::endl;
+        return nullptr;
+    }
 }
 """)
 

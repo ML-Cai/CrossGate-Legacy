@@ -7,6 +7,8 @@
 // =============================================================================
 
 #include "assert.h"
+#include <GLFW/glfw3.h>
+#include <filesystem>
 #include "cgl/settings/settings.h"
 #include "cgl/engine/engine.h"
 #include "cgl/trace/logger.h"
@@ -31,12 +33,12 @@ class ClientEngine : public cgl::IEngine {
 
     ~ClientEngine();
 
-    void run() override;
+    bool run(uint32_t frameLimit) override;
 
  private:
     void initSingletonStage(cgl::ECSCore*);
     void initModulesStage(cgl::ECSCore*);
-    void runStage(cgl::ECSCore*);
+    void runStage(cgl::ECSCore*, uint32_t frameLimit);
     void closeStage(cgl::ECSCore*);
     bool anyStateError() const noexcept;
 
@@ -71,13 +73,8 @@ ClientEngine::~ClientEngine() {
 // -----------------------------------------------------------------------------
 void ClientEngine::initSingletonStage(cgl::ECSCore* pEcs) {
     // add engine state
-    auto pSettings = cgl::LoadSettings("settings.ini");
-    if (pSettings == nullptr) {
-        LOGW("Failed to to the setting file, use default setting for the engine");
-        pSettings = cgl::LoadSettings();
-    }
     ecs().addSingleton<cgl::component::EngineState>(
-        cgl::StateTypes::UNKNOWN, "", std::move(pSettings));
+        cgl::StateTypes::UNKNOWN, "", std::move(setting_));
     pEngineState_ = ecs().getSingleton<cgl::component::EngineState>();
 
     // add window state
@@ -147,22 +144,26 @@ void ClientEngine::initModulesStage(cgl::ECSCore* pEcs) {
 }
 
 // -----------------------------------------------------------------------------
-void ClientEngine::runStage(cgl::ECSCore* pEcs) {
+void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
     // main loop
     auto pWinHandle = ecs().getSingleton<cgl::component::WindowHandle>();
     assert(pWinHandle != nullptr);
 
-    while (pWinHandle->windowShouldClose == false) {
+    uint32_t frames = 0;
+    while (!pWinHandle->windowShouldClose && (!frameLimit || frames < frameLimit)) {
         if (anyStateError()) break;
         winInputSys_.update(pEcs);
+        if (pWinHandle->windowShouldClose) break;
 
         if (anyStateError()) break;
         sceneMgrSys_.update(pEcs);
+        ++frames;
     }
 }
 
 // -----------------------------------------------------------------------------
 void ClientEngine::closeStage(cgl::ECSCore* pEcs) {
+    if (pRenderDevState_->pDevice) pRenderDevState_->pDevice->waitIdle();
     // destroy scene
     cgl::SceneManagerDestroySystem sceneMgrDestroySys;
     sceneMgrDestroySys.update(pEcs);
@@ -170,17 +171,24 @@ void ClientEngine::closeStage(cgl::ECSCore* pEcs) {
     // destory render device
     cgl::RenderDeviceDestroySystem renderDeviceDestroySys;
     renderDeviceDestroySys.update(pEcs);
+
+    if (auto window = pEcs->getSingleton<cgl::component::WindowHandle>()) {
+        glfwDestroyWindow(static_cast<GLFWwindow*>(window->nativeHandle));
+        pEcs->removeSingleton<cgl::component::WindowHandle>();
+    }
+    glfwTerminate();
 }
 
 // -----------------------------------------------------------------------------
 bool ClientEngine::anyStateError() const noexcept {
-    return (CGL_IS_STATE_ERROR(pWindowState_) ||
+    return (CGL_IS_STATE_ERROR(pEngineState_) ||
+            CGL_IS_STATE_ERROR(pWindowState_) ||
             CGL_IS_STATE_ERROR(pRenderDevState_) ||
             CGL_IS_STATE_ERROR(pSceneState_));
 }
 
 // -----------------------------------------------------------------------------
-void ClientEngine::run() {
+bool ClientEngine::run(uint32_t frameLimit) {
     LOGI("Run client engine");
 
     initSingletonStage(&ecs_);
@@ -190,12 +198,14 @@ void ClientEngine::run() {
     }
 
     if (anyStateError() == false) {
-        runStage(&ecs_);
+        runStage(&ecs_, frameLimit);
     }
 
+    const bool success = !anyStateError();
     closeStage(&ecs_);
 
     LOGI("Engine close");
+    return success;
 }
 
 // -----------------------------------------------------------------------------
@@ -205,6 +215,11 @@ cgl::IEngine::Ptr cgl::IEngine::create(const std::string_view setting_path) {
     if (pSetting == nullptr) {
         LOGE("Failed to load settings from : " << setting_path);
         return nullptr;
+    }
+    const std::filesystem::path root(pSetting->general.EngineRootPath);
+    if (root.is_relative() && !setting_path.empty()) {
+        pSetting->general.EngineRootPath =
+            (std::filesystem::absolute(std::filesystem::path(setting_path)).parent_path() / root).string();
     }
     cgl::SetLogLevel(cgl::LogLevel::Trace);
 

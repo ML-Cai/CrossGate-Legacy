@@ -84,16 +84,9 @@ void InitSceneSystem::onEnter(cgl::ECSCore* pECS) noexcept {
     }
 
     // init assets readers
-    if (!CGL_UPDATE_SYS_AND_TRANSIT_STATE({
-            .pSystem     = &assetsReaderInitSys_,
-            .pEcs        = pECS,
-            .pCheckState = pAssetsReaderState_,
-            .onSuccess   = cgl::StateTransitionHint{
-                .pState = pAssetsReaderState_,
-                .to     = cgl::StateTypes::RUNNING
-            },
-            .pOnErrorState = pSceneState_})) {
-        return;
+    assetsReaderInitSys_.update(pECS);
+    if (CGL_IS_STATE_ERROR(pAssetsReaderState_)) {
+        cgl::RaiseError(pSceneState_, pAssetsReaderState_->lastError);
     }
 }
 
