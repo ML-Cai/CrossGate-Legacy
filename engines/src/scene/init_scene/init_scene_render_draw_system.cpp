@@ -12,6 +12,7 @@
 #include "cgl/graphics/queue.h"
 #include "render/render_components.h"
 #include "scene/init_scene/init_scene_systems.h"
+#include "scene/init_scene/character_animation.h"
 #include "engine/ecs.h"
 #include "engine/error_system.h"
 #include "engine/engine_components.h"
@@ -29,7 +30,7 @@ cgl::InitSceneRenderDrawSystem::InitSceneRenderDrawSystem()
 }
 
 // -----------------------------------------------------------------------------
-void cgl::InitSceneRenderDrawSystem::init(cgl::ECSCore* pECS) {
+void cgl::InitSceneRenderDrawSystem::init(cgl::ECSCore* pECS, const CharacterAnimation&) {
     pSceneRenderState_  = pECS->getSingleton<SceneRenderState>();
     assert(pSceneRenderState_ != nullptr);
     if (pSceneRenderState_->state != cgl::StateTypes::RUNNING) {
@@ -79,7 +80,7 @@ cgl::InitSceneRenderDrawSystem::acquireNextSyncObj() noexcept {
 }
 
 // -----------------------------------------------------------------------------
-void cgl::InitSceneRenderDrawSystem::render(cgl::ECSCore* pECS) {
+void cgl::InitSceneRenderDrawSystem::render(cgl::ECSCore* pECS, const CharacterAnimation& animation) {
     auto pSyncObj    = acquireNextSyncObj();
     auto pCmdBuffer  = pFrame_->pCmdBufferList->commandBuffer(pSyncObj->index);
     auto pRenderPass = pFrame_->renderPasses[cgl::INIT_SCENE_BASIC_RENDER_PASS].get();
@@ -127,12 +128,25 @@ void cgl::InitSceneRenderDrawSystem::render(cgl::ECSCore* pECS) {
 
     // prepare command buffer
     cgl::Viewport viewport(0, 0, pWindowHandle_->width, pWindowHandle_->height);
-    pCmdBuffer->begin();
-    {
-        pRenderPass->begin(viewport, pCmdBuffer, pFramebuffer);
-        pRenderPass->end();
+    if (!pCmdBuffer->begin()) {
+        cgl::RaiseError(pSceneRenderState_, "Failed to begin command buffer");
+        return;
     }
-    pCmdBuffer->end();
+    {
+        if (!pRenderPass->begin(viewport, pCmdBuffer, pFramebuffer)) {
+            cgl::RaiseError(pSceneRenderState_, "Failed to begin render pass");
+            return;
+        }
+        animation.draw(pCmdBuffer, viewport);
+        if (!pRenderPass->end()) {
+            cgl::RaiseError(pSceneRenderState_, "Failed to end render pass");
+            return;
+        }
+    }
+    if (!pCmdBuffer->end()) {
+        cgl::RaiseError(pSceneRenderState_, "Failed to end command buffer");
+        return;
+    }
 
     // submit the rendering
     if (pDevice->graphicsQueue()->submit(
@@ -157,6 +171,6 @@ void cgl::InitSceneRenderDrawSystem::render(cgl::ECSCore* pECS) {
 }
 
 // -----------------------------------------------------------------------------
-void cgl::InitSceneRenderDrawSystem::update(cgl::ECSCore* pECS) {
-    (this->*updater_)(pECS);
+void cgl::InitSceneRenderDrawSystem::update(cgl::ECSCore* pECS, const CharacterAnimation& animation) {
+    (this->*updater_)(pECS, animation);
 }

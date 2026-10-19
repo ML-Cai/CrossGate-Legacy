@@ -47,8 +47,8 @@ cmake --build . --config RelWithDebInfo
 
 ## Run
 
-- cgl-client: run `build/bin/cgl-client.exe`. The current client opens an 800x600
-  black Vulkan window and initializes the resource readers. Close the window to exit.
+- cgl-client: run `build/bin/cgl-client.exe`. After loading resources, the client
+  plays one Classic character animation in an 800x600 Vulkan window. Close it to exit.
   It reads `settings.ini` beside the executable; set `General.EngineRootPath` to
   the game directory containing `bin/`. Relative roots resolve against the INI
   directory. Use `--settings path/to/settings.ini` to choose another configuration,
@@ -56,5 +56,23 @@ cmake --build . --config RelWithDebInfo
   With tests enabled, `ctest --test-dir build -R cgl_client --output-on-failure`
   verifies startup and missing-resource cleanup. These tests require a Vulkan-capable
   desktop; the successful startup test also requires the configured game files.
+  The preview uses the daytime palette, original frame offsets, transparent
+  palette index 0, and the clip's total duration. The default matches the character
+  used by `tools/AnimeViewer`: serial `101406`, north-facing attack.
+
+  ```ini
+  [Animation]
+  SerialNum=101406
+  Direction=0
+  Motion=5
+
+  [Display]
+  ViewportScale=1.0
+  ```
+
+  Directions are `0` north, clockwise through `7` north-west. Common motions are
+  `0` idle, `1` walk and `5` attack; available combinations depend on the character.
+  `ViewportScale` must be positive. The client keeps its existing initialization
+  scene; shared animation caches and additional scenes are not required.
 - GraphicsDataViewer : see [tools/GraphicsDataViewer](tools/GraphicsDataViewer)
 - AnimeViewer : see [tools/AnimeViewer](tools/GraphicsDataViewer)
