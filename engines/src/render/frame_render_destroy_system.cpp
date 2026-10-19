@@ -8,23 +8,17 @@
 
 #include "cgl/trace/logger.h"
 #include "engine/ecs.h"
-#include "engine/error_system.h"
-#include "scene/init_scene/init_scene_systems.h"
+#include "render/frame_render_systems.h"
 #include "render/render_components.h"
 
 // -----------------------------------------------------------------------------
-void cgl::InitSceneRenderDestroySystem::update(cgl::ECSCore* pECS) {
-    LOGD("Destroy all render objects in InitScene");
+void cgl::FrameRenderDestroySystem::update(cgl::ECSCore* pECS) {
+    LOGD("Destroy engine frame resources");
 
-    auto pState = pECS->getSingleton<cgl::component::SceneRenderState>();
+    auto pState = pECS->getSingleton<cgl::component::FrameRenderState>();
     assert(pState != nullptr);
 
-    if (pState->state == cgl::StateTypes::RELEASE) {
-        cgl::RaiseError(pState, "The `InitSceneRenderDestroySystem` updates "
-            "data and systems only when the `RenderState` is NOT in the "
-            "`RELEASE` state. Please verify the flow.");
-        return;
-    }
+    if (pState->state == cgl::StateTypes::RELEASE) return;
 
     auto pDevState= pECS->getSingleton<cgl::component::RenderDeviceState>();
     if (pDevState->pDevice != nullptr) {
@@ -32,4 +26,5 @@ void cgl::InitSceneRenderDestroySystem::update(cgl::ECSCore* pECS) {
         pECS->removeSingleton<cgl::component::PrimarySceneRenderFrame>();
         pECS->removeSingleton<cgl::component::PrimaryRenderSyncObjects>();
     }
+    pState->state = cgl::StateTypes::RELEASE;
 }

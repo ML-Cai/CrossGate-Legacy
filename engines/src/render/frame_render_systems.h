@@ -17,16 +17,15 @@
 namespace cgl {
 
 class ECSCore;
-class CharacterAnimation;
 
-constexpr char INIT_SCENE_BASIC_RENDER_PASS[] = "INIT_SCENE_BASIC_RENDER_PASS";
+constexpr char PRIMARY_RENDER_PASS[] = "PRIMARY_RENDER_PASS";
 
 // -----------------------------------------------------------------------------
-class InitSceneRenderInitSystem {
+class FrameRenderInitSystem {
  public:
-    InitSceneRenderInitSystem() = default;
+    FrameRenderInitSystem() = default;
 
-    ~InitSceneRenderInitSystem() = default;
+    ~FrameRenderInitSystem() = default;
 
     void update(cgl::ECSCore* pECS);
 
@@ -35,32 +34,32 @@ class InitSceneRenderInitSystem {
 };
 
 // -----------------------------------------------------------------------------
-class InitSceneRenderDestroySystem {
+class FrameRenderDestroySystem {
  public:
-    InitSceneRenderDestroySystem() = default;
+    FrameRenderDestroySystem() = default;
 
-    ~InitSceneRenderDestroySystem() = default;
+    ~FrameRenderDestroySystem() = default;
 
     void update(cgl::ECSCore* pECS);
 };
 
 // -----------------------------------------------------------------------------
-class InitSceneRenderDrawSystem {
+class FrameRenderDrawSystem {
  public:
-    InitSceneRenderDrawSystem();
+    FrameRenderDrawSystem();
 
-    ~InitSceneRenderDrawSystem() = default;
+    ~FrameRenderDrawSystem() = default;
 
-    void update(cgl::ECSCore* pECS, const CharacterAnimation& animation);
+    void update(cgl::ECSCore* pECS);
 
  private:
-    void init(cgl::ECSCore* pECS, const CharacterAnimation& animation);
-    void render(cgl::ECSCore* pECS, const CharacterAnimation& animation);
+    void init(cgl::ECSCore* pECS);
+    void render(cgl::ECSCore* pECS);
 
-    using UpdateFunc = void (InitSceneRenderDrawSystem::*)(cgl::ECSCore*, const CharacterAnimation&);
+    using UpdateFunc = void (FrameRenderDrawSystem::*)(cgl::ECSCore*);
     UpdateFunc updater_;
 
-    cgl::component::SceneRenderState* pSceneRenderState_;
+    cgl::component::FrameRenderState* pFrameRenderState_;
     cgl::component::RenderDeviceState* pRenderDeviceState_;
     cgl::component::WindowHandle* pWindowHandle_;
     cgl::component::PrimarySceneRenderFrame* pFrame_;

@@ -1,4 +1,4 @@
-#include "scene/init_scene/character_animation.h"
+#include "scene/animation_scene/character_animation.h"
 #include "assets/assets_components.h"
 #include "cgl/settings/settings.h"
 #include "cgl/trace/logger.h"

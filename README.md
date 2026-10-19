@@ -48,7 +48,8 @@ cmake --build . --config RelWithDebInfo
 ## Run
 
 - cgl-client: run `build/bin/cgl-client.exe`. After loading resources, the client
-  plays one Classic character animation in an 800x600 Vulkan window. Close it to exit.
+  switches from its loading scene to one Classic character animation in an 800x600
+  Vulkan window. Press `R` to restart the animation scene; close the window to exit.
   It reads `settings.ini` beside the executable; set `General.EngineRootPath` to
   the game directory containing `bin/`. Relative roots resolve against the INI
   directory. Use `--settings path/to/settings.ini` to choose another configuration,
@@ -72,7 +73,8 @@ cmake --build . --config RelWithDebInfo
 
   Directions are `0` north, clockwise through `7` north-west. Common motions are
   `0` idle, `1` walk and `5` attack; available combinations depend on the character.
-  `ViewportScale` must be positive. The client keeps its existing initialization
-  scene; shared animation caches and additional scenes are not required.
+  `ViewportScale` must be positive. The engine retains the frame renderer across
+  scene changes; the animation scene owns and releases its preview resources.
+  See [scene lifecycle](engines/README.md) for ownership and tests.
 - GraphicsDataViewer : see [tools/GraphicsDataViewer](tools/GraphicsDataViewer)
 - AnimeViewer : see [tools/AnimeViewer](tools/GraphicsDataViewer)

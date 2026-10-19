@@ -7,10 +7,13 @@
 // =============================================================================
 
 #pragma once
+#include <functional>
+#include "scene/scene_components.h"
 
 namespace cgl {
 
 class ECSCore;
+IScene::Ptr CreateScene(SceneTypes type);
 
 namespace component {
 
@@ -21,7 +24,8 @@ struct SceneState;
 // -----------------------------------------------------------------------------
 class SceneManagerSystem {
  public:
-    SceneManagerSystem();
+    using SceneFactory = std::function<IScene::Ptr(SceneTypes)>;
+    explicit SceneManagerSystem(SceneFactory factory = CreateScene);
 
     ~SceneManagerSystem() = default;
 
@@ -37,6 +41,7 @@ class SceneManagerSystem {
     UpdateFunc updater_;
 
     cgl::component::SceneState* pSceneState_;
+    SceneFactory factory_;
 
 };
 

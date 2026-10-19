@@ -9,7 +9,7 @@
 #include <memory>
 #include "cgl/trace/logger.h"
 #include "render/render_components.h"
-#include "scene/init_scene/init_scene_systems.h"
+#include "render/frame_render_systems.h"
 #include "engine/ecs.h"
 #include "engine/error_system.h"
 #include "scene/scene_components.h"
@@ -23,7 +23,7 @@ constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 using cgl::component::RenderDeviceState;
 
 // -----------------------------------------------------------------------------
-bool cgl::InitSceneRenderInitSystem::initEssentialRenderObjects(
+bool cgl::FrameRenderInitSystem::initEssentialRenderObjects(
     cgl::ECSCore* pECS
 ) {
     auto pRenderDeviceState = pECS->getSingleton<RenderDeviceState>();
@@ -52,7 +52,7 @@ bool cgl::InitSceneRenderInitSystem::initEssentialRenderObjects(
     }
 
     std::unordered_map<std::string, cgl::graphics::IRenderPass::Ptr> renderPasses;
-    renderPasses[cgl::INIT_SCENE_BASIC_RENDER_PASS] = std::move(pRenderpass);
+    renderPasses[cgl::PRIMARY_RENDER_PASS] = std::move(pRenderpass);
 
     // create sync objects
     std::vector<cgl::component::RenderSyncObjects> syncObjects;
@@ -91,14 +91,14 @@ bool cgl::InitSceneRenderInitSystem::initEssentialRenderObjects(
 }
 
 // -----------------------------------------------------------------------------
-void cgl::InitSceneRenderInitSystem::update(cgl::ECSCore* pECS) {
-    auto pState = pECS->getSingleton<cgl::component::SceneRenderState>();
+void cgl::FrameRenderInitSystem::update(cgl::ECSCore* pECS) {
+    auto pState = pECS->getSingleton<cgl::component::FrameRenderState>();
     assert(pState != nullptr);
 
     if ((pState->state != cgl::StateTypes::UNKNOWN) &&
         (pState->state != cgl::StateTypes::INITIALIZING)) {
-        cgl::RaiseError(pState, "The `InitSceneRenderInitSystem` updates data "
-            "and systems only when the `SceneRenderState` is in the `UNKNOWN` "
+        cgl::RaiseError(pState, "The `FrameRenderInitSystem` updates data "
+            "and systems only when the `FrameRenderState` is in the `UNKNOWN` "
             "or `INITIALIZING` state. Please verify the flow.");
         return;
     }
@@ -106,7 +106,7 @@ void cgl::InitSceneRenderInitSystem::update(cgl::ECSCore* pECS) {
     if (initEssentialRenderObjects(pECS) == false) {
         cgl::RaiseError(pState,
             "Failed to init one of essential render objects in "
-            "InitSceneRenderInitSystem");
+            "FrameRenderInitSystem");
         return;
     }
 }

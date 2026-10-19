@@ -110,6 +110,11 @@ void cgl::WindowInputSystem::updateEvents(cgl::ECSCore* pECS) {
 
     glfwPollEvents();
 
+    auto* keyboard = pECS->getSingleton<cgl::component::KeyboardInputState>();
+    const bool down = glfwGetWindowAttrib(pWindow, GLFW_FOCUSED) && glfwGetKey(pWindow, GLFW_KEY_R) == GLFW_PRESS;
+    if (down && !keyboard->restartKeyDown) keyboard->restartSceneRequested = true;
+    keyboard->restartKeyDown = down;
+
     // check cursor pos updated or not
     float x = cursorPosState_[0].x;
     float y = cursorPosState_[0].y;

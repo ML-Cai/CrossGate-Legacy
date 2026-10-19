@@ -23,6 +23,11 @@ namespace cgl {
 namespace component {
 
 // -----------------------------------------------------------------------------
+struct FrameRenderState {
+    cgl::StateTypes state;
+    std::string lastError;
+};
+
 struct RenderDeviceState {
     cgl::StateTypes state;
     std::string lastError;

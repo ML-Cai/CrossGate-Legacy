@@ -18,6 +18,7 @@ namespace cgl {
 #define CGL_SCENE_TYPES_ENUM_LIST   \
     CGL_X(NullScene)                \
     CGL_X(InitScene)                \
+    CGL_X(AnimationScene)           \
     CGL_X(LoginScene)               \
     CGL_X(ServerSelectionScene)     \
     CGL_X(CharacterSelectionScene)  \
