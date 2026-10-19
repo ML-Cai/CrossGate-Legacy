@@ -21,5 +21,7 @@ struct EngineState {
     cgl::Settings::Ptr settings;
 };
 
+struct FrameTime { double deltaSeconds = 0; };
+
 }   // namespace component
 }   // namespace cgl

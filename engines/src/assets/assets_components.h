@@ -9,6 +9,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include "cgl/common/states.h"
 #include "cgl/common/version.h"
 #include "cgl/common/enum_array.h"

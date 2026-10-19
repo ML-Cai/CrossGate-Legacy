@@ -9,6 +9,7 @@
 #include "assert.h"
 #include <GLFW/glfw3.h>
 #include <filesystem>
+#include <chrono>
 #include "cgl/settings/settings.h"
 #include "cgl/engine/engine.h"
 #include "cgl/trace/logger.h"
@@ -17,6 +18,7 @@
 #include "engine/state_system.h"
 #include "engine/engine_components.h"
 #include "assets/assets_components.h"
+#include "assets/animation_library.h"
 #include "window/window_components.h"
 #include "window/window_systems.h"
 #include "render/render_components.h"
@@ -51,7 +53,8 @@ class ClientEngine : public cgl::IEngine {
     cgl::WindowInputSystem winInputSys_;
     cgl::RenderDeviceInitSystem renderDeviceInitSys_;
     cgl::FrameRenderDrawSystem renderDrawSys_;
-    cgl::SceneManagerSystem sceneMgrSys_;
+    cgl::AnimationLibrary animationLibrary_;
+    cgl::SceneManagerSystem sceneMgrSys_{animationLibrary_};
 
     // state objects
     cgl::component::EngineState* pEngineState_;
@@ -99,6 +102,7 @@ void ClientEngine::initSingletonStage(cgl::ECSCore* pEcs) {
     pRenderDevState_ = ecs().getSingleton<cgl::component::RenderDeviceState>();
     ecs().addSingleton<cgl::component::FrameRenderState>(cgl::StateTypes::INITIALIZING, "");
     ecs().addSingleton<cgl::component::KeyboardInputState>();
+    ecs().addSingleton<cgl::component::FrameTime>();
 
     // add window create info
     ecs().addSingleton<cgl::component::WindowCreateInfo>(
@@ -163,7 +167,12 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
     assert(pWinHandle != nullptr);
 
     uint32_t frames = 0;
+    auto previous = std::chrono::steady_clock::now();
     while (!pWinHandle->windowShouldClose && (!frameLimit || frames < frameLimit)) {
+        const auto now = std::chrono::steady_clock::now();
+        pEcs->getSingleton<cgl::component::FrameTime>()->deltaSeconds =
+            std::chrono::duration<double>(now - previous).count();
+        previous = now;
         if (anyStateError()) break;
         winInputSys_.update(pEcs);
         if (pWinHandle->windowShouldClose) break;
@@ -187,6 +196,7 @@ void ClientEngine::closeStage(cgl::ECSCore* pEcs) {
     // destroy scene
     cgl::SceneManagerDestroySystem sceneMgrDestroySys;
     sceneMgrDestroySys.update(pEcs);
+    animationLibrary_.clear();
 
     cgl::FrameRenderDestroySystem frameDestroy;
     frameDestroy.update(pEcs);

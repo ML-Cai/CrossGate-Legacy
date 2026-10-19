@@ -44,7 +44,8 @@ class IScene {
 };
 
 cgl::IScene::Ptr CreateInitScene();
-cgl::IScene::Ptr CreateAnimationScene();
+class AnimationLibrary;
+cgl::IScene::Ptr CreateAnimationScene(AnimationLibrary& library);
 
 
 namespace component {

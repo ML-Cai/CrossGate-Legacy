@@ -4,3 +4,9 @@ target_include_directories(test_scene_lifecycle PRIVATE ${CMAKE_CURRENT_SOURCE_D
 target_link_libraries(test_scene_lifecycle PRIVATE GTest::gtest_main cgl::engine cgl::graphics cgl::assets cgl::settings cgl::common Vulkan::Vulkan glfw)
 set_target_properties(test_scene_lifecycle PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 gtest_discover_tests(test_scene_lifecycle WORKING_DIRECTORY ${CGL_BIN_PATH})
+
+add_executable(test_engine_animation test_animation.cpp)
+target_include_directories(test_engine_animation PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_engine_animation PRIVATE GTest::gtest_main cgl::engine cgl::graphics cgl::assets cgl::settings cgl::common)
+set_target_properties(test_engine_animation PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
+gtest_discover_tests(test_engine_animation WORKING_DIRECTORY ${CGL_BIN_PATH})

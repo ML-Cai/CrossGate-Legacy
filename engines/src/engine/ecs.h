@@ -118,6 +118,10 @@ public:
 
     void destroyEntity(Entity e) {
         entities_.erase(e);
+        for (auto it = singletonEntityMap_.begin(); it != singletonEntityMap_.end();) {
+            if (it->second == e) it = singletonEntityMap_.erase(it);
+            else ++it;
+        }
         for (auto& [_, storage] : componentStores_) {
             storage->erase(e);
         }
@@ -189,7 +193,6 @@ public:
 
         Entity e = it->second;
         destroyEntity(e);  // clean all component
-        singletonEntityMap_.erase(it);
     }
 
 private:
