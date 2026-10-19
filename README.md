@@ -91,11 +91,15 @@ cmake --build . --config RelWithDebInfo
   restarts it at the center. `Display.ViewportScale` controls the initial map scale
   (0.125 through 16). Ground, buildings and trees share an image atlas; the
   configured animation character sorts with objects by its ground anchor.
-  WASD moves the character through the map at 100 world pixels/second, with equal
-  diagonal speed. The character stays centered while terrain and objects scroll
-  opposite to travel. Arrow keys do not detach or pan the camera in map mode.
-  It faces the direction of travel and switches between walk and idle on key release.
-  Movement stays within the map bounds and ignores object/terrain collision.
+  WASD uses screen directions: W up, A left, S down, D right. W+A goes northwest,
+  W+D northeast, S+D southeast and S+A southwest. Each input selects an integer
+  neighboring MAP cell after inverse isometric direction conversion. Speed is 4 MAP coordinate units/second, so a
+  one-axis step takes 0.25 seconds and a two-axis step takes sqrt(2)/4 seconds.
+  Walking interpolates smoothly; releasing finishes the current step before idle,
+  and turning takes effect at the next cell center. The character stays centered
+  while terrain and objects scroll opposite to travel. Arrow keys do not pan.
+  Spawn/restart uses integer cell (width/2, height/2), rounded down. A step outside
+  map bounds is rejected entirely; object/terrain collision is ignored.
   Map mode uses all eight idle/walk directions of `Animation.SerialNum`;
   `Direction` sets its initial facing and `Motion` only applies to the standalone
   animation preview. Characters without these idle/walk clips fail at scene loading.
