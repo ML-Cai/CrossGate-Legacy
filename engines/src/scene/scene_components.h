@@ -46,8 +46,8 @@ class IScene {
 cgl::IScene::Ptr CreateInitScene();
 class AnimationLibrary;
 cgl::IScene::Ptr CreateAnimationScene(AnimationLibrary& library);
-class GroundMapLibrary;
-cgl::IScene::Ptr CreateMapScene(GroundMapLibrary& library);
+class MapLibrary;
+cgl::IScene::Ptr CreateMapScene(MapLibrary& maps, AnimationLibrary& animations);
 
 
 namespace component {

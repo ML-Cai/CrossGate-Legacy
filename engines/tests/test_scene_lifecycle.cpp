@@ -1,5 +1,6 @@
-#include "assets/ground_map_library.h"
+#include "assets/map_library.h"
 #include "map/map_camera.h"
+#include "map/map_render_data.h"
 #include <gtest/gtest.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -153,7 +154,7 @@ protected:
     }
     cgl::ECSCore world_;
     cgl::AnimationLibrary library_;
-    cgl::GroundMapLibrary maps_;
+    cgl::MapLibrary maps_;
     cgl::SceneManagerSystem manager_{[this](cgl::SceneTypes type) {
         return cgl::CreateScene(type, library_, &maps_);
     }};
@@ -216,7 +217,7 @@ TEST_F(DesktopSceneTest, RepeatedRestartKeepsFrameResourcesAndReaders) {
     library_.clear();
     EXPECT_TRUE(original.expired()); // Final cache cleanup releases the GPU asset.
 }
-TEST_F(DesktopSceneTest, GroundMapRestartsReuseUploadsAndCameraIsCleanedUp) {
+TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks) {
     world_.getSingleton<cgl::component::EngineState>()->settings->map.FilePath = "map/0/2100.dat";
     auto* scene = world_.getSingleton<cgl::component::SceneState>();
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
@@ -240,7 +241,28 @@ TEST_F(DesktopSceneTest, GroundMapRestartsReuseUploadsAndCameraIsCleanedUp) {
     ASSERT_NE(original->renderer, nullptr);
     EXPECT_EQ(original->layout.width, 100);
     EXPECT_EQ(original->layout.height, 100);
-    EXPECT_FALSE(original->tiles.empty());
+    EXPECT_FALSE(original->images.empty());
+    EXPECT_TRUE(original->images.contains(10058)); // Building image, not just ground.
+    EXPECT_FALSE(original->images.contains(2));
+    EXPECT_FALSE(original->images.contains(251));
+    std::weak_ptr<const cgl::AnimationClip> originalClip;
+    bool firstCharacterVisit = true;
+    auto verifyCharacter = [&] {
+        unsigned count = 0;
+        world_.forEach<cgl::component::MapPosition, cgl::component::Sprite, cgl::component::AnimationPlayer>(
+            [&](auto, auto* position, auto* sprite, auto*) {
+                ++count;
+                ASSERT_NE(sprite->clip, nullptr);
+                if (firstCharacterVisit) { originalClip = sprite->clip; firstCharacterVisit = false; }
+                EXPECT_FALSE(originalClip.expired());
+                EXPECT_EQ(originalClip.lock(), sprite->clip);
+                EXPECT_DOUBLE_EQ(position->cell.x, 49.5);
+                EXPECT_DOUBLE_EQ(position->cell.y, 49.5);
+                EXPECT_LT(sprite->clip->offsetY, 0);
+            });
+        EXPECT_EQ(count, 1);
+    };
+    verifyCharacter();
     for (int restart = 0; restart < 3; ++restart) {
         world_.getSingleton<cgl::component::KeyboardInputState>()->panX = 1;
         world_.getSingleton<cgl::component::FrameTime>()->deltaSeconds = 0.5;
@@ -255,15 +277,29 @@ TEST_F(DesktopSceneTest, GroundMapRestartsReuseUploadsAndCameraIsCleanedUp) {
         ASSERT_NE(world_.getSingleton<cgl::component::MapCamera>(), nullptr);
         EXPECT_DOUBLE_EQ(world_.getSingleton<cgl::component::MapCamera>()->center.x, 49.5);
         EXPECT_EQ(maps_.acquire(path, readers, device, pass), original);
+        verifyCharacter();
+        world_.getSingleton<cgl::component::KeyboardInputState>()->moveX = 1;
+        manager_.update(&world_);
+        world_.getSingleton<cgl::component::KeyboardInputState>()->moveX = 0;
+        world_.forEach<cgl::component::MapPosition>([&](auto, auto* position) {
+            EXPECT_GT(position->cell.x, 49.5);
+            EXPECT_GT(position->cell.y, 49.5);
+        });
     }
     device->waitIdle();
     cgl::SceneManagerDestroySystem{}.update(&world_);
     EXPECT_EQ(world_.getSingleton<cgl::component::MapCamera>(), nullptr);
-    std::weak_ptr<const cgl::GroundMap> weak = original;
+    unsigned remaining = 0;
+    world_.forEach<cgl::component::MapPosition>([&](auto, auto*) { ++remaining; });
+    EXPECT_EQ(remaining, 0);
+    std::weak_ptr<const cgl::MapResources> weak = original;
     original.reset();
     EXPECT_FALSE(weak.expired());
     maps_.clear();
     EXPECT_TRUE(weak.expired());
+    EXPECT_FALSE(originalClip.expired());
+    library_.clear();
+    EXPECT_TRUE(originalClip.expired());
 }
 
 }

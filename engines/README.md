@@ -25,34 +25,50 @@ pending GPU work and later scene entries. Final shutdown waits for GPU completio
 exits the scene, clears the cache, then destroys frame resources, device and window.
 Do not evict cached GPU resources while submitted draws can still use them.
 
-When `Map.FilePath` is set, InitScene requests MapScene instead. GroundMapLibrary
-loads its MAP layout and unique nonzero ground IDs from Classic resources. It
-decodes BGR palettes into top-down RGBA (index 0 transparent), honoring per-image
-palettes and offsets. One immutable texture array contains padded frames; it is
-limited to 512x512 per frame, 128 MiB of RGBA data, and the device's texture-array
-limits. Unsupported/missing IDs and upload failures report a scene error. No ID
-remapping or debug-ID suppression is applied.
+When `Map.FilePath` is set, InitScene requests MapScene instead. MapLibrary
+loads the MAP layout and unique ground/object images from Classic resources. It
+preserves image offsets and converts BGR palettes into top-down RGBA (index 0 is
+transparent), honoring per-image palettes. A deterministic shelf atlas with
+one-pixel transparent borders replaces the padded ground texture array. The atlas
+is bounded to 2048x4096 (32 MiB RGBA); packing is checked before image decoding.
+Images must fit within that atlas including borders. Unknown IDs and upload
+failures report a scene error. Classic placeholder IDs 0/2 and object markers
+200 through 265 are skipped; resource-version ID remapping and CUT files remain
+unsupported.
 
-MapScene owns a MapCamera singleton. Arrow keys pan at 300 screen pixels/second;
-the center is clamped to map bounds. The camera uses fractional cell coordinates
-and the Classic 64x47 isometric projection: file x increases northeast and file y
-increases southeast (`worldX = 32 * (x+y)`, `worldY = 23.5 * (y-x)`). This follows
-the MAP ordering described in https://cgsword.com/filesystem_graphicmap.htm and the
-legacy coordinate conversion. Rendering transforms the viewport
-corners back to map space, expands for image offsets, visits that bounded region,
-and rejects individual offscreen rectangles. Camera movement changes positions
-without rebuilding or uploading textures. R resets the camera; scene exit removes
-it. The engine retains GroundMapLibrary across scene exits and clears it after GPU
-completion and scene teardown, before destroying frame/device resources.
+MapScene owns a MapCamera singleton and one character entity with MapPosition,
+Sprite and AnimationPlayer. Its clip comes from AnimationLibrary and uses the
+existing Animation settings. The clip retains its canvas offset relative to the
+ground anchor. Arrow keys pan the camera at 300 screen pixels/second; WASD moves
+the character at 100 world pixels/second. Both clamp to map bounds. This is free
+preview movement, without collision or pathfinding. R resets camera and character.
 
-MapCameraTest covers projection/inverse, elapsed-time pan, diagonal speed, zoom,
-edge clamps and culling against a brute-force reference. A fixed, numbered 3x2
-layout additionally pins actual Classic axis directions, since round-trip tests
-alone cannot detect two transforms that share the same incorrect orientation.
-DesktopSceneTest also
-draws map 2100, pans, restarts three times, checks upload reuse and camera/cache
-cleanup. `cgl_client_map_*` verifies startup and invalid path/scale cleanup. These
-desktop tests need original Classic data including `map/0/2100.dat` and Vulkan.
+The Classic 64x47 projection has file x increasing northeast and file y southeast
+(`worldX = 32 * (x+y)`, `worldY = 23.5 * (y-x)`), following the MAP ordering at
+https://cgsword.com/filesystem_graphicmap.htm and the legacy coordinate conversion.
+The viewport expands by the full image reach before culling ground anchors, so
+large objects whose anchors lie offscreen still appear. Ground is drawn first;
+objects and characters then share one back-to-front list ordered by anchor depth
+`y-x`, then horizontal position `x+y`, then stable object/entity identity. Equal
+anchors draw objects before characters. Image height and animation pose never
+change sorting. The color-only sprite renderer preserves transparent holes
+without writing depth. This is whole-sprite anchor sorting; intersecting building
+pieces and finer multi-tile occlusion would need separate artwork/geometry rules.
+
+Camera/character movement changes positions without rebuilding textures. Scene
+exit deletes its character and camera; engine-owned map and animation caches
+retain uploads until shutdown waits for GPU completion, exits the scene and
+clears both caches before destroying frame/device resources.
+
+MapCameraTest pins Classic axes using a numbered 3x2 fixture and checks inverse,
+pan, bounds and culling. MapRenderTest checks atlas placement/limits, marker
+filtering, large-image visibility and object/character ordering. SpriteRendererTest
+uses offscreen pixel readback for source rectangles and transparency under both
+draw orders. DesktopSceneTest loads map 2100 with buildings and a character, pans,
+moves, restarts three times, checks cache reuse and entity/camera cleanup.
+`cgl_client_map_*` covers startup and invalid path/scale/animation cleanup. Desktop
+tests need Classic data including `map/0/2100.dat` and Vulkan; pure map tests and
+sprite readback do not require original game data.
 
 Component addresses can change on insertion or swap-removal. Store entity IDs
 and requery components; perform entity/component additions and removals outside

@@ -85,6 +85,8 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquire(
     require(bool(renderer), "Could not upload animation or create sprite pipeline");
     auto result = std::make_shared<AnimationClip>();
     result->renderer = std::move(renderer);
+    result->offsetX = int32_t(left);
+    result->offsetY = int32_t(top);
     result->width = uint32_t(width);
     result->height = uint32_t(height);
     result->frameCount = uint32_t(frames.size());

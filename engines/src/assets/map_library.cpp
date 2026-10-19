@@ -1,0 +1,76 @@
+#include "assets/map_library.h"
+#include "assets/assets_components.h"
+#include "map/map_atlas.h"
+#include "map/map_render_data.h"
+#include "cgl/trace/logger.h"
+#include <set>
+#include <stdexcept>
+
+namespace cgl {
+std::shared_ptr<const MapResources> MapLibrary::acquire(const std::filesystem::path& path,
+    component::AssetsReaderState& readers, graphics::IDevice* device, graphics::IRenderPass* pass) {
+    if (!device || !pass || (device_ && device_ != device) || (pass_ && pass_ != pass))
+        throw std::invalid_argument("Map library requires one live device/render pass");
+    const auto key = std::filesystem::absolute(path).lexically_normal();
+    if (const auto found = maps_.find(key); found != maps_.end()) return found->second;
+    auto result = std::make_shared<MapResources>();
+    if (IMapLayoutReader::create()->read(key, &result->layout) != Results::Success)
+        throw std::runtime_error("Could not read MAP layout: " + key.string());
+    constexpr auto version = CrossGateVersion::CG_VERSION_Classic;
+    auto* infoReader = readers.pGfxInfoReader[version].get();
+    auto* dataReader = readers.pGfxDataReader[version].get();
+    if (!infoReader || !dataReader || !readers.pPaletteReader)
+        throw std::runtime_error("Map requires initialized Classic readers");
+    PaletteData256 palette;
+    if (readers.pPaletteReader->read(EnvironmentPaletteTypes::Daytime, &palette) != Results::Success)
+        throw std::runtime_error("Could not read map palette");
+    std::set<uint16_t> ids;
+    for (const auto& cell : result->layout.cells) {
+        if (IsClassicMapImage(cell.groundId, false)) ids.insert(cell.groundId);
+        if (IsClassicMapImage(cell.objectId, true)) ids.insert(cell.objectId);
+    }
+    std::unordered_map<uint16_t, GraphicsResourceInfo> infos;
+    std::vector<MapImageSize> sizes;
+    for (const auto id : ids) {
+        GraphicsResourceInfo info{};
+        if (infoReader->query({GraphicsResourceSerialNumTypes::MapSerialNum, version, id}, &info) != Results::Success)
+            throw std::runtime_error("Classic map image ID not found: " + std::to_string(id));
+        if (info.width <= 0 || info.height <= 0)
+            throw std::runtime_error("Invalid map image dimensions: " + std::to_string(id));
+        sizes.push_back({id, uint32_t(info.width), uint32_t(info.height)});
+        infos.emplace(id, info);
+    }
+    const auto plan = PlanMapAtlas(std::move(sizes));
+    if (!plan) throw std::runtime_error("Map images exceed the 2048x4096 atlas budget");
+    if (!plan->regions.empty()) {
+        std::vector<uint8_t> rgba(size_t(plan->width) * plan->height * 4, 0);
+        for (const auto& region : plan->regions) {
+            const auto& info = infos.at(region.id);
+            GraphicsResourceData data{};
+            if (dataReader->query(info, &data) != Results::Success || !data.pData ||
+                data.width != info.width || data.height != info.height)
+                throw std::runtime_error("Could not decode map image: " + std::to_string(region.id));
+            const auto* colors = data.pPaletteData ? data.pPaletteData :
+                reinterpret_cast<const uint8_t*>(palette.data());
+            for (int y = 0; y < data.height; ++y) for (int x = 0; x < data.width; ++x) {
+                const auto index = data.pData[(data.height - 1 - y) * size_t(data.width) + x];
+                auto* dst = rgba.data() + ((size_t(region.source.y) + y) * plan->width + region.source.x + x) * 4;
+                dst[0] = colors[index * 3 + 2]; dst[1] = colors[index * 3 + 1];
+                dst[2] = colors[index * 3]; dst[3] = index ? 255 : 0;
+            }
+            result->images.emplace(region.id, MapImage{region.source, info.offsetX, info.offsetY});
+            result->reachX = std::max({result->reachX, std::abs(double(info.offsetX)),
+                std::abs(double(info.offsetX) + info.width)});
+            result->reachY = std::max({result->reachY, std::abs(double(info.offsetY)),
+                std::abs(double(info.offsetY) + info.height)});
+        }
+        result->renderer = graphics::ISpriteRenderer::create(device, pass, plan->width, plan->height, 1, rgba);
+        if (!result->renderer) throw std::runtime_error("Could not upload map atlas (check device texture limits)");
+    }
+    maps_.emplace(key, result);
+    device_ = device; pass_ = pass;
+    LOGI("Map ready: " << result->layout.width << "x" << result->layout.height
+        << ", images=" << result->images.size() << ", atlas=" << plan->width << "x" << plan->height);
+    return result;
+}
+}

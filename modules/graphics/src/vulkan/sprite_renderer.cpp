@@ -39,6 +39,8 @@ public:
                  uint32_t frameCount, std::span<const uint8_t> rgba);
     void draw(ICommandBuffer* command, const cgl::Viewport& viewport,
               uint32_t frame, float x, float y, float scale) override;
+    void drawRegion(ICommandBuffer* command, const cgl::Viewport& viewport,
+                    uint32_t frame, SpriteRegion source, float x, float y, float scale) override;
 private:
     bool allocate(const VkMemoryRequirements& requirements, VkMemoryPropertyFlags flags, VkDeviceMemory* memory) {
         VkPhysicalDeviceMemoryProperties properties;
@@ -188,7 +190,7 @@ bool SpriteRenderer::upload(std::span<const uint8_t> rgba) {
 }
 
 bool SpriteRenderer::createPipeline(VkRenderPass pass) {
-    VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 20};
+    VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 36};
     VkPipelineLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     layoutInfo.setLayoutCount = 1; layoutInfo.pSetLayouts = &descriptorLayout_;
     layoutInfo.pushConstantRangeCount = 1; layoutInfo.pPushConstantRanges = &push;
@@ -244,14 +246,23 @@ bool SpriteRenderer::createPipeline(VkRenderPass pass) {
 
 void SpriteRenderer::draw(ICommandBuffer* command, const cgl::Viewport& viewport,
                            uint32_t frame, float x, float y, float scale) {
+    drawRegion(command, viewport, frame, {0, 0, width_, height_}, x, y, scale);
+}
+
+void SpriteRenderer::drawRegion(ICommandBuffer* command, const cgl::Viewport& viewport,
+                                uint32_t frame, SpriteRegion source, float x, float y, float scale) {
     if (!command || frame >= frameCount_ || !viewport.width || !viewport.height ||
+        !source.width || !source.height || source.x >= width_ || source.y >= height_ ||
+        source.width > width_ - source.x || source.height > height_ - source.y ||
         viewport.x < 0 || viewport.y < 0 || !std::isfinite(x) || !std::isfinite(y) ||
         !std::isfinite(scale) || scale <= 0) return;
     const auto buffer = static_cast<CommandBuffer*>(command)->commandBuffer();
     VkViewport area{float(viewport.x), float(viewport.y), float(viewport.width), float(viewport.height), 0, 1};
     VkRect2D scissor{{viewport.x, viewport.y}, {viewport.width, viewport.height}};
     const float push[]{2 * x / viewport.width - 1, 2 * y / viewport.height - 1,
-                       2 * width_ * scale / viewport.width, 2 * height_ * scale / viewport.height, float(frame)};
+                       2 * source.width * scale / viewport.width, 2 * source.height * scale / viewport.height,
+                       float(source.x) / width_, float(source.y) / height_,
+                       float(source.width) / width_, float(source.height) / height_, float(frame)};
     vkCmdSetViewport(buffer, 0, 1, &area);
     vkCmdSetScissor(buffer, 0, 1, &scissor);
     vkCmdBindPipeline(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);

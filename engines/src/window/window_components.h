@@ -26,6 +26,7 @@ struct KeyboardInputState {
     bool restartSceneRequested = false;
     bool restartKeyDown = false;
     float panX = 0, panY = 0;
+    float moveX = 0, moveY = 0;
 };
 
 // -----------------------------------------------------------------------------

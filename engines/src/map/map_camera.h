@@ -42,16 +42,24 @@ inline MapPoint ScreenToMap(MapPoint screen, const component::MapCamera& camera,
                        (screen.y - viewport.height * 0.5) / camera.scale + center.y});
 }
 
-inline void PanMapCamera(component::MapCamera& camera, double horizontal, double vertical,
-                         double seconds, uint32_t width, uint32_t height) noexcept {
-    if (!width || !height || !std::isfinite(seconds) || seconds <= 0) return;
+inline void MoveMapPoint(MapPoint& position, double horizontal, double vertical,
+                          double seconds, double pixelsPerSecond, uint32_t width, uint32_t height) noexcept {
+    if (!width || !height || !std::isfinite(seconds) || seconds <= 0 ||
+        !std::isfinite(horizontal) || !std::isfinite(vertical) ||
+        !std::isfinite(pixelsPerSecond) || pixelsPerSecond <= 0) return;
     const double length = std::hypot(horizontal, vertical);
     if (!length) return;
-    // 300 screen pixels per second, independent of diagonal movement and zoom.
-    const auto delta = WorldToMap({horizontal / length * 300 * seconds / camera.scale,
-                                   vertical / length * 300 * seconds / camera.scale});
-    camera.center.x = std::clamp(camera.center.x + delta.x, 0.0, double(width - 1));
-    camera.center.y = std::clamp(camera.center.y + delta.y, 0.0, double(height - 1));
+    const auto delta = WorldToMap({horizontal / length * pixelsPerSecond * seconds,
+                                   vertical / length * pixelsPerSecond * seconds});
+    position.x = std::clamp(position.x + delta.x, 0.0, double(width - 1));
+    position.y = std::clamp(position.y + delta.y, 0.0, double(height - 1));
+}
+
+inline void PanMapCamera(component::MapCamera& camera, double horizontal, double vertical,
+                         double seconds, uint32_t width, uint32_t height) noexcept {
+    if (!std::isfinite(camera.scale) || camera.scale <= 0) return;
+    // Camera speed stays at 300 screen pixels per second, including at zoom.
+    MoveMapPoint(camera.center, horizontal, vertical, seconds, 300 / camera.scale, width, height);
 }
 
 struct MapBounds { int32_t left = 0, top = 0, right = -1, bottom = -1; };
