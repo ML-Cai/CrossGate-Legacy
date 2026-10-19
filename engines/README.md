@@ -25,6 +25,29 @@ pending GPU work and later scene entries. Final shutdown waits for GPU completio
 exits the scene, clears the cache, then destroys frame resources, device and window.
 Do not evict cached GPU resources while submitted draws can still use them.
 
+When `Map.FilePath` is set, InitScene requests MapScene instead. GroundMapLibrary
+loads its MAP layout and unique nonzero ground IDs from Classic resources. It
+decodes BGR palettes into top-down RGBA (index 0 transparent), honoring per-image
+palettes and offsets. One immutable texture array contains padded frames; it is
+limited to 512x512 per frame, 128 MiB of RGBA data, and the device's texture-array
+limits. Unsupported/missing IDs and upload failures report a scene error. No ID
+remapping or debug-ID suppression is applied.
+
+MapScene owns a MapCamera singleton. Arrow keys pan at 300 screen pixels/second;
+the center is clamped to map bounds. The camera uses fractional cell coordinates
+and the Classic 64x47 isometric projection. Rendering transforms the viewport
+corners back to map space, expands for image offsets, visits that bounded region,
+and rejects individual offscreen rectangles. Camera movement changes positions
+without rebuilding or uploading textures. R resets the camera; scene exit removes
+it. The engine retains GroundMapLibrary across scene exits and clears it after GPU
+completion and scene teardown, before destroying frame/device resources.
+
+MapCameraTest covers projection/inverse, elapsed-time pan, diagonal speed, zoom,
+edge clamps and culling against a brute-force reference. DesktopSceneTest also
+draws map 2100, pans, restarts three times, checks upload reuse and camera/cache
+cleanup. `cgl_client_map_*` verifies startup and invalid path/scale cleanup. These
+desktop tests need original Classic data including `map/0/2100.dat` and Vulkan.
+
 Component addresses can change on insertion or swap-removal. Store entity IDs
 and requery components; perform entity/component additions and removals outside
 forEach iteration. Singleton identity is also cleared when its entity is destroyed.

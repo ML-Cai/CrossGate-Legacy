@@ -32,6 +32,15 @@
                 "Description" : "Motion: 0 idle, 1 walk, 5 attack (see MotionTypes)."
             }
         ],
+        "Map" : [
+            {
+                "Name" : "FilePath",
+                "Type" : "std::string",
+                "Default" : "",
+                "ExportToINI" : true,
+                "Description" : "Classic MAP file relative to EngineRootPath (or absolute). Empty keeps animation preview."
+            }
+        ],
         "Display" : [
             {
                 "Name" : "ViewportScale",

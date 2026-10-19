@@ -25,6 +25,7 @@ struct WindowCreateInfo {
 struct KeyboardInputState {
     bool restartSceneRequested = false;
     bool restartKeyDown = false;
+    float panX = 0, panY = 0;
 };
 
 // -----------------------------------------------------------------------------

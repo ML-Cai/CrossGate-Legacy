@@ -3,6 +3,7 @@
 #include "assets/assets_system.h"
 #include "engine/ecs.h"
 #include "engine/error_system.h"
+#include "engine/engine_components.h"
 #include "cgl/trace/logger.h"
 
 namespace {
@@ -20,7 +21,10 @@ public:
         if (assets->state != cgl::StateTypes::RUNNING) loader_.update(world);
         auto* scene = world->getSingleton<cgl::component::SceneState>();
         if (assets->state == cgl::StateTypes::ERROR) cgl::RaiseError(scene, assets->lastError);
-        else if (assets->state == cgl::StateTypes::RUNNING) scene->nextScene = cgl::SceneTypes::AnimationScene;
+        else if (assets->state == cgl::StateTypes::RUNNING) {
+            const auto& path = world->getSingleton<cgl::component::EngineState>()->settings->map.FilePath;
+            scene->nextScene = path.empty() ? cgl::SceneTypes::AnimationScene : cgl::SceneTypes::MapScene;
+        }
     }
 private:
     cgl::AssetsReaderInitSystem loader_;
