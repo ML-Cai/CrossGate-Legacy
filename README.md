@@ -60,7 +60,7 @@ cmake --build . --config RelWithDebInfo
   desktop; the successful startup test also requires the configured game files.
   The preview uses the daytime palette, original frame offsets, transparent
   palette index 0, and the clip's total duration. The default matches the character
-  used by `tools/AnimeViewer`: serial `101406`, north-facing attack.
+  used by `tools/AnimeViewer`: serial `101406`, screen northwest-facing attack.
 
   ```ini
   [Animation]
@@ -72,7 +72,8 @@ cmake --build . --config RelWithDebInfo
   ViewportScale=1.0
   ```
 
-  Directions are `0` north, clockwise through `7` north-west. Common motions are
+  Directions are native animation indices: `0` screen northwest, `1` up,
+  `2` northeast, `3` right, `4` southeast, `5` down, `6` southwest, `7` left. Common motions are
   `0` idle, `1` walk and `5` attack; available combinations depend on the character.
   `ViewportScale` must be positive. The engine retains the frame renderer across
   scene changes. AnimationLibrary retains clips across restarts; scene exit removes

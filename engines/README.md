@@ -60,9 +60,12 @@ CharacterMovement stores integer cell/target coordinates, step progress, speed,
 facing, movement state and shared idle/walk clips. MapScene spawns at integer
 (width/2, height/2), rounded down, and preloads all eight directions before play.
 UpdateCharacterMovement runs before UpdateAnimations. WASD is screen-relative:
-W/A/S/D means north/west/south/east. W+A/W+D/S+D/S+A means NW/NE/SE/SW. The input
+W/A/S/D means screen up/left/down/right. W+A/W+D/S+D/S+A means screen
+NW/NE/SE/SW. The input
 signs are converted to a neighboring MAP cell with dx=sign(horizontal-vertical),
-dy=sign(horizontal+vertical). A step takes its MAP-coordinate distance divided
+dy=sign(horizontal+vertical). Animation indices start at screen NW (0) and
+continue clockwise: up=1, NE=2, right=3, SE=4, down=5, SW=6, left=7.
+Screen movement sectors start at up, so clip selection adds one modulo eight. A step takes its MAP-coordinate distance divided
 by cellsPerSecond (default 4): 0.25 seconds for one axis, sqrt(2)/4 for two axes.
 Input is sampled at cell boundaries. Release completes the current step; a turn
 cannot redirect a step halfway through. Remaining frame time can advance further

@@ -119,11 +119,11 @@ struct MovingCharacter {
 
 
 TEST(CharacterMovementTest, WASDAndAllFourKeyPairsFollowScreenDirections) {
-    // Input x/y, destination MAP delta, animation facing (clockwise from north).
+    // Input x/y, destination MAP delta, native animation direction (0 = screen NW).
     // W, W+D, D, S+D, S, S+A, A, W+A.
     constexpr int inputs[8][5] = {
-        {0,-1,1,-1,0},{1,-1,1,0,1},{1,0,1,1,2},{1,1,0,1,3},
-        {0,1,-1,1,4},{-1,1,-1,0,5},{-1,0,-1,-1,6},{-1,-1,0,-1,7}};
+        {0,-1,1,-1,1},{1,-1,1,0,2},{1,0,1,1,3},{1,1,0,1,4},
+        {0,1,-1,1,5},{-1,1,-1,0,6},{-1,0,-1,-1,7},{-1,-1,0,-1,0}};
     for (const auto& input : inputs) {
         SCOPED_TRACE(input[4]);
         MovingCharacter actor;
@@ -163,9 +163,9 @@ TEST(CharacterMovementTest, SecondKeyChangesDirectionAtTheNextCellCenter) {
     MovingCharacter actor;
     actor.update(0,-1,.1); // W starts MAP (+1,-1).
     actor.update(-1,-1,.01); // A joins W, but current step keeps facing north.
-    EXPECT_EQ(actor.movement()->facing,0);
+    EXPECT_EQ(actor.movement()->facing,1);
     actor.update(-1,-1,.3);
-    EXPECT_EQ(actor.movement()->facing,7);
+    EXPECT_EQ(actor.movement()->facing,0);
     EXPECT_EQ(actor.movement()->targetX,51);
     EXPECT_EQ(actor.movement()->targetY,48);
     actor.update(0,0,1);
@@ -179,12 +179,12 @@ TEST(CharacterMovementTest, TurnWaitsForCellCenterAndPreservesWalkingPhase) {
     actor.player()->timeMs=750;
     auto longer=std::make_shared<cgl::AnimationClip>();
     longer->durationMs=2000; longer->frameCount=8;
-    actor.movement()->walk[7]=longer;
+    actor.movement()->walk[0]=longer;
     actor.update(-1,-1,.05);
-    EXPECT_EQ(actor.movement()->facing,1);
+    EXPECT_EQ(actor.movement()->facing,2);
     EXPECT_DOUBLE_EQ(actor.position().y,50);
     actor.update(-1,-1,.15);
-    EXPECT_EQ(actor.movement()->facing,7);
+    EXPECT_EQ(actor.movement()->facing,0);
     EXPECT_DOUBLE_EQ(actor.position().x,51);
     EXPECT_NEAR(actor.position().y,49.8,1e-10);
     EXPECT_EQ(actor.player()->timeMs,1500);
@@ -232,7 +232,7 @@ TEST(CharacterMovementTest, InvalidTimeInputAndSpeedDoNotAdvanceAnActiveStep) {
 
 TEST(CharacterMovementTest, MissingClipDoesNotStartAStep) {
     MovingCharacter actor;
-    actor.movement()->walk[2].reset();
+    actor.movement()->walk[3].reset();
     actor.update(1,0);
     EXPECT_DOUBLE_EQ(actor.position().x,50);
     EXPECT_FALSE(actor.movement()->stepping);

@@ -71,8 +71,10 @@ inline void UpdateCharacterMovement(ECSCore& world, double horizontal, double ve
                 if (!movement->stepping) {
                     if (!canStep()) break;
                     const auto delta = MapToWorld({double(dx), double(dy)});
+                    // Screen sectors start at up; Classic animation directions start
+                    // at up-left (0), then up (1), up-right (2), right (3), etc.
                     const auto facing = uint32_t((int(std::lround(std::atan2(delta.x, -delta.y) /
-                        (std::numbers::pi / 4))) + 8) % 8);
+                        (std::numbers::pi / 4))) + 9) % 8);
                     if (!selectClip(true, facing)) break;
                     movement->targetX = movement->cellX + dx;
                     movement->targetY = movement->cellY + dy;
