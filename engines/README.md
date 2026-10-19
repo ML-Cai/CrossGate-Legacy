@@ -35,7 +35,10 @@ remapping or debug-ID suppression is applied.
 
 MapScene owns a MapCamera singleton. Arrow keys pan at 300 screen pixels/second;
 the center is clamped to map bounds. The camera uses fractional cell coordinates
-and the Classic 64x47 isometric projection. Rendering transforms the viewport
+and the Classic 64x47 isometric projection: file x increases northeast and file y
+increases southeast (`worldX = 32 * (x+y)`, `worldY = 23.5 * (y-x)`). This follows
+the MAP ordering described in https://cgsword.com/filesystem_graphicmap.htm and the
+legacy coordinate conversion. Rendering transforms the viewport
 corners back to map space, expands for image offsets, visits that bounded region,
 and rejects individual offscreen rectangles. Camera movement changes positions
 without rebuilding or uploading textures. R resets the camera; scene exit removes
@@ -43,7 +46,10 @@ it. The engine retains GroundMapLibrary across scene exits and clears it after G
 completion and scene teardown, before destroying frame/device resources.
 
 MapCameraTest covers projection/inverse, elapsed-time pan, diagonal speed, zoom,
-edge clamps and culling against a brute-force reference. DesktopSceneTest also
+edge clamps and culling against a brute-force reference. A fixed, numbered 3x2
+layout additionally pins actual Classic axis directions, since round-trip tests
+alone cannot detect two transforms that share the same incorrect orientation.
+DesktopSceneTest also
 draws map 2100, pans, restarts three times, checks upload reuse and camera/cache
 cleanup. `cgl_client_map_*` verifies startup and invalid path/scale cleanup. These
 desktop tests need original Classic data including `map/0/2100.dat` and Vulkan.

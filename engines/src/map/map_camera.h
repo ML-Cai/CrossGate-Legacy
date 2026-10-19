@@ -8,13 +8,15 @@
 namespace cgl {
 struct MapPoint { double x = 0, y = 0; };
 
-// Classic ground diamond size. Map x/y are cell coordinates; screen y goes down.
+// Classic MAP file order: increasing x goes northeast, increasing y southeast.
+// See https://cgsword.com/filesystem_graphicmap.htm (map.dat ordering).
+// Diamond size is 64x47; screen y goes down.
 inline MapPoint MapToWorld(MapPoint cell) noexcept {
-    return {(cell.x - cell.y) * 32.0, (cell.x + cell.y) * 23.5};
+    return {(cell.x + cell.y) * 32.0, (cell.y - cell.x) * 23.5};
 }
 inline MapPoint WorldToMap(MapPoint point) noexcept {
-    return {point.x / 64.0 + point.y / 47.0,
-            point.y / 47.0 - point.x / 64.0};
+    return {point.x / 64.0 - point.y / 47.0,
+            point.x / 64.0 + point.y / 47.0};
 }
 
 namespace component {

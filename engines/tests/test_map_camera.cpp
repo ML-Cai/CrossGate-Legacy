@@ -1,4 +1,5 @@
 #include "map/map_camera.h"
+#include "cgl/assets/map_layout_reader.h"
 #include <gtest/gtest.h>
 
 namespace {
@@ -18,10 +19,26 @@ TEST(MapCameraTest, ProjectionRoundTripsAtDifferentCentersAndScales) {
     }
     const auto east = cgl::MapToWorld({1, 0});
     EXPECT_DOUBLE_EQ(east.x, 32);
-    EXPECT_DOUBLE_EQ(east.y, 23.5);
+    EXPECT_DOUBLE_EQ(east.y, -23.5);
     const auto south = cgl::MapToWorld({0, 1});
-    EXPECT_DOUBLE_EQ(south.x, -32);
+    EXPECT_DOUBLE_EQ(south.x, 32);
     EXPECT_DOUBLE_EQ(south.y, 23.5);
+}
+
+// This fixture pins file order to the Classic directions instead of merely
+// checking that two potentially incorrect transforms invert each other.
+TEST(MapCameraTest, ClassicRowMajorCellsFollowNortheastThenSoutheast) {
+    const cgl::MapLayout layout{3, 2, {{1}, {2}, {3}, {4}, {5}, {6}}};
+    const std::array<cgl::MapPoint, 6> expected{{
+        {0, 0}, {32, -23.5}, {64, -47},
+        {32, 23.5}, {64, 0}, {96, -23.5}}};
+    for (int y = 0; y < 2; ++y) for (int x = 0; x < 3; ++x) {
+        const auto id = layout.cell(x, y)->groundId;
+        const auto position = cgl::MapToWorld({double(x), double(y)});
+        ASSERT_GE(id, 1); ASSERT_LE(id, expected.size());
+        EXPECT_DOUBLE_EQ(position.x, expected[id - 1].x) << id;
+        EXPECT_DOUBLE_EQ(position.y, expected[id - 1].y) << id;
+    }
 }
 
 TEST(MapCameraTest, PanUsesElapsedTimeZoomAndClampsAtMapEdges) {
@@ -37,13 +54,13 @@ TEST(MapCameraTest, PanUsesElapsedTimeZoomAndClampsAtMapEdges) {
     EXPECT_NEAR(split.center.x, camera.center.x, 1e-9);
     EXPECT_NEAR(split.center.y, camera.center.y, 1e-9);
     cgl::PanMapCamera(camera, 0, 1, 1000, 100, 60);
-    EXPECT_DOUBLE_EQ(camera.center.x, 99);
+    EXPECT_DOUBLE_EQ(camera.center.x, 0);
     EXPECT_DOUBLE_EQ(camera.center.y, 59);
     cgl::PanMapCamera(camera, 0, -1, 1000, 100, 60);
-    EXPECT_DOUBLE_EQ(camera.center.x, 0);
+    EXPECT_DOUBLE_EQ(camera.center.x, 99);
     EXPECT_DOUBLE_EQ(camera.center.y, 0);
     cgl::PanMapCamera(camera, 1, 0, -1, 100, 60);
-    EXPECT_DOUBLE_EQ(camera.center.x, 0);
+    EXPECT_DOUBLE_EQ(camera.center.x, 99);
 }
 
 TEST(MapCameraTest, CullingIncludesEveryIntersectingTileAcrossEdgesAndZoom) {
