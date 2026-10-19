@@ -131,13 +131,13 @@ public:
                 const auto& cell = *map_->layout.cell(x, y);
                 if (const auto found = map_->images.find(cell.groundId); found != map_->images.end()) {
                     const auto& image = found->second;
-                    submit({{double(x), double(y)}, map_->renderer.get(), image.source, 0,
+                    submit({{double(x), double(y)}, map_->renderers.at(image.atlasIndex).get(), image.source, 0,
                         image.offsetX, image.offsetY, 0});
                 }
                 if (cgl::IsClassicMapImage(cell.objectId, true)) {
                     if (const auto found = map_->images.find(cell.objectId); found != map_->images.end()) {
                         const auto& image = found->second;
-                        drawItems_.push_back({{double(x), double(y)}, map_->renderer.get(), image.source, 0,
+                        drawItems_.push_back({{double(x), double(y)}, map_->renderers.at(image.atlasIndex).get(), image.source, 0,
                             image.offsetX, image.offsetY, uint64_t(y) * map_->layout.width + x,
                             image.tileX, image.tileY});
                     }

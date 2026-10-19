@@ -277,3 +277,21 @@ TEST_F(SpriteRendererTest, PainterOrderPreservesObjectsBehindTransparentPixels) 
 }
 
 }
+
+TEST_F(SpriteRendererTest, AlternatingAtlasRenderersPreservePainterOrderAndTransparency) {
+    renderer_ = graphics::ISpriteRenderer::create(device_.get(),pass_.get(),2,2,2,texture);
+    auto other = graphics::ISpriteRenderer::create(device_.get(),pass_.get(),2,2,2,texture);
+    ASSERT_NE(renderer_,nullptr); ASSERT_NE(other,nullptr);
+    Pixels pixels{};
+    renderDraw([&](auto* command,const auto& area) {
+        renderer_->drawRegion(command,area,0,{0,0,1,1},0,0,4); // Page A red.
+        other->drawRegion(command,area,1,{0,0,1,1},1,1,4); // Page B green.
+        renderer_->drawRegion(command,area,0,{1,0,1,1},2,2,2); // A transparent.
+        renderer_->drawRegion(command,area,0,{1,1,1,1},3,3,2); // A white on top.
+    },&pixels);
+    EXPECT_EQ(pixels[0],(Pixel{255,0,0,255}));
+    EXPECT_EQ(pixels[side+1],(Pixel{0,255,0,255}));
+    EXPECT_EQ(pixels[2*side+2],(Pixel{0,255,0,255}));
+    EXPECT_EQ(pixels[3*side+3],(Pixel{255,255,255,255}));
+    EXPECT_EQ(pixels[5*side+5],(Pixel{0,0,255,255}));
+}

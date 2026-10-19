@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 #include "cgl/assets/map_layout_reader.h"
 #include "cgl/graphics/sprite_renderer.h"
 
@@ -13,11 +14,12 @@ struct MapImage {
     graphics::SpriteRegion source;
     int32_t offsetX, offsetY;
     uint8_t tileX = 1, tileY = 1;
+    uint32_t atlasIndex = 0;
 };
 struct MapResources {
     MapLayout layout;
     std::unordered_map<uint16_t, MapImage> images;
-    graphics::ISpriteRenderer::Ptr renderer;
+    std::vector<graphics::ISpriteRenderer::Ptr> renderers;
     double reachX = 0, reachY = 0;
 };
 
