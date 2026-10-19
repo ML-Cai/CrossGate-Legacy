@@ -68,7 +68,9 @@ inline cgl::GraphicsResourceInfo retile(
         pCtx->offsetX,
         pCtx->offsetY,
         pCtx->width,
-        pCtx->height);
+        pCtx->height,
+        pCtx->tileX,
+        pCtx->tileY);
 
     return ret;
 }

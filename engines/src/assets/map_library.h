@@ -12,6 +12,7 @@ namespace component { struct AssetsReaderState; }
 struct MapImage {
     graphics::SpriteRegion source;
     int32_t offsetX, offsetY;
+    uint8_t tileX = 1, tileY = 1;
 };
 struct MapResources {
     MapLayout layout;

@@ -101,7 +101,8 @@ public:
                     if (const auto found = map_->images.find(cell.objectId); found != map_->images.end()) {
                         const auto& image = found->second;
                         drawItems_.push_back({{double(x), double(y)}, map_->renderer.get(), image.source, 0,
-                            image.offsetX, image.offsetY, uint64_t(y) * map_->layout.width + x});
+                            image.offsetX, image.offsetY, uint64_t(y) * map_->layout.width + x,
+                            image.tileX, image.tileY});
                     }
                 }
             }
@@ -109,9 +110,9 @@ public:
                 [&](cgl::Entity entity, auto* position, auto* sprite, auto* player) {
                     const auto& clip = sprite->clip;
                     if (clip) drawItems_.push_back({position->cell, clip->renderer.get(), {0, 0, clip->width, clip->height},
-                        player->frame, clip->offsetX, clip->offsetY, (1ull << 32) | entity});
+                        player->frame, clip->offsetX, clip->offsetY, (1ull << 32) | entity, 0, 0});
                 });
-            std::sort(drawItems_.begin(), drawItems_.end(), cgl::MapDrawLess);
+            cgl::SortMapDrawItems(drawItems_);
             for (const auto& item : drawItems_) record(item, camera, command, viewport);
             const auto& hovered = world->getSingleton<cgl::component::MapHover>()->cell;
             if (hovered && outline_) {
