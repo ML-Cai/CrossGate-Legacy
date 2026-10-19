@@ -30,7 +30,7 @@ public:
             auto& readers = *world->getSingleton<cgl::component::AssetsReaderState>();
             map_ = maps_.acquire(std::filesystem::path(settings.general.EngineRootPath) / settings.map.FilePath,
                 readers, render.pDevice.get(), pass);
-            const cgl::MapPoint center{(map_->layout.width - 1) * 0.5, (map_->layout.height - 1) * 0.5};
+            const cgl::MapPoint center{double(map_->layout.width / 2), double(map_->layout.height / 2)};
             world->addSingleton<cgl::component::MapCamera>(center, scale);
             world->addSingleton<cgl::component::MapHover>();
             outline_ = maps_.acquireHoverOutline(scale, render.pDevice.get(), pass);

@@ -39,8 +39,8 @@ unsupported.
 MapScene owns a MapCamera singleton and one character entity with MapPosition,
 Sprite and AnimationPlayer. Its clip comes from AnimationLibrary and uses the
 existing Animation settings. The clip retains its canvas offset relative to the
-ground anchor. WASD moves the character at 100 world pixels/second with
-normalized diagonals. The camera follows its ground anchor, scrolling the map
+ground anchor. WASD moves between integer MAP cells at 4 coordinate units/second;
+render positions interpolate between endpoints. The camera follows its ground anchor, scrolling the map
 opposite to movement while the character stays centered. Movement clamps to map
 bounds, without collision or pathfinding. R resets camera and character.
 
@@ -56,22 +56,29 @@ change sorting. The color-only sprite renderer preserves transparent holes
 without writing depth. This is whole-sprite anchor sorting; intersecting building
 pieces and finer multi-tile occlusion would need separate artwork/geometry rules.
 
-CharacterMovement stores speed, facing, movement state and shared idle/walk clips
-on the entity. MapScene preloads all eight directions before play; its update calls
-UpdateCharacterMovement before UpdateAnimations. Screen-relative WASD movement is
-normalized, then converted into fractional MAP coordinates. Facing follows actual
-displacement (including map-edge clamping); releasing keys retains facing and
-switches to idle. Turning preserves the normalized walking phase; starting/stopping
-resets the cycle. No tile flags or object geometry affect movement. The camera follows the
-character ground anchor every update, keeping it at the
-viewport center even at map edges; terrain and objects scroll opposite to travel.
-Arrow keys do not pan in map mode. Standalone animation preview settings are unchanged.
+CharacterMovement stores integer cell/target coordinates, step progress, speed,
+facing, movement state and shared idle/walk clips. MapScene spawns at integer
+(width/2, height/2), rounded down, and preloads all eight directions before play.
+UpdateCharacterMovement runs before UpdateAnimations. D/A changes MAP X and S/W
+changes MAP Y; projection makes these NE/SW and SE/NW on screen. Two-key inputs
+select the other four neighbors. A step takes its MAP-coordinate distance divided
+by cellsPerSecond (default 4): 0.25 seconds for one axis, sqrt(2)/4 for two axes.
+Input is sampled at cell boundaries. Release completes the current step; a turn
+cannot redirect a step halfway through. Remaining frame time can advance further
+steps while held, and completed steps snap exactly to their integer destinations.
+The interpolated MapPosition is for rendering and camera following. Out-of-bounds
+steps are rejected as a whole, without sliding or consulting collision flags.
+Walk phase is preserved on turns; walk/idle transitions reset the animation cycle.
+The camera follows the character ground anchor every update, keeping it at the
+viewport center even at map edges. Arrow keys do not pan in map mode.
+Standalone animation preview settings are unchanged.
 All cached animation texture arrays together are limited to 256 MiB of RGBA data
 (excluding renderer/staging overhead); missing idle/walk clips or budget overflow
 fail during scene entry through the existing error/cleanup path.
 
-CharacterMovementTest covers all eight directions, normalized speed, phase continuity,
-stop/idle, map edges, invalid input and unavailable clips. The real map lifecycle
+CharacterMovementTest covers eight grid neighbors, constant MAP-coordinate speed,
+release completion, delayed turns, gait phase, frame partition independence,
+whole-step map boundaries, invalid input/speed and unavailable clips. The real map lifecycle
 test checks centering and opposite terrain displacement for all eight directions,
 submits both walk and idle renderers, checks clip identity, then restarts and
 releases the caches.

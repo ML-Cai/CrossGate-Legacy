@@ -249,8 +249,8 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
     ASSERT_EQ(scene->scene->sceneType(), cgl::SceneTypes::MapScene);
     auto* camera = world_.getSingleton<cgl::component::MapCamera>();
     ASSERT_NE(camera, nullptr);
-    EXPECT_DOUBLE_EQ(camera->center.x, 49.5);
-    EXPECT_DOUBLE_EQ(camera->center.y, 49.5);
+    EXPECT_DOUBLE_EQ(camera->center.x, 50);
+    EXPECT_DOUBLE_EQ(camera->center.y, 50);
     auto* pass = world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
     auto* device = world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
     auto& readers = *world_.getSingleton<cgl::component::AssetsReaderState>();
@@ -294,8 +294,8 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
                 if (firstCharacterVisit) { originalClip = sprite->clip; firstCharacterVisit = false; }
                 EXPECT_FALSE(originalClip.expired());
                 EXPECT_EQ(originalClip.lock(), sprite->clip);
-                EXPECT_DOUBLE_EQ(position->cell.x, 49.5);
-                EXPECT_DOUBLE_EQ(position->cell.y, 49.5);
+                EXPECT_DOUBLE_EQ(position->cell.x, 50);
+                EXPECT_DOUBLE_EQ(position->cell.y, 50);
                 EXPECT_LT(sprite->clip->offsetY, 0);
             });
         EXPECT_EQ(count, 1);
@@ -305,7 +305,7 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
         world_.getSingleton<cgl::component::KeyboardInputState>()->moveX = 1;
         world_.getSingleton<cgl::component::FrameTime>()->deltaSeconds = 0.5;
         manager_.update(&world_);
-        EXPECT_GT(world_.getSingleton<cgl::component::MapCamera>()->center.x, 49.5);
+        EXPECT_GT(world_.getSingleton<cgl::component::MapCamera>()->center.x, 50);
         EXPECT_EQ(world_.getSingleton<cgl::component::MapHover>()->cell,
             cgl::PickMapCell(hoverPoint, *world_.getSingleton<cgl::component::MapCamera>(), viewport, original->layout));
         for (int i = 0; i < 4; ++i) draw_.update(&world_);
@@ -315,7 +315,7 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
         manager_.update(&world_);
         ASSERT_NE(scene->state, cgl::StateTypes::ERROR) << scene->lastError;
         ASSERT_NE(world_.getSingleton<cgl::component::MapCamera>(), nullptr);
-        EXPECT_DOUBLE_EQ(world_.getSingleton<cgl::component::MapCamera>()->center.x, 49.5);
+        EXPECT_DOUBLE_EQ(world_.getSingleton<cgl::component::MapCamera>()->center.x, 50);
         EXPECT_EQ(maps_.acquire(path, readers, device, pass), original);
         verifyCharacter();
         EXPECT_EQ(world_.getSingleton<cgl::component::MapHover>()->cell, (cgl::MapCellCoord{50,49}));
@@ -325,20 +325,20 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
         world_.getSingleton<cgl::component::KeyboardInputState>()->moveX = 0;
         world_.forEach<cgl::component::MapPosition, cgl::component::CharacterMovement,
             cgl::component::Sprite>([&](auto, auto* position, auto* movement, auto* sprite) {
-            EXPECT_GT(position->cell.x, 49.5);
-            EXPECT_GT(position->cell.y, 49.5);
+            EXPECT_GT(position->cell.x, 50);
+            EXPECT_DOUBLE_EQ(position->cell.y, 50);
             EXPECT_TRUE(movement->moving);
-            EXPECT_EQ(movement->facing, 2);
-            EXPECT_EQ(sprite->clip, movement->walk[2]);
-            EXPECT_EQ(sprite->clip, library_.acquire({world_.getSingleton<cgl::component::EngineState>()->settings->animation.SerialNum, 2, 1}, readers, device, pass));
+            EXPECT_EQ(movement->facing, 1);
+            EXPECT_EQ(sprite->clip, movement->walk[1]);
+            EXPECT_EQ(sprite->clip, library_.acquire({world_.getSingleton<cgl::component::EngineState>()->settings->animation.SerialNum, 1, 1}, readers, device, pass));
         });
         draw_.update(&world_); // Submit the walking renderer before switching clips.
         manager_.update(&world_);
         world_.forEach<cgl::component::CharacterMovement, cgl::component::Sprite>(
             [&](auto, auto* movement, auto* sprite) {
             EXPECT_FALSE(movement->moving);
-            EXPECT_EQ(movement->facing, 2);
-            EXPECT_EQ(sprite->clip, movement->idle[2]);
+            EXPECT_EQ(movement->facing, 1);
+            EXPECT_EQ(sprite->clip, movement->idle[1]);
         });
         draw_.update(&world_);
         constexpr int directions[8][2] = {{0,-1},{1,-1},{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1}};
@@ -347,6 +347,10 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
             const auto groundBefore = cgl::MapToScreen({40,40}, *currentCamera, viewport);
             auto* input = world_.getSingleton<cgl::component::KeyboardInputState>();
             input->moveX = float(direction[0]); input->moveY = float(direction[1]);
+            world_.getSingleton<cgl::component::FrameTime>()->deltaSeconds = .01;
+            manager_.update(&world_);
+            input->moveX = input->moveY = 0;
+            world_.getSingleton<cgl::component::FrameTime>()->deltaSeconds = .5;
             manager_.update(&world_);
             currentCamera = world_.getSingleton<cgl::component::MapCamera>();
             world_.forEach<cgl::component::MapPosition>([&](auto, auto* position) {
@@ -355,9 +359,9 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
                 EXPECT_NEAR(screen.y, viewport.height * .5, 1e-9);
             });
             const auto groundAfter = cgl::MapToScreen({40,40}, *currentCamera, viewport);
-            const double length = std::hypot(direction[0], direction[1]);
-            EXPECT_NEAR(groundAfter.x - groundBefore.x, -direction[0] / length * 50, 1e-9);
-            EXPECT_NEAR(groundAfter.y - groundBefore.y, -direction[1] / length * 50, 1e-9);
+            const auto delta = cgl::MapToWorld({double(direction[0]),double(direction[1])});
+            EXPECT_NEAR(groundAfter.x - groundBefore.x, -delta.x, 1e-9);
+            EXPECT_NEAR(groundAfter.y - groundBefore.y, -delta.y, 1e-9);
             EXPECT_EQ(world_.getSingleton<cgl::component::MapHover>()->cell,
                 cgl::PickMapCell(hoverPoint, *currentCamera, viewport, original->layout));
             draw_.update(&world_);
