@@ -24,5 +24,5 @@ channels, top-down orientation, transparent/half-alpha blending, nearest scaling
 positioning, frame selection, invalid input, and resource cleanup. A Vulkan-capable
 desktop and validation layer are required; original game resources are not needed.
 
-The client continues to render its existing black initialization screen. Character
-decoding, animation playback and scene changes are separate from this module.
+Character decoding, animation playback and scene management are handled by the
+client; this module only uploads and draws the selected RGBA frame.

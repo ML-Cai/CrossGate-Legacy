@@ -17,6 +17,7 @@
 namespace cgl {
 
 class ECSCore;
+class CharacterAnimation;
 
 constexpr char INIT_SCENE_BASIC_RENDER_PASS[] = "INIT_SCENE_BASIC_RENDER_PASS";
 
@@ -50,13 +51,13 @@ class InitSceneRenderDrawSystem {
 
     ~InitSceneRenderDrawSystem() = default;
 
-    void update(cgl::ECSCore* pECS);
+    void update(cgl::ECSCore* pECS, const CharacterAnimation& animation);
 
  private:
-    void init(cgl::ECSCore* pECS);
-    void render(cgl::ECSCore* pECS);
+    void init(cgl::ECSCore* pECS, const CharacterAnimation& animation);
+    void render(cgl::ECSCore* pECS, const CharacterAnimation& animation);
 
-    using UpdateFunc = void (InitSceneRenderDrawSystem::*)(cgl::ECSCore*);
+    using UpdateFunc = void (InitSceneRenderDrawSystem::*)(cgl::ECSCore*, const CharacterAnimation&);
     UpdateFunc updater_;
 
     cgl::component::SceneRenderState* pSceneRenderState_;

@@ -30,4 +30,13 @@ if(CGL_WITH_TEST)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/startup.cmake)
     set_tests_properties(cgl_client_invalid_resources PROPERTIES
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;integration")
+    foreach(CASE direction serial scale)
+        add_test(NAME cgl_client_invalid_animation_${CASE}
+            COMMAND ${CMAKE_COMMAND}
+                -DCLIENT=$<TARGET_FILE:cgl-client>
+                -DINVALID_ANIMATION=${CASE}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/startup.cmake)
+        set_tests_properties(cgl_client_invalid_animation_${CASE} PROPERTIES
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;integration")
+    endforeach()
 endif()

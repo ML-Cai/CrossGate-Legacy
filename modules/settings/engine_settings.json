@@ -9,6 +9,29 @@
                 "Description" : "Path to the engine root directory, relative to the executable directory."
             }
         ],
+        "Animation" : [
+            {
+                "Name" : "SerialNum",
+                "Type" : "uint32_t",
+                "Default" : "101406",
+                "ExportToINI" : true,
+                "Description" : "Classic character animation resource serial number."
+            },
+            {
+                "Name" : "Direction",
+                "Type" : "uint32_t",
+                "Default" : "0",
+                "ExportToINI" : true,
+                "Description" : "Direction: 0 north, clockwise through 7 north-west."
+            },
+            {
+                "Name" : "Motion",
+                "Type" : "uint32_t",
+                "Default" : "5",
+                "ExportToINI" : true,
+                "Description" : "Motion: 0 idle, 1 walk, 5 attack (see MotionTypes)."
+            }
+        ],
         "Display" : [
             {
                 "Name" : "ViewportScale",

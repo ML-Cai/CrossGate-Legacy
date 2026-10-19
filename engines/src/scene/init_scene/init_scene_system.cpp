@@ -16,6 +16,8 @@
 #include "assets/assets_system.h"
 #include "scene/scene_components.h"
 #include "scene/init_scene/init_scene_systems.h"
+#include "scene/init_scene/character_animation.h"
+#include "engine/engine_components.h"
 
 using cgl::component::AssetsReaderState;
 using cgl::component::SceneState;
@@ -40,6 +42,7 @@ class InitSceneSystem : public cgl::IScene {
  private:
     cgl::InitSceneRenderDrawSystem renderDrawSys_;
     cgl::AssetsReaderInitSystem assetsReaderInitSys_;
+    cgl::CharacterAnimation animation_;
 
     cgl::component::SceneState* pSceneState_;
     cgl::component::RenderDeviceState* pRenderDevState_;
@@ -92,6 +95,8 @@ void InitSceneSystem::onEnter(cgl::ECSCore* pECS) noexcept {
 
 // -----------------------------------------------------------------------------
 void InitSceneSystem::onExit(cgl::ECSCore* pECS) noexcept {
+    if (pRenderDevState_->pDevice) pRenderDevState_->pDevice->waitIdle();
+    animation_.reset();
     cgl::InitSceneRenderDestroySystem destroySys;
 
     if (!CGL_UPDATE_SYS_AND_TRANSIT_STATE({
@@ -110,7 +115,7 @@ void InitSceneSystem::onExit(cgl::ECSCore* pECS) noexcept {
 // -----------------------------------------------------------------------------
 void InitSceneSystem::update(cgl::ECSCore* pECS) noexcept {
     // render
-    renderDrawSys_.update(pECS);
+    renderDrawSys_.update(pECS, animation_);
     if (CGL_IS_STATE_ERROR(pSceneRenderState_)) {
         cgl::RaiseError(pSceneState_, pSceneRenderState_->lastError);
         return;
@@ -121,6 +126,16 @@ void InitSceneSystem::update(cgl::ECSCore* pECS) noexcept {
     if (CGL_IS_STATE_ERROR(pAssetsReaderState_)) {
         cgl::RaiseError(pSceneState_, pAssetsReaderState_->lastError);
         return;
+    }
+    if (pAssetsReaderState_->state == cgl::StateTypes::RUNNING && !animation_.ready()) {
+        try {
+            const auto& settings = *pECS->getSingleton<cgl::component::EngineState>()->settings;
+            auto* pass = pECS->getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(
+                cgl::INIT_SCENE_BASIC_RENDER_PASS).get();
+            animation_.load(settings, *pAssetsReaderState_, pRenderDevState_->pDevice.get(), pass);
+        } catch (const std::exception& error) {
+            cgl::RaiseError(pSceneState_, "Character animation failed: ", error.what());
+        }
     }
 }
 
