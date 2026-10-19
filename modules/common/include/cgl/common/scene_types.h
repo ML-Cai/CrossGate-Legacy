@@ -22,7 +22,8 @@ namespace cgl {
     CGL_X(LoginScene)               \
     CGL_X(ServerSelectionScene)     \
     CGL_X(CharacterSelectionScene)  \
-    CGL_X(MainScene)
+    CGL_X(MainScene)                \
+    CGL_X(MapScene)
 
 #define CGL_SCENE_TYPES_ENUM_FULL_LIST  \
     CGL_SCENE_TYPES_ENUM_LIST           \

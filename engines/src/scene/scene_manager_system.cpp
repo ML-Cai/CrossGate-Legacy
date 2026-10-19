@@ -16,10 +16,11 @@
 #include "scene/scene_systems.h"
 
 // -----------------------------------------------------------------------------
-cgl::IScene::Ptr cgl::CreateScene(SceneTypes type, AnimationLibrary& library) {
+cgl::IScene::Ptr cgl::CreateScene(SceneTypes type, AnimationLibrary& library, GroundMapLibrary* maps) {
     switch (type) {
     case SceneTypes::InitScene: return CreateInitScene();
     case SceneTypes::AnimationScene: return CreateAnimationScene(library);
+    case SceneTypes::MapScene: return maps ? CreateMapScene(*maps) : nullptr;
     default: return nullptr;
     }
 }

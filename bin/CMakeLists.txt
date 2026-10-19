@@ -17,6 +17,13 @@ foreach(SOURCE ${SOURCES})
 endforeach()
 
 if(CGL_WITH_TEST)
+    foreach(CASE success missing scale)
+        add_test(NAME cgl_client_map_${CASE}
+            COMMAND ${CMAKE_COMMAND} -DCLIENT=$<TARGET_FILE:cgl-client> -DCASE=${CASE}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/map_startup.cmake)
+        set_tests_properties(cgl_client_map_${CASE} PROPERTIES
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;integration")
+    endforeach()
     add_test(NAME cgl_client_startup
         COMMAND ${CMAKE_COMMAND}
             -DCLIENT=$<TARGET_FILE:cgl-client>

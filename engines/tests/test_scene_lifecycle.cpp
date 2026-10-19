@@ -1,3 +1,5 @@
+#include "assets/ground_map_library.h"
+#include "map/map_camera.h"
 #include <gtest/gtest.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -137,6 +139,7 @@ protected:
         world_.forEach<cgl::component::Sprite>([&](auto entity, auto*) { leftovers.push_back(entity); });
         for (auto entity : leftovers) world_.destroyEntity(entity);
         library_.clear();
+        maps_.clear();
         if (world_.getSingleton<cgl::component::FrameRenderState>()) cgl::FrameRenderDestroySystem{}.update(&world_);
         if (render && render->pDevice) {
             std::string diagnostic;
@@ -150,7 +153,10 @@ protected:
     }
     cgl::ECSCore world_;
     cgl::AnimationLibrary library_;
-    cgl::SceneManagerSystem manager_{library_};
+    cgl::GroundMapLibrary maps_;
+    cgl::SceneManagerSystem manager_{[this](cgl::SceneTypes type) {
+        return cgl::CreateScene(type, library_, &maps_);
+    }};
     cgl::FrameRenderDrawSystem draw_;
     std::string initialDiagnostic_;
 };
@@ -210,4 +216,54 @@ TEST_F(DesktopSceneTest, RepeatedRestartKeepsFrameResourcesAndReaders) {
     library_.clear();
     EXPECT_TRUE(original.expired()); // Final cache cleanup releases the GPU asset.
 }
+TEST_F(DesktopSceneTest, GroundMapRestartsReuseUploadsAndCameraIsCleanedUp) {
+    world_.getSingleton<cgl::component::EngineState>()->settings->map.FilePath = "map/0/2100.dat";
+    auto* scene = world_.getSingleton<cgl::component::SceneState>();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    while ((!scene->scene || scene->scene->sceneType() != cgl::SceneTypes::MapScene) &&
+           std::chrono::steady_clock::now() < deadline) {
+        manager_.update(&world_);
+        ASSERT_NE(scene->state, cgl::StateTypes::ERROR) << scene->lastError;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(scene->scene, nullptr);
+    ASSERT_EQ(scene->scene->sceneType(), cgl::SceneTypes::MapScene);
+    auto* camera = world_.getSingleton<cgl::component::MapCamera>();
+    ASSERT_NE(camera, nullptr);
+    EXPECT_DOUBLE_EQ(camera->center.x, 49.5);
+    EXPECT_DOUBLE_EQ(camera->center.y, 49.5);
+    auto* pass = world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    auto* device = world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto& readers = *world_.getSingleton<cgl::component::AssetsReaderState>();
+    const auto path = std::filesystem::path(world_.getSingleton<cgl::component::EngineState>()->settings->general.EngineRootPath) / "map/0/2100.dat";
+    auto original = maps_.acquire(path, readers, device, pass);
+    ASSERT_NE(original->renderer, nullptr);
+    EXPECT_EQ(original->layout.width, 100);
+    EXPECT_EQ(original->layout.height, 100);
+    EXPECT_FALSE(original->tiles.empty());
+    for (int restart = 0; restart < 3; ++restart) {
+        world_.getSingleton<cgl::component::KeyboardInputState>()->panX = 1;
+        world_.getSingleton<cgl::component::FrameTime>()->deltaSeconds = 0.5;
+        manager_.update(&world_);
+        EXPECT_GT(world_.getSingleton<cgl::component::MapCamera>()->center.x, 49.5);
+        for (int i = 0; i < 4; ++i) draw_.update(&world_);
+        world_.getSingleton<cgl::component::KeyboardInputState>()->panX = 0;
+        world_.getSingleton<cgl::component::KeyboardInputState>()->restartSceneRequested = true;
+        manager_.update(&world_);
+        manager_.update(&world_);
+        ASSERT_NE(scene->state, cgl::StateTypes::ERROR) << scene->lastError;
+        ASSERT_NE(world_.getSingleton<cgl::component::MapCamera>(), nullptr);
+        EXPECT_DOUBLE_EQ(world_.getSingleton<cgl::component::MapCamera>()->center.x, 49.5);
+        EXPECT_EQ(maps_.acquire(path, readers, device, pass), original);
+    }
+    device->waitIdle();
+    cgl::SceneManagerDestroySystem{}.update(&world_);
+    EXPECT_EQ(world_.getSingleton<cgl::component::MapCamera>(), nullptr);
+    std::weak_ptr<const cgl::GroundMap> weak = original;
+    original.reset();
+    EXPECT_FALSE(weak.expired());
+    maps_.clear();
+    EXPECT_TRUE(weak.expired());
+}
+
 }

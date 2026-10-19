@@ -10,3 +10,9 @@ target_include_directories(test_engine_animation PRIVATE ${CMAKE_CURRENT_SOURCE_
 target_link_libraries(test_engine_animation PRIVATE GTest::gtest_main cgl::engine cgl::graphics cgl::assets cgl::settings cgl::common)
 set_target_properties(test_engine_animation PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 gtest_discover_tests(test_engine_animation WORKING_DIRECTORY ${CGL_BIN_PATH})
+
+add_executable(test_map_camera test_map_camera.cpp)
+target_include_directories(test_map_camera PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_map_camera PRIVATE GTest::gtest_main cgl::common cgl::assets)
+set_target_properties(test_map_camera PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
+gtest_discover_tests(test_map_camera WORKING_DIRECTORY ${CGL_BIN_PATH})

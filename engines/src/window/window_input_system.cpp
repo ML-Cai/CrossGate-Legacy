@@ -114,6 +114,13 @@ void cgl::WindowInputSystem::updateEvents(cgl::ECSCore* pECS) {
     const bool down = glfwGetWindowAttrib(pWindow, GLFW_FOCUSED) && glfwGetKey(pWindow, GLFW_KEY_R) == GLFW_PRESS;
     if (down && !keyboard->restartKeyDown) keyboard->restartSceneRequested = true;
     keyboard->restartKeyDown = down;
+    keyboard->panX = keyboard->panY = 0;
+    if (glfwGetWindowAttrib(pWindow, GLFW_FOCUSED)) {
+        keyboard->panX = float(glfwGetKey(pWindow, GLFW_KEY_RIGHT) == GLFW_PRESS) -
+            float(glfwGetKey(pWindow, GLFW_KEY_LEFT) == GLFW_PRESS);
+        keyboard->panY = float(glfwGetKey(pWindow, GLFW_KEY_DOWN) == GLFW_PRESS) -
+            float(glfwGetKey(pWindow, GLFW_KEY_UP) == GLFW_PRESS);
+    }
 
     // check cursor pos updated or not
     float x = cursorPosState_[0].x;

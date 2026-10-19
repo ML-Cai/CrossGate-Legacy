@@ -78,5 +78,19 @@ cmake --build . --config RelWithDebInfo
   scene changes. AnimationLibrary retains clips across restarts; scene exit removes
   character entities, and engine shutdown releases the cache after GPU completion.
   See [scene lifecycle](engines/README.md) for ownership and tests.
+
+  To view Classic map ground instead, add this to your settings file:
+
+  ```ini
+  [Map]
+  FilePath=map/0/2100.dat
+  ```
+
+  The path resolves against `General.EngineRootPath`; absolute paths also work.
+  Empty `FilePath` keeps the animation preview. Arrow keys pan the map, and `R`
+  restarts it at the center. `Display.ViewportScale` controls the initial map scale
+  (0.125 through 16). This stage renders ground only; scene objects and the hover
+  diamond follow in separate PRs. Classic ground IDs are used directly; other
+  resource versions and CUT maps are not yet supported.
 - GraphicsDataViewer : see [tools/GraphicsDataViewer](tools/GraphicsDataViewer)
 - AnimeViewer : see [tools/AnimeViewer](tools/GraphicsDataViewer)

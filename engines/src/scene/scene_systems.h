@@ -13,7 +13,8 @@
 namespace cgl {
 
 class ECSCore;
-IScene::Ptr CreateScene(SceneTypes type, AnimationLibrary& library);
+class GroundMapLibrary;
+IScene::Ptr CreateScene(SceneTypes type, AnimationLibrary& library, GroundMapLibrary* maps = nullptr);
 
 namespace component {
 
