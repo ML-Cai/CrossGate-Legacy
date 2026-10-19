@@ -61,6 +61,11 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquire(
             frames.size() <= maxPreviewBytes / (uint64_t(width) * height * 4),
             "Animation preview exceeds texture memory budget");
     const size_t frameBytes = size_t(width * height) * 4;
+    uint64_t cachedBytes = 0;
+    for (const auto& [key, cached] : clips_)
+        cachedBytes += uint64_t(cached->width) * cached->height * cached->frameCount * 4;
+    require(cachedBytes <= maxPreviewBytes - frameBytes * frames.size(),
+            "Animation cache exceeds 256 MiB texture budget");
     std::vector<uint8_t> rgba(frameBytes * frames.size(), 0);
     for (size_t f = 0; f < frames.size(); ++f) {
         const auto& frame = frames[f];

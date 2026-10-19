@@ -55,6 +55,23 @@ change sorting. The color-only sprite renderer preserves transparent holes
 without writing depth. This is whole-sprite anchor sorting; intersecting building
 pieces and finer multi-tile occlusion would need separate artwork/geometry rules.
 
+CharacterMovement stores speed, facing, movement state and shared idle/walk clips
+on the entity. MapScene preloads all eight directions before play; its update calls
+UpdateCharacterMovement before UpdateAnimations. Screen-relative WASD movement is
+normalized, then converted into fractional MAP coordinates. Facing follows actual
+displacement (including map-edge clamping); releasing keys retains facing and
+switches to idle. Turning preserves the normalized walking phase; starting/stopping
+resets the cycle. No tile flags or object geometry affect movement. The camera stays
+independent and uses arrow keys. Standalone animation preview settings are unchanged.
+All cached animation texture arrays together are limited to 256 MiB of RGBA data
+(excluding renderer/staging overhead); missing idle/walk clips or budget overflow
+fail during scene entry through the existing error/cleanup path.
+
+CharacterMovementTest covers all eight directions, normalized speed, phase continuity,
+stop/idle, map edges, invalid input and unavailable clips. The real map lifecycle
+test submits both walk and idle renderers, checks clip identity, then restarts and
+releases the caches.
+
 Camera/character movement changes positions without rebuilding textures. Scene
 exit deletes its character and camera; engine-owned map and animation caches
 retain uploads until shutdown waits for GPU completion, exits the scene and

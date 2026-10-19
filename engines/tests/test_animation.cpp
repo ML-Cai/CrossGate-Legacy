@@ -2,6 +2,7 @@
 #include "animation/animation_components.h"
 #include "animation/animation_system.h"
 #include "engine/ecs.h"
+#include "map/character_movement.h"
 #include <limits>
 
 namespace {
@@ -87,4 +88,103 @@ TEST(engine_ecs, DestroyedSingletonCanBeRecreated) {
     EXPECT_EQ(*world.getSingleton<int>(), 9);
     world.removeSingleton<int>();
     EXPECT_EQ(world.getSingleton<int>(), nullptr);
+}
+
+
+namespace {
+struct MovingCharacter {
+    cgl::ECSCore world;
+    cgl::Entity entity;
+    MovingCharacter() {
+        entity = character(world, clip());
+        world.addComponent<cgl::component::MapPosition>(entity, cgl::MapPoint{50, 50});
+        cgl::component::CharacterMovement movement;
+        for (unsigned d = 0; d < 8; ++d) {
+            movement.idle[d] = clip();
+            movement.walk[d] = clip();
+        }
+        world.getComponent<cgl::component::Sprite>(entity)->clip = movement.idle[0];
+        world.addComponent<cgl::component::CharacterMovement>(entity, std::move(movement));
+    }
+    auto* movement() { return world.getComponent<cgl::component::CharacterMovement>(entity); }
+    auto* player() { return world.getComponent<cgl::component::AnimationPlayer>(entity); }
+    auto* sprite() { return world.getComponent<cgl::component::Sprite>(entity); }
+    auto& position() { return world.getComponent<cgl::component::MapPosition>(entity)->cell; }
+    void update(double x, double y, double seconds = .1) {
+        cgl::UpdateCharacterMovement(world, x, y, seconds, 100, 100);
+    }
+};
+}
+
+TEST(CharacterMovementTest, EightScreenDirectionsAndEqualSpeed) {
+    constexpr int inputs[8][2] = {{0,-1},{1,-1},{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1}};
+    for (unsigned d = 0; d < 8; ++d) {
+        MovingCharacter actor;
+        const auto start = cgl::MapToWorld(actor.position());
+        actor.update(inputs[d][0], inputs[d][1]);
+        const auto end = cgl::MapToWorld(actor.position());
+        EXPECT_NEAR(std::hypot(end.x-start.x, end.y-start.y), 10, 1e-9);
+        EXPECT_EQ(actor.movement()->facing, d);
+        EXPECT_TRUE(actor.movement()->moving);
+        EXPECT_EQ(actor.sprite()->clip, actor.movement()->walk[d]);
+        EXPECT_NEAR(end.x-start.x, inputs[d][0] * 10 / std::hypot(inputs[d][0],inputs[d][1]), 1e-9);
+        EXPECT_NEAR(end.y-start.y, inputs[d][1] * 10 / std::hypot(inputs[d][0],inputs[d][1]), 1e-9);
+    }
+}
+
+TEST(CharacterMovementTest, StopKeepsFacingAndRestartsIdleOnlyOnce) {
+    MovingCharacter actor;
+    actor.update(1,0);
+    actor.player()->timeMs = 500;
+    actor.update(1,0);
+    EXPECT_EQ(actor.player()->timeMs, 500);
+    actor.update(0,0);
+    EXPECT_FALSE(actor.movement()->moving);
+    EXPECT_EQ(actor.movement()->facing, 2);
+    EXPECT_EQ(actor.sprite()->clip, actor.movement()->idle[2]);
+    EXPECT_EQ(actor.player()->timeMs, 0);
+    actor.player()->timeMs = 250;
+    actor.update(0,0);
+    EXPECT_EQ(actor.player()->timeMs, 250);
+    actor.update(0,-1);
+    EXPECT_EQ(actor.player()->timeMs, 0);
+}
+
+TEST(CharacterMovementTest, TurningPreservesNormalizedGaitPhase) {
+    MovingCharacter actor;
+    actor.update(1,0);
+    actor.player()->timeMs = 750;
+    auto longer = std::make_shared<cgl::AnimationClip>();
+    longer->durationMs = 2000; longer->frameCount = 8;
+    actor.movement()->walk[0] = longer;
+    actor.update(0,-1);
+    EXPECT_EQ(actor.player()->timeMs, 1500);
+    EXPECT_EQ(actor.player()->frame, 6);
+    EXPECT_EQ(actor.sprite()->clip, longer);
+}
+
+TEST(CharacterMovementTest, BoundsStopAndInvalidInputDoesNotMove) {
+    MovingCharacter actor;
+    actor.position() = {99,99};
+    actor.update(1,0);
+    EXPECT_FALSE(actor.movement()->moving);
+    EXPECT_DOUBLE_EQ(actor.position().x,99);
+    EXPECT_DOUBLE_EQ(actor.position().y,99);
+    actor.update(-1,0, std::numeric_limits<double>::quiet_NaN());
+    actor.update(-1,0, -1);
+    actor.update(std::numeric_limits<double>::infinity(),0);
+    EXPECT_DOUBLE_EQ(actor.position().x,99);
+    actor.update(-1,0);
+    EXPECT_TRUE(actor.movement()->moving);
+    EXPECT_LT(actor.position().x,99);
+    EXPECT_LT(actor.position().y,99);
+}
+
+TEST(CharacterMovementTest, MissingClipDoesNotCommitMovement) {
+    MovingCharacter actor;
+    actor.movement()->walk[2].reset();
+    actor.update(1,0);
+    EXPECT_DOUBLE_EQ(actor.position().x,50);
+    EXPECT_DOUBLE_EQ(actor.position().y,50);
+    EXPECT_FALSE(actor.movement()->moving);
 }
