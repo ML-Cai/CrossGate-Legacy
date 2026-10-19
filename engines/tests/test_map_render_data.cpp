@@ -63,6 +63,57 @@ TEST(MapRenderTest, PainterOrderUsesGroundAnchorsAndDeterministicTies) {
     EXPECT_EQ(items[2].stableId, actor.stableId);
 }
 
+// Map 2100 house 11283: 4x6 cells, image offset (-210,-437), 372x460.
+// The actor is outside the front/left wall but has a smaller anchor depth.
+TEST(MapRenderTest, HouseFrontAndSidesUseFootprintInsteadOfSingleAnchor) {
+    const cgl::MapDrawItem house{{50,61},nullptr,{0,0,372,460},0,-210,-437,1,4,6};
+    auto actor=cgl::MapDrawItem{{49,58},nullptr,{0,0,48,84},0,-24,-70,2,0,0};
+    ASSERT_TRUE(cgl::MapDrawLess(actor,house)); // Old ordering incorrectly hides actor.
+    for(const cgl::MapPoint cell : {cgl::MapPoint{49,58}, {52,62}}) {
+        actor.cell=cell;
+        std::vector<cgl::MapDrawItem> items{actor,house};
+        EXPECT_EQ(cgl::SortMapDrawItems(items),0);
+        EXPECT_EQ(items.back().stableId,actor.stableId);
+    }
+    for(const cgl::MapPoint cell : {cgl::MapPoint{54,58}, {52,55}}) {
+        actor.cell=cell;
+        std::vector<cgl::MapDrawItem> items{house,actor};
+        EXPECT_EQ(cgl::SortMapDrawItems(items),0);
+        EXPECT_EQ(items.back().stableId,house.stableId);
+    }
+    const auto footprint=cgl::GroundFootprint(house);
+    EXPECT_DOUBLE_EQ(footprint.minX,49.5);EXPECT_DOUBLE_EQ(footprint.maxX,53.5);
+    EXPECT_DOUBLE_EQ(footprint.minY,55.5);EXPECT_DOUBLE_EQ(footprint.maxY,61.5);
+}
+
+TEST(MapRenderTest, SingleCellAndNonOverlappingSpritesKeepAnchorOrdering) {
+    cgl::MapDrawItem tree{{50,61},nullptr,{0,0,64,120},0,-32,-100,1};
+    cgl::MapDrawItem actor{{49,58},nullptr,{0,0,48,84},0,-24,-70,2,0,0};
+    std::vector<cgl::MapDrawItem> items{tree,actor};
+    EXPECT_EQ(cgl::SortMapDrawItems(items),0);
+    EXPECT_EQ(items.front().stableId,actor.stableId);
+    tree.tileX=4;tree.tileY=6;tree.offsetX=10000; // No visible overlap.
+    items={tree,actor};cgl::SortMapDrawItems(items);
+    EXPECT_EQ(items.front().stableId,actor.stableId);
+}
+
+TEST(MapRenderTest, FootprintOrderingIsStableAcrossInputOrderAndRepeatedFrames) {
+    std::vector<cgl::MapDrawItem> items{
+        {{50,61},nullptr,{0,0,372,460},0,-210,-437,1,4,6},
+        {{49,58},nullptr,{0,0,48,84},0,-24,-70,2,0,0},
+        {{54,58},nullptr,{0,0,48,84},0,-24,-70,3,0,0},
+        {{52,62},nullptr,{0,0,48,84},0,-24,-70,4,0,0}};
+    cgl::SortMapDrawItems(items);
+    std::vector<uint64_t> expected;
+    for(const auto& item:items) expected.push_back(item.stableId);
+    for(int frame=0;frame<8;++frame) {
+        std::rotate(items.begin(),items.begin()+1,items.end());
+        cgl::SortMapDrawItems(items);
+        for(size_t i=0;i<items.size();++i) EXPECT_EQ(items[i].stableId,expected[i]);
+    }
+    std::vector<cgl::MapDrawItem> empty;EXPECT_EQ(cgl::SortMapDrawItems(empty),0);
+}
+
 TEST(MapRenderTest, LargeImagesRemainVisibleWithOffscreenGroundAnchors) {
     const cgl::Viewport viewport{0,0,800,600};
     EXPECT_TRUE(cgl::MapImageVisible({790,-400}, 580, 622, 1, viewport));

@@ -75,7 +75,8 @@ std::shared_ptr<const MapResources> MapLibrary::acquire(const std::filesystem::p
                 dst[0] = colors[index * 3 + 2]; dst[1] = colors[index * 3 + 1];
                 dst[2] = colors[index * 3]; dst[3] = index ? 255 : 0;
             }
-            result->images.emplace(region.id, MapImage{region.source, info.offsetX, info.offsetY});
+            result->images.emplace(region.id, MapImage{region.source, info.offsetX, info.offsetY,
+                std::max(uint8_t(1), info.tileX), std::max(uint8_t(1), info.tileY)});
             result->reachX = std::max({result->reachX, std::abs(double(info.offsetX)),
                 std::abs(double(info.offsetX) + info.width)});
             result->reachY = std::max({result->reachY, std::abs(double(info.offsetY)),

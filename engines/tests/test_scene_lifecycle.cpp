@@ -390,3 +390,40 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
 }
 
 }
+
+TEST_F(DesktopSceneTest, HouseFrontWallUsesNativeFootprintForActorOcclusion) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.map.FilePath="map/0/2100.dat"; settings.animation.SerialNum=100000;
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::MapScene) &&
+        std::chrono::steady_clock::now()<deadline) {
+        manager_.update(&world_);
+        ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(scene->scene,nullptr); ASSERT_EQ(scene->scene->sceneType(),cgl::SceneTypes::MapScene);
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    auto map=maps_.acquire(std::filesystem::path(settings.general.EngineRootPath)/settings.map.FilePath,readers,device,pass);
+    ASSERT_EQ(map->layout.cell(50,61)->objectId,11283);
+    const auto& image=map->images.at(11283);
+    ASSERT_EQ(image.tileX,4); ASSERT_EQ(image.tileY,6);
+    const cgl::MapDrawItem house{{50,61},map->renderer.get(),image.source,0,image.offsetX,image.offsetY,1,image.tileX,image.tileY};
+    for(const auto cell : {cgl::MapPoint{49,58},cgl::MapPoint{54,58}}) {
+        world_.forEach<cgl::component::MapPosition,cgl::component::CharacterMovement,cgl::component::Sprite>(
+            [&](auto,auto* position,auto* movement,auto* sprite) {
+                position->cell=cell; movement->initialized=false;
+                movement->stepping=false;movement->moving=false;
+                const auto& clip=sprite->clip;
+                cgl::MapDrawItem actor{cell,clip->renderer.get(),{0,0,clip->width,clip->height},0,
+                    clip->offsetX,clip->offsetY,2,0,0};
+                std::vector<cgl::MapDrawItem> pair{house,actor};
+                EXPECT_EQ(cgl::SortMapDrawItems(pair),0);
+                EXPECT_EQ(pair.back().stableId,cell.x<50?2:1);
+            });
+        world_.getSingleton<cgl::component::FrameTime>()->deltaSeconds=.1;
+        manager_.update(&world_);draw_.update(&world_);
+    }
+}

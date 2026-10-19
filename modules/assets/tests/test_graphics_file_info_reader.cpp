@@ -83,6 +83,10 @@ TEST_F(assets_IGraphicsAssetsFileInfoReaderTest, LoadData) {
     EXPECT_EQ(info.gfxBasedsIdx, idx);
     EXPECT_EQ(info.width, 64);      // resource width in classic always be 64
     EXPECT_EQ(info.height, 47);     // resource height in classic always be 47
+    EXPECT_EQ(info.tileX,1); EXPECT_EQ(info.tileY,1);
+    idx.type=cgl::GraphicsResourceSerialNumTypes::MapSerialNum; idx.value=11283;
+    ASSERT_EQ(reader->query(idx,&info),cgl::Results::Success);
+    EXPECT_EQ(info.tileX,4); EXPECT_EQ(info.tileY,6); // Multi-cell house footprint.
 }
 
 // -----------------------------------------------------------------------------

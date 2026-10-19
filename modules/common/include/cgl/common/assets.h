@@ -111,6 +111,8 @@ struct GraphicsResourceInfo {
     int32_t offsetY;
     int32_t width;
     int32_t height;
+    uint8_t tileX = 1; // Native ground footprint, east axis.
+    uint8_t tileY = 1; // Native ground footprint, south axis.
 };
 
 

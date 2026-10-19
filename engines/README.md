@@ -49,12 +49,28 @@ The Classic 64x47 projection has file x increasing northeast and file y southeas
 https://cgsword.com/filesystem_graphicmap.htm and the legacy coordinate conversion.
 The viewport expands by the full image reach before culling ground anchors, so
 large objects whose anchors lie offscreen still appear. Ground is drawn first;
-objects and characters then share one back-to-front list ordered by anchor depth
-`y-x`, then horizontal position `x+y`, then stable object/entity identity. Equal
-anchors draw objects before characters. Image height and animation pose never
-change sorting. The color-only sprite renderer preserves transparent holes
-without writing depth. This is whole-sprite anchor sorting; intersecting building
-pieces and finer multi-tile occlusion would need separate artwork/geometry rules.
+objects and characters share one back-to-front list. The baseline key is anchor
+`y-x`, then `x+y`, then stable identity (objects before actors at equal anchors).
+GraphicsResourceInfo preserves native tileX/tileY, and MapImage carries the
+normalized footprint dimensions (zero dimensions default to one for static images).
+A Classic object footprint grows from its front/west placement cell toward +MAP X
+and -MAP Y. Cell-center bounds are [x-.5,x+tileX-.5] and
+[y-tileY+.5,y+.5]; actors use their fractional ground position as a point.
+
+For overlapping sprite rectangles involving a multi-cell object, disjoint ground
+extents establish precedence: the object wholly toward +X or -Y draws earlier.
+Opposing/ambiguous relations and intersecting footprints retain baseline ordering
+where unconstrained. A screen-X sweep limits candidate pairs, then a stable
+priority-queue topological sort applies precedence. Footprint precedence is not
+used directly as a std::sort comparator, because it is only a partial order.
+Cycles fall back deterministically to baseline order. Single-cell pairs preserve
+the original ordering. Pixel offsets, image height and animation poses affect
+image overlap/culling but do not change the footprint geometry.
+
+The color-only sprite renderer preserves transparent holes without writing depth.
+This remains whole-sprite sorting: interlocking geometry, overhangs and characters
+inside a building footprint can still require image splitting or explicit masks.
+Footprints here are rendering data only; no collision detection is added.
 
 CharacterMovement stores integer cell/target coordinates, step progress, speed,
 facing, movement state and shared idle/walk clips. MapScene spawns at integer
@@ -116,6 +132,11 @@ moves, restarts three times, checks cache reuse and entity/camera cleanup.
 `cgl_client_map_*` covers startup and invalid path/scale/animation cleanup. Desktop
 tests need Classic data including `map/0/2100.dat` and Vulkan; pure map tests and
 sprite readback do not require original game data.
+Footprint regression tests use map 2100 house 11283 (4x6, offset -210/-437):
+actor (49,58) is outside the front/west wall but would be hidden by anchor sorting;
+actors behind the other two footprint edges must remain behind. Asset-reader tests
+pin the native footprint bytes, and a real map scene test checks both front/back
+ordering with actual resources and submits both views to Vulkan.
 
 MapHoverTest covers center/edge picking, negative map boundaries, stationary cursor
 under pan/scale changes, logical-to-render conversion with a viewport offset,
