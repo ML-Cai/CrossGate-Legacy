@@ -22,3 +22,9 @@ target_include_directories(test_map_render_data PRIVATE ${CMAKE_CURRENT_SOURCE_D
 target_link_libraries(test_map_render_data PRIVATE GTest::gtest_main cgl::graphics cgl::common)
 set_target_properties(test_map_render_data PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 gtest_discover_tests(test_map_render_data WORKING_DIRECTORY ${CGL_BIN_PATH})
+
+add_executable(test_map_hover test_map_hover.cpp)
+target_include_directories(test_map_hover PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_map_hover PRIVATE GTest::gtest_main cgl::graphics cgl::assets cgl::common)
+set_target_properties(test_map_hover PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
+gtest_discover_tests(test_map_hover WORKING_DIRECTORY ${CGL_BIN_PATH})

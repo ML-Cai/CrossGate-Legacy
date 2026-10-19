@@ -93,7 +93,9 @@ cmake --build . --config RelWithDebInfo
   configured animation character sorts with objects by its ground anchor.
   WASD moves the character for previewing occlusion (no collision/pathfinding).
   R resets both camera and character. Classic placeholder/debug objects are skipped;
-  other resource versions and CUT maps are not yet supported. The hover diamond
-  follows in a separate PR.
+  other resource versions and CUT maps are not yet supported. Hover over ground
+  to see a yellow diamond outline. It follows the camera and configured scale,
+  and hides outside the map, over empty ground, or when the window loses focus.
+  This is a hover indicator; clicking does not move the character.
 - GraphicsDataViewer : see [tools/GraphicsDataViewer](tools/GraphicsDataViewer)
 - AnimeViewer : see [tools/AnimeViewer](tools/GraphicsDataViewer)

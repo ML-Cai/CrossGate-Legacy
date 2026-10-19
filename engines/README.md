@@ -60,6 +60,21 @@ exit deletes its character and camera; engine-owned map and animation caches
 retain uploads until shutdown waits for GPU completion, exits the scene and
 clears both caches before destroying frame/device resources.
 
+WindowInputSystem publishes the current logical cursor position, client size and
+hover/focus state in CursorPositionState each frame, including when the cursor
+does not move. MapScene converts it to render-surface/viewport pixels and reuses
+ScreenToMap to populate its MapHover singleton. Cells own [n-0.5,n+0.5) along each
+map axis, with exact ties going to the larger coordinate. Selection rejects points
+outside map bounds and missing ground IDs 0/2; it does not interpret walkability or select
+objects. Leave, minimize or focus loss hides the indicator.
+
+A transparent-center yellow diamond is drawn after scene objects as an overlay.
+MapLibrary generates and uploads its bitmap once at the configured scale, keeping
+a visible two-pixel stroke even at scale 0.125. Placement uses the same map anchor
+and camera scale as ground drawing. The library retains this outline across R
+restarts; scene exit removes MapHover and drops its reference, and shutdown clears
+the library after GPU completion. Ground/atlas pixels never change for hover.
+
 MapCameraTest pins Classic axes using a numbered 3x2 fixture and checks inverse,
 pan, bounds and culling. MapRenderTest checks atlas placement/limits, marker
 filtering, large-image visibility and object/character ordering. SpriteRendererTest
@@ -69,6 +84,13 @@ moves, restarts three times, checks cache reuse and entity/camera cleanup.
 `cgl_client_map_*` covers startup and invalid path/scale/animation cleanup. Desktop
 tests need Classic data including `map/0/2100.dat` and Vulkan; pure map tests and
 sprite readback do not require original game data.
+
+MapHoverTest covers center/edge picking, negative map boundaries, stationary cursor
+under pan/scale changes, logical-to-render conversion with a viewport offset,
+empty ground and hollow outline pixels at scales 0.125 through 16. The desktop
+map lifecycle test also draws a hovered cell, hides it on leave/out-of-window
+coordinates, verifies stationary-cursor updates and checks outline reuse/release
+and MapHover cleanup across three scene restarts.
 
 Component addresses can change on insertion or swap-removal. Store entity IDs
 and requery components; perform entity/component additions and removals outside

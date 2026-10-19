@@ -2,11 +2,28 @@
 #include "assets/assets_components.h"
 #include "map/map_atlas.h"
 #include "map/map_render_data.h"
+#include "map/map_hover.h"
 #include "cgl/trace/logger.h"
 #include <set>
 #include <stdexcept>
 
 namespace cgl {
+std::shared_ptr<const MapHoverOutline> MapLibrary::acquireHoverOutline(double scale,
+    graphics::IDevice* device, graphics::IRenderPass* pass) {
+    if (!device || !pass || (device_ && device_ != device) || (pass_ && pass_ != pass) ||
+        !std::isfinite(scale) || scale < 0.125 || scale > 16)
+        throw std::invalid_argument("Hover outline requires a valid scale and one live device/render pass");
+    if (const auto found = outlines_.find(scale); found != outlines_.end()) return found->second;
+    const auto image = BuildMapHoverBitmap(scale);
+    auto result = std::make_shared<MapHoverOutline>();
+    result->renderer = graphics::ISpriteRenderer::create(device, pass, image.width, image.height, 1, image.rgba);
+    if (!result->renderer) throw std::runtime_error("Could not upload map hover outline");
+    result->width = image.width; result->height = image.height; result->scale = scale;
+    outlines_.emplace(scale, result);
+    device_ = device; pass_ = pass;
+    return result;
+}
+
 std::shared_ptr<const MapResources> MapLibrary::acquire(const std::filesystem::path& path,
     component::AssetsReaderState& readers, graphics::IDevice* device, graphics::IRenderPass* pass) {
     if (!device || !pass || (device_ && device_ != device) || (pass_ && pass_ != pass))
