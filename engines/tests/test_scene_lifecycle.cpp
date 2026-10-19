@@ -302,14 +302,14 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
     };
     verifyCharacter();
     for (int restart = 0; restart < 3; ++restart) {
-        world_.getSingleton<cgl::component::KeyboardInputState>()->panX = 1;
+        world_.getSingleton<cgl::component::KeyboardInputState>()->moveX = 1;
         world_.getSingleton<cgl::component::FrameTime>()->deltaSeconds = 0.5;
         manager_.update(&world_);
         EXPECT_GT(world_.getSingleton<cgl::component::MapCamera>()->center.x, 49.5);
         EXPECT_EQ(world_.getSingleton<cgl::component::MapHover>()->cell,
             cgl::PickMapCell(hoverPoint, *world_.getSingleton<cgl::component::MapCamera>(), viewport, original->layout));
         for (int i = 0; i < 4; ++i) draw_.update(&world_);
-        world_.getSingleton<cgl::component::KeyboardInputState>()->panX = 0;
+        world_.getSingleton<cgl::component::KeyboardInputState>()->moveX = 0;
         world_.getSingleton<cgl::component::KeyboardInputState>()->restartSceneRequested = true;
         manager_.update(&world_);
         manager_.update(&world_);
@@ -341,6 +341,29 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
             EXPECT_EQ(sprite->clip, movement->idle[2]);
         });
         draw_.update(&world_);
+        constexpr int directions[8][2] = {{0,-1},{1,-1},{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1}};
+        for (const auto& direction : directions) {
+            auto* currentCamera = world_.getSingleton<cgl::component::MapCamera>();
+            const auto groundBefore = cgl::MapToScreen({40,40}, *currentCamera, viewport);
+            auto* input = world_.getSingleton<cgl::component::KeyboardInputState>();
+            input->moveX = float(direction[0]); input->moveY = float(direction[1]);
+            manager_.update(&world_);
+            currentCamera = world_.getSingleton<cgl::component::MapCamera>();
+            world_.forEach<cgl::component::MapPosition>([&](auto, auto* position) {
+                const auto screen = cgl::MapToScreen(position->cell, *currentCamera, viewport);
+                EXPECT_NEAR(screen.x, viewport.width * .5, 1e-9);
+                EXPECT_NEAR(screen.y, viewport.height * .5, 1e-9);
+            });
+            const auto groundAfter = cgl::MapToScreen({40,40}, *currentCamera, viewport);
+            const double length = std::hypot(direction[0], direction[1]);
+            EXPECT_NEAR(groundAfter.x - groundBefore.x, -direction[0] / length * 50, 1e-9);
+            EXPECT_NEAR(groundAfter.y - groundBefore.y, -direction[1] / length * 50, 1e-9);
+            EXPECT_EQ(world_.getSingleton<cgl::component::MapHover>()->cell,
+                cgl::PickMapCell(hoverPoint, *currentCamera, viewport, original->layout));
+            draw_.update(&world_);
+        }
+        auto* input = world_.getSingleton<cgl::component::KeyboardInputState>();
+        input->moveX = input->moveY = 0;
     }
     device->waitIdle();
     cgl::SceneManagerDestroySystem{}.update(&world_);

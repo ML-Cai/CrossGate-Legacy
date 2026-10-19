@@ -70,10 +70,12 @@ public:
     void update(cgl::ECSCore* world) noexcept override {
         const auto seconds = world->getSingleton<cgl::component::FrameTime>()->deltaSeconds;
         auto* input = world->getSingleton<cgl::component::KeyboardInputState>();
-        cgl::PanMapCamera(*world->getSingleton<cgl::component::MapCamera>(), input->panX, input->panY,
-            seconds, map_->layout.width, map_->layout.height);
         cgl::UpdateCharacterMovement(*world, input->moveX, input->moveY, seconds,
             map_->layout.width, map_->layout.height);
+        // Keep the character's ground anchor at the viewport center. Translating
+        // the camera makes terrain and objects scroll opposite to movement.
+        world->getSingleton<cgl::component::MapCamera>()->center =
+            world->getComponent<cgl::component::MapPosition>(character_)->cell;
         cgl::UpdateAnimations(*world, seconds);
         const auto& window = *world->getSingleton<cgl::component::WindowHandle>();
         updateHover(world, {0, 0, window.width, window.height});
