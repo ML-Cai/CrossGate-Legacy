@@ -19,7 +19,7 @@
 #include "engine/engine_components.h"
 #include "assets/assets_components.h"
 #include "assets/animation_library.h"
-#include "assets/ground_map_library.h"
+#include "assets/map_library.h"
 #include "window/window_components.h"
 #include "window/window_systems.h"
 #include "render/render_components.h"
@@ -55,9 +55,9 @@ class ClientEngine : public cgl::IEngine {
     cgl::RenderDeviceInitSystem renderDeviceInitSys_;
     cgl::FrameRenderDrawSystem renderDrawSys_;
     cgl::AnimationLibrary animationLibrary_;
-    cgl::GroundMapLibrary groundMapLibrary_;
+    cgl::MapLibrary mapLibrary_;
     cgl::SceneManagerSystem sceneMgrSys_{[this](cgl::SceneTypes type) {
-        return cgl::CreateScene(type, animationLibrary_, &groundMapLibrary_);
+        return cgl::CreateScene(type, animationLibrary_, &mapLibrary_);
     }};
 
     // state objects
@@ -201,7 +201,7 @@ void ClientEngine::closeStage(cgl::ECSCore* pEcs) {
     cgl::SceneManagerDestroySystem sceneMgrDestroySys;
     sceneMgrDestroySys.update(pEcs);
     animationLibrary_.clear();
-    groundMapLibrary_.clear();
+    mapLibrary_.clear();
 
     cgl::FrameRenderDestroySystem frameDestroy;
     frameDestroy.update(pEcs);

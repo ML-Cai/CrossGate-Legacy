@@ -15,6 +15,7 @@ struct AnimationRequest {
 struct AnimationClip {
     graphics::ISpriteRenderer::Ptr renderer;
     uint32_t width = 0, height = 0, frameCount = 0, durationMs = 0;
+    int32_t offsetX = 0, offsetY = 0;
 };
 // Owned by ClientEngine. Current cache uses Classic/daytime resources and one
 // device/render pass. Clear after GPU completion, before destroying the device.

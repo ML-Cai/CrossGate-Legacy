@@ -4,6 +4,7 @@
 #include <array>
 #include <cstring>
 #include <limits>
+#include <functional>
 #include "cgl/graphics/sprite_renderer.h"
 #include "vulkan/device.h"
 #include "vulkan/command_buffer_list.h"
@@ -141,13 +142,13 @@ protected:
         }
         return VK_ERROR_FEATURE_NOT_PRESENT;
     }
-    void render(uint32_t frame, Pixels* result, float x = 2, float y = 2, float scale = 2) {
+    void renderDraw(const std::function<void(graphics::ICommandBuffer*, const cgl::Viewport&)>& draw, Pixels* result) {
         auto* command = commands_->commandBuffer(0);
         ASSERT_TRUE(command->reset());
         ASSERT_TRUE(command->begin());
         const cgl::Viewport area(0, 0, side, side);
         ASSERT_TRUE(pass_->begin(area, command, framebuffer_.get()));
-        renderer_->draw(command, area, frame, x, y, scale);
+        draw(command, area);
         ASSERT_TRUE(pass_->end());
         const auto raw = static_cast<vk::CommandBuffer*>(command)->commandBuffer();
         VkBufferImageCopy copy{};
@@ -168,6 +169,9 @@ protected:
         ASSERT_EQ(vkMapMemory(handle_, readbackMemory_, 0, sizeof(Pixels), 0, &mapped), VK_SUCCESS);
         std::memcpy(result->data(), mapped, sizeof(Pixels));
         vkUnmapMemory(handle_, readbackMemory_);
+    }
+    void render(uint32_t frame, Pixels* result, float x = 2, float y = 2, float scale = 2) {
+        renderDraw([&](auto* command, const auto& area) { renderer_->draw(command, area, frame, x, y, scale); }, result);
     }
     GLFWwindow* window_ = nullptr;
     graphics::IDevice::Ptr device_;
@@ -232,4 +236,44 @@ TEST_F(SpriteRendererTest, RejectsInvalidTextureData) {
     EXPECT_EQ(graphics::ISpriteRenderer::create(device_.get(), pass_.get(), 2, 2, 3, texture), nullptr);
     EXPECT_EQ(graphics::ISpriteRenderer::create(device_.get(), pass_.get(), UINT32_MAX, 2, 2, texture), nullptr);
 }
+TEST_F(SpriteRendererTest, AtlasRegionsUseLocalSizeAndRejectOutOfBoundsSources) {
+    renderer_ = graphics::ISpriteRenderer::create(device_.get(), pass_.get(), 2, 2, 2, texture);
+    ASSERT_NE(renderer_, nullptr);
+    Pixels pixels{};
+    renderDraw([&](auto* command, const auto& area) {
+        renderer_->drawRegion(command, area, 0, {1, 1, 1, 1}, 2, 2, 2);
+    }, &pixels);
+    for (uint32_t y = 0; y < side; ++y) for (uint32_t x = 0; x < side; ++x)
+        EXPECT_EQ(pixels[y * side + x], (x >= 2 && x < 4 && y >= 2 && y < 4 ?
+            Pixel{255,255,255,255} : Pixel{0,0,255,255}));
+    for (const graphics::SpriteRegion source : {graphics::SpriteRegion{0,0,0,1}, {0,0,1,0},
+            {2,0,1,1}, {0,2,1,1}, {1,1,2,1}, {UINT32_MAX,0,1,1}, {1,0,UINT32_MAX,1}}) {
+        renderDraw([&](auto* command, const auto& area) {
+            renderer_->drawRegion(command, area, 0, source, 0, 0, 1);
+        }, &pixels);
+        for (const auto& pixel : pixels) EXPECT_EQ(pixel, (Pixel{0,0,255,255}));
+    }
+}
+
+TEST_F(SpriteRendererTest, PainterOrderPreservesObjectsBehindTransparentPixels) {
+    renderer_ = graphics::ISpriteRenderer::create(device_.get(), pass_.get(), 2, 2, 2, texture);
+    ASSERT_NE(renderer_, nullptr);
+    Pixels pixels{};
+    renderDraw([&](auto* command, const auto& area) {
+        renderer_->draw(command, area, 1, 2, 2, 2); // Green object behind.
+        renderer_->draw(command, area, 0, 2, 2, 2); // Red/white foreground with a hole.
+    }, &pixels);
+    EXPECT_EQ(pixels[2 * side + 2], (Pixel{255,0,0,255}));
+    EXPECT_EQ(pixels[2 * side + 4], (Pixel{0,255,0,255}));
+    EXPECT_NEAR(pixels[4 * side + 2][0], 128, 1);
+    EXPECT_NEAR(pixels[4 * side + 2][1], 127, 1);
+    EXPECT_EQ(pixels[4 * side + 4], (Pixel{255,255,255,255}));
+    renderDraw([&](auto* command, const auto& area) {
+        renderer_->draw(command, area, 0, 2, 2, 2);
+        renderer_->draw(command, area, 1, 2, 2, 2); // Now green is entirely in front.
+    }, &pixels);
+    for (uint32_t y = 2; y < 6; ++y) for (uint32_t x = 2; x < 6; ++x)
+        EXPECT_EQ(pixels[y * side + x], (Pixel{0,255,0,255}));
+}
+
 }

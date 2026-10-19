@@ -89,8 +89,11 @@ cmake --build . --config RelWithDebInfo
   The path resolves against `General.EngineRootPath`; absolute paths also work.
   Empty `FilePath` keeps the animation preview. Arrow keys pan the map, and `R`
   restarts it at the center. `Display.ViewportScale` controls the initial map scale
-  (0.125 through 16). This stage renders ground only; scene objects and the hover
-  diamond follow in separate PRs. Classic ground IDs are used directly; other
-  resource versions and CUT maps are not yet supported.
+  (0.125 through 16). Ground, buildings and trees share an image atlas; the
+  configured animation character sorts with objects by its ground anchor.
+  WASD moves the character for previewing occlusion (no collision/pathfinding).
+  R resets both camera and character. Classic placeholder/debug objects are skipped;
+  other resource versions and CUT maps are not yet supported. The hover diamond
+  follows in a separate PR.
 - GraphicsDataViewer : see [tools/GraphicsDataViewer](tools/GraphicsDataViewer)
 - AnimeViewer : see [tools/AnimeViewer](tools/GraphicsDataViewer)

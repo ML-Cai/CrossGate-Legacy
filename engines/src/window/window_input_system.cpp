@@ -115,7 +115,12 @@ void cgl::WindowInputSystem::updateEvents(cgl::ECSCore* pECS) {
     if (down && !keyboard->restartKeyDown) keyboard->restartSceneRequested = true;
     keyboard->restartKeyDown = down;
     keyboard->panX = keyboard->panY = 0;
+    keyboard->moveX = keyboard->moveY = 0;
     if (glfwGetWindowAttrib(pWindow, GLFW_FOCUSED)) {
+        keyboard->moveX = float(glfwGetKey(pWindow, GLFW_KEY_D) == GLFW_PRESS) -
+            float(glfwGetKey(pWindow, GLFW_KEY_A) == GLFW_PRESS);
+        keyboard->moveY = float(glfwGetKey(pWindow, GLFW_KEY_S) == GLFW_PRESS) -
+            float(glfwGetKey(pWindow, GLFW_KEY_W) == GLFW_PRESS);
         keyboard->panX = float(glfwGetKey(pWindow, GLFW_KEY_RIGHT) == GLFW_PRESS) -
             float(glfwGetKey(pWindow, GLFW_KEY_LEFT) == GLFW_PRESS);
         keyboard->panY = float(glfwGetKey(pWindow, GLFW_KEY_DOWN) == GLFW_PRESS) -

@@ -2,6 +2,7 @@
 layout(binding = 0) uniform sampler2DArray frames;
 layout(push_constant) uniform Sprite {
     vec4 rect;
+    vec4 uvRect;
     float layer;
 } sprite;
 layout(location = 0) in vec2 uv;
