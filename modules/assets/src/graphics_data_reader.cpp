@@ -16,6 +16,7 @@
 #include "cgl/utils/filesystem.h"
 #include "cgl/trace/logger.h"
 #include "assets_path_info.h"
+#include "reader_cache_statistics.h"
 
 
 //------------------------------------------------------------------------------
@@ -310,6 +311,15 @@ class GraphicsDataReaderImpl : public cgl::IGraphicsDataReader,
                        cgl::GraphicsResourceData*       pGfxResData) override;
 
     void close() noexcept override;
+    void setCacheBudget(size_t bytes) noexcept override { cgl::FileBlockCache::setCacheBudget(bytes); }
+    void trimCache() noexcept override {
+        cgl::FileBlockCache::trimCache();
+        std::vector<uint8_t>().swap(tempBlock_);
+    }
+    cgl::ResourceCacheStatistics cacheStatistics() const noexcept override {
+        return cgl::DescribeReaderCache(cgl::FileBlockCache::cacheStatistics(), tempBlock_.capacity());
+    }
+    void resetCacheStatistics() noexcept override { cgl::FileBlockCache::resetCacheStatistics(); }
 
  private:
     cgl::CrossGateVersion version_;
@@ -328,6 +338,7 @@ GraphicsDataReaderImpl::GraphicsDataReaderImpl(
     const cgl::IGraphicsDataReader::CreateInfo& createInfo)
     : cgl::IGraphicsDataReader(createInfo),
       cgl::FileBlockCache(4096, 1024) {
+    setCacheBudget(createInfo.cacheBudgetBytes);
 }
 
 GraphicsDataReaderImpl::~GraphicsDataReaderImpl() {
