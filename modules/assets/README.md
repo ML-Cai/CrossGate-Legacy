@@ -52,3 +52,41 @@ They cover repeated close/reload, deletion after close, cache eviction/replaceme
 short reads, animation truncation and oversized frame counts, unchanged output on
 failure, and embedded palette ownership. These checks verify specific ownership
 and failure paths; they do not prove an application-wide absence of leaks.
+
+## File-cache budgets and statistics
+
+Graphics/anime data readers accept `CreateInfo::cacheBudgetBytes` (default 4 MiB).
+`setCacheBudget(bytes)` applies immediately, evicting least recently used blocks
+when necessary. Payload capacity is rounded down to whole 4096-byte blocks, and a
+partial last block still occupies one block. A budget below 4096 bytes, including
+zero, performs direct reads into the caller's destination without allocating a
+file-cache block. Cache misses evict before allocating a replacement, so there is
+no additional transient file-cache block above budget. Blocks have unique ownership;
+no reference-counted block handles escape the cache.
+
+`trimCache()` releases all file-cache blocks and container storage, plus graphics
+decoding scratch, without closing the file. Data already returned to the caller
+remains valid. The next query reloads what it needs. `close()` also trims, and both
+operations are idempotent. These operations require the same serialized access as
+other reader methods.
+
+`cacheStatistics()` returns a value snapshot:
+
+- `budgetBytes`, `residentBytes`, `cachedBlocks`: current file-cache payload state.
+- `peakResidentBytes`: highest successfully cached payload since the last reset;
+  it can exceed the current budget after the budget is reduced.
+- `hits`, `misses`: individual block lookups; direct reads do not count as lookups.
+- `evictions`: blocks removed by replacement, budget reduction, trim, or close.
+- `fileReadCalls`, `fileReadBytes`, `failedReads`: C++ stream read attempts, extracted
+  bytes (including partial failed reads), and I/O failures. These do not measure
+  physical disk traffic because the stream and OS may buffer data. Invalid API
+  arguments do not count as I/O failures.
+- `bypassReads`: direct read attempts while caching is disabled.
+- `scratchBytes`: retained graphics decode scratch capacity, outside the file budget.
+
+Counters and the selected budget survive close/load. `resetCacheStatistics()`
+clears counters and sets the peak to current occupancy without discarding data.
+These are per-reader CPU payload budgets, not process-memory limits: metadata,
+stream buffers, decoded caller-owned data, indexes, graphics scratch, and GPU
+resources are separate. A global coordinator and Python/HTTP telemetry bindings
+are not introduced here. Native defaults remain unchanged.

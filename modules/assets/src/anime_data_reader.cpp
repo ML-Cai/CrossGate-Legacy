@@ -16,6 +16,7 @@
 #include "cgl/utils/filesystem.h"
 #include "cgl/trace/logger.h"
 #include "assets_path_info.h"
+#include "reader_cache_statistics.h"
 
 // -----------------------------------------------------------------------------
 // anonymous namespace
@@ -55,6 +56,14 @@ class ReaderImpl : public cgl::IAnimeDataReader,
         cgl::AnimeResourceData*       pAnimeResData) override;
 
     void close() noexcept override;
+    void setCacheBudget(size_t bytes) noexcept override { cgl::FileBlockCache::setCacheBudget(bytes); }
+    void trimCache() noexcept override {
+        cgl::FileBlockCache::trimCache();
+    }
+    cgl::ResourceCacheStatistics cacheStatistics() const noexcept override {
+        return cgl::DescribeReaderCache(cgl::FileBlockCache::cacheStatistics(), 0);
+    }
+    void resetCacheStatistics() noexcept override { cgl::FileBlockCache::resetCacheStatistics(); }
 
 };
 
@@ -64,6 +73,7 @@ ReaderImpl::ReaderImpl(
     const cgl::IAnimeDataReader::CreateInfo& createInfo)
     : cgl::IAnimeDataReader(createInfo),
       cgl::FileBlockCache(4096, 1024) {
+    setCacheBudget(createInfo.cacheBudgetBytes);
 }
 
 ReaderImpl::~ReaderImpl() {

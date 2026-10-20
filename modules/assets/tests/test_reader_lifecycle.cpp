@@ -207,3 +207,51 @@ TEST_F(ResourceReaderTest, Puk2PaletteReadsExactlyOneRecord) {
         EXPECT_EQ(out.pPaletteData[0], 10); EXPECT_EQ(out.pPaletteData[2], 30);
     }
 }
+
+TEST_F(ResourceReaderTest, AnimationCacheBudgetTrimAndHotReads) {
+    std::vector<uint8_t> bytes; motion(bytes, 0, 3);
+    write("Anime_4.bin", bytes);
+    auto reader = cgl::IAnimeDataReader::create({&settings, version, 4096});
+    ASSERT_EQ(reader->load(), cgl::Results::Success);
+    cgl::AnimeResourceData out{};
+    ASSERT_EQ(reader->query(info(), &out), cgl::Results::Success);
+    auto cold = reader->cacheStatistics();
+    EXPECT_EQ(cold.budgetBytes, 4096); EXPECT_EQ(cold.residentBytes, 4096);
+    EXPECT_EQ(cold.fileReadCalls, 1); EXPECT_EQ(cold.fileReadBytes, bytes.size());
+    ASSERT_EQ(reader->query(info(), &out), cgl::Results::Success);
+    auto hot = reader->cacheStatistics();
+    EXPECT_EQ(hot.fileReadCalls, cold.fileReadCalls); EXPECT_GT(hot.hits, cold.hits);
+    reader->trimCache();
+    EXPECT_EQ(reader->cacheStatistics().residentBytes, 0);
+    ASSERT_EQ(out.motionMap.begin()->second.motionGraphicsSerialNums.front(), 123);
+    reader->setCacheBudget(0); reader->resetCacheStatistics();
+    ASSERT_EQ(reader->query(info(), &out), cgl::Results::Success);
+    auto uncached = reader->cacheStatistics();
+    EXPECT_EQ(uncached.residentBytes, 0); EXPECT_EQ(uncached.fileReadCalls, 2);
+    EXPECT_EQ(uncached.bypassReads, 2); EXPECT_EQ(uncached.scratchBytes, 0);
+}
+TEST_F(ResourceReaderTest, GraphicsTrimReleasesScratchAndCacheButPreservesOutput) {
+    std::vector<uint8_t> bytes{'R','D',0,0};
+    word(bytes, 1, 4); word(bytes, 1, 4); word(bytes, 17, 4); bytes.push_back(42);
+    write("Graphic_66.bin", bytes);
+    auto reader = cgl::IGraphicsDataReader::create({&settings, version, 0});
+    ASSERT_EQ(reader->load(), cgl::Results::Success);
+    cgl::GraphicsResourceInfo resource{}; resource.version = version;
+    cgl::GraphicsResourceData out{};
+    ASSERT_EQ(reader->query(resource, &out), cgl::Results::Success);
+    auto s = reader->cacheStatistics();
+    EXPECT_EQ(s.residentBytes, 0); EXPECT_GE(s.scratchBytes, 1);
+    reader->trimCache();
+    EXPECT_EQ(reader->cacheStatistics().scratchBytes, 0);
+    ASSERT_EQ(out.pData[0], 42);
+    reader->setCacheBudget(4096); reader->resetCacheStatistics();
+    ASSERT_EQ(reader->query(resource, &out), cgl::Results::Success);
+    EXPECT_EQ(reader->cacheStatistics().residentBytes, 4096);
+    reader->trimCache(); reader->trimCache();
+    EXPECT_EQ(reader->cacheStatistics().residentBytes, 0);
+    EXPECT_EQ(reader->cacheStatistics().scratchBytes, 0);
+    ASSERT_EQ(reader->query(resource, &out), cgl::Results::Success);
+    reader->close();
+    EXPECT_EQ(reader->cacheStatistics().residentBytes, 0);
+    EXPECT_EQ(reader->cacheStatistics().scratchBytes, 0);
+}
