@@ -105,8 +105,9 @@ class GraphicIndexReaderImpl : public cgl::IGraphicsInfoReader {
     cgl::Results queryAvailableSerialNums(
         std::vector<int32_t>* pList) noexcept override;
 
+    void close() noexcept override;
+
  private:
-    void destroy();
 
     bool preLoad(size_t bufferSize);
 
@@ -132,21 +133,23 @@ GraphicIndexReaderImpl::GraphicIndexReaderImpl(
 
 // -----------------------------------------------------------------------------
 GraphicIndexReaderImpl::~GraphicIndexReaderImpl() {
-    destroy();
+    close();
 }
 
 // -----------------------------------------------------------------------------
-void GraphicIndexReaderImpl::destroy() {
-    if ((fileInfo_.stream.has_value()) &&
-        (fileInfo_.stream->is_open())) {
-        fileInfo_.stream->close();
-    }
-
-    pBuffer_ = nullptr;
+void GraphicIndexReaderImpl::close() noexcept {
+    fileInfo_.stream.reset();
+    fileInfo_.path.clear();
+    fileInfo_.errorMsg.clear();
+    decltype(mapIdxMap_)().swap(mapIdxMap_);
+    decltype(graphicsIdxMap_)().swap(graphicsIdxMap_);
+    pBuffer_.reset();
+    mapIdxRange_ = {};
+    gfxIdxRange_ = {};
 }
 
 // -----------------------------------------------------------------------------
-cgl::Results GraphicIndexReaderImpl::load() {
+cgl::Results GraphicIndexReaderImpl::load() try {
     // Get file resource path configurations.
     auto pSettings = createInfo().pSettings;
     auto resPaths  = cgl::AcquireCrossGateResourcePath(createInfo().version);
@@ -167,7 +170,7 @@ cgl::Results GraphicIndexReaderImpl::load() {
     if (fileInfo_.isOpen() == true) {
         LOGW("The graphic index reader has already opened a file. Release the"
              "previous one ...");
-        destroy();
+        close();
     }
 
     // // load file
@@ -188,14 +191,25 @@ cgl::Results GraphicIndexReaderImpl::load() {
     if (bufferSize % sizeof(GraphicInfoEntry) != 0) {
         LOGE("Failed to read the data from unmatched/borken graphics resource"
              "info file, path : " << fileInfo_.path.string());
-        destroy();
+        close();
         return cgl::Results::InvalidFile;
     }
 
     // preload all info entries
-    preLoad(bufferSize);
+    if (!preLoad(bufferSize)) {
+        close();
+        return cgl::Results::InvalidFile;
+    }
+    fileInfo_.stream.reset();
 
     return cgl::Results::Success;
+}
+catch (const std::ios_base::failure&) {
+    close();
+    return cgl::Results::InvalidFile;
+} catch (...) {
+    close();
+    throw;
 }
 
 // -----------------------------------------------------------------------------

@@ -10,8 +10,6 @@
 #include <fstream>
 #include <filesystem>
 #include <memory>
-#include <sstream>
-#include <iostream>
 #include "cgl/common/formatters.h"
 #include "cgl/assets/anime_data_reader.h"
 #include "cgl/settings/settings.h"
@@ -56,12 +54,8 @@ class ReaderImpl : public cgl::IAnimeDataReader,
         const cgl::AnimeResourceInfo& animeResInfo,
         cgl::AnimeResourceData*       pAnimeResData) override;
 
-    void destroy();
+    void close() noexcept override;
 
- private:
-    cgl::CrossGateVersion version_;
-
-    std::vector<uint8_t> tempBlock_;
 };
 
 }   // namespace
@@ -73,10 +67,11 @@ ReaderImpl::ReaderImpl(
 }
 
 ReaderImpl::~ReaderImpl() {
-    destroy();
+    close();
 }
 
-void ReaderImpl::destroy() {
+void ReaderImpl::close() noexcept {
+    cgl::FileBlockCache::close();
 }
 
 cgl::Results ReaderImpl::load() {
@@ -134,103 +129,51 @@ cgl::Results ReaderImpl::query(
         return cgl::Results::InvalidArgs;
     }
 
-    // Verify the index range, Every motion is require at least
-    // 1 AnimeDataRawMotionHeader + 1 AnimeRawFrameData for the data reading.
+    // Validate on-disk sizes using subtraction, before allocating or changing output.
     size_t offset = animeResInfo.dataOffset;
-    size_t readBound = offset +
-                       sizeof(cgl::AnimeResourceInfo) +
-                       sizeof(cgl::AnimeMotionDesc) * animeResInfo.motionCount;
-    if (readBound > this->fileSize()) {
-        LOGE("Address offset " << animeResInfo.dataOffset
-             << " of anime info S/N " << animeResInfo.serialNum
-             << " is out of range : " << fileSize());
-        return cgl::Results::InvalidArgs;
+    if (!isStreamReady() || offset > fileSize() ||
+        animeResInfo.motionCount > (fileSize() - offset) / sizeof(AnimeDataRawMotionHeader)) {
+        return cgl::Results::InvalidFile;
     }
-
-    // read all motions
-    pAnimeResData->serialNum = animeResInfo.serialNum;
-    pAnimeResData->motionMap.clear();
-    pAnimeResData->motionMap.reserve(animeResInfo.motionCount);
-    cgl::AnimeMotionDesc motionDesc;
-
-    for (uint16_t mIdx = 0; mIdx < animeResInfo.motionCount; mIdx++) {
-        // read motion header
-        AnimeDataRawMotionHeader header;
-        if (read(offset, sizeof(header), &header) == false) {
-            LOGE("Failed to read motion header for AnimeIndex "
-                 << animeResInfo.serialNum << "at offset " << offset);
-            return cgl::Results::Fail;
+    constexpr size_t maxFramesPerMotion = 65536;
+    constexpr size_t maxFramesPerQuery = 1024 * 1024;
+    size_t totalFrames = 0;
+    cgl::AnimeResourceData result{};
+    result.serialNum = animeResInfo.serialNum;
+    result.motionMap.reserve(animeResInfo.motionCount);
+    std::vector<AnimeDataRawMotionFrame> frames;
+    for (uint16_t mIdx = 0; mIdx < animeResInfo.motionCount; ++mIdx) {
+        AnimeDataRawMotionHeader header{};
+        if (!read(offset, sizeof(header), &header)) return cgl::Results::InvalidFile;
+        offset += sizeof(header);
+        if (header.frameCount > maxFramesPerMotion ||
+            header.frameCount > maxFramesPerQuery - totalFrames ||
+            header.frameCount > (fileSize() - offset) / sizeof(AnimeDataRawMotionFrame)) {
+            return cgl::Results::InvalidFile;
         }
-        offset += sizeof(header);   // offset to read motion data
-
-        // verify the motion header
-        if (header.direction >= static_cast<int>(cgl::DirectionTypes::COUNT)) {
-            LOGE("The direction value (" << header.direction
-                 << ") of AnimeIndex " << animeResInfo.serialNum
-                 << "} is out of range.");
+        totalFrames += header.frameCount;
+        const size_t bytes = size_t(header.frameCount) * sizeof(AnimeDataRawMotionFrame);
+        // Unknown motions are skipped, including their frame payload.
+        if (header.direction >= static_cast<int>(cgl::DirectionTypes::COUNT) ||
+            header.motion >= static_cast<int>(cgl::MotionTypes::COUNT)) {
+            offset += bytes;
             continue;
         }
-        if (header.motion >= static_cast<int>(cgl::MotionTypes::COUNT)) {
-            LOGE("The motion value (" << header.motion
-                 << ") of AnimeIndex " << animeResInfo.serialNum
-                 << "} is out of range.");
-            continue;
-        }
-
-        // Read all motions data to temp buffer, assume the 1024 buffer is large
-        // enough to hold all motion frames.
-        static AnimeDataRawMotionFrame tempBuffer[1024];
-        assert(header.frameCount <= 1024);
-        size_t readCount = sizeof(AnimeDataRawMotionFrame) * header.frameCount;
-
-        if (read(offset, readCount, tempBuffer) == false) {
-            LOGE("Failed to read motion data for AnimeIndex"
-                 << animeResInfo.serialNum << "at offset " << offset);
-            return cgl::Results::Fail;
-        }
-        offset += readCount;   // offset to read next motion header
-
-
-        // keep for debug purpose, dump the motion frames
-        std::stringstream ss;
-        for (uint32_t i = 0; i < header.frameCount; i++) {
-            ss << tempBuffer[i].serialNum << " ";
-        }
-        // LOGD("motion index [{}], header.direction {}, motion {} duraction {} "
-        //      "frameCount {} , frames : {}",
-        //     mIdx,
-        //     header.direction,
-        //     header.motion,
-        //     header.duraction,
-        //     header.frameCount,
-        //     ss.str());
-
-
-        // Update description
-        auto pRawFrames = tempBuffer;
-        cgl::AnimeMotionDesc desc {
+        frames.resize(header.frameCount);
+        if (bytes && !read(offset, bytes, frames.data())) return cgl::Results::InvalidFile;
+        offset += bytes;
+        cgl::AnimeMotionDesc desc{
+            .version = createInfo().version,
             .direction = static_cast<cgl::DirectionTypes>(header.direction),
-            .motion    = static_cast<cgl::MotionTypes>(header.motion),
-            .duration  = header.duraction
+            .motion = static_cast<cgl::MotionTypes>(header.motion),
+            .duration = header.duraction
         };
         desc.motionGraphicsSerialNums.reserve(header.frameCount);
-
-        for (uint32_t i = 0; i < header.frameCount; i++) {
-            desc.motionGraphicsSerialNums.emplace_back(pRawFrames[i].serialNum);
-        }
-
+        for (const auto& frame : frames) desc.motionGraphicsSerialNums.push_back(frame.serialNum);
         auto key = std::make_pair(desc.direction, desc.motion);
-        pAnimeResData->motionMap.emplace(std::move(key), std::move(desc));
+        result.motionMap.emplace(key, std::move(desc));
     }
-
-    // Store the anime data
-    // *pAnimeResData = std::move(animeData);
-    // LOGI("AnimeResourceData for serialNum {} has {} motions",
-    //      cgl::GetString(pAnimeResData->serialNum),
-    //      pAnimeResData->motionMap.size());
-    // LOGI("AnimeResourceData for serialNum {} has {} motions",
-    //      cgl::GetString(pAnimeResData->serialNum),
-    //      pAnimeResData->motionMap.size());
+    *pAnimeResData = std::move(result);
     return cgl::Results::Success;
 }
 

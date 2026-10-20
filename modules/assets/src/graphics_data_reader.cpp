@@ -259,7 +259,7 @@ bool Decompress(
         // copy or set the data
         if (code <= CODE_RAW_DATA_LARGE) {
             // boundary check
-            if ((pRaw + count) > pRawEnd) {
+            if (count > static_cast<size_t>(pRawEnd - pRaw)) {
                 LOGW("Decompress Error: header (0x" << std::hex << code << "), "
                      << "Raw data block overflow during copy operation. "
                      << "Requested " << count << " bytes, but not enough.");
@@ -309,7 +309,7 @@ class GraphicsDataReaderImpl : public cgl::IGraphicsDataReader,
     cgl::Results query(const cgl::GraphicsResourceInfo& gfxResInfo,
                        cgl::GraphicsResourceData*       pGfxResData) override;
 
-    void destroy();
+    void close() noexcept override;
 
  private:
     cgl::CrossGateVersion version_;
@@ -331,10 +331,12 @@ GraphicsDataReaderImpl::GraphicsDataReaderImpl(
 }
 
 GraphicsDataReaderImpl::~GraphicsDataReaderImpl() {
-    destroy();
+    close();
 }
 
-void GraphicsDataReaderImpl::destroy() {
+void GraphicsDataReaderImpl::close() noexcept {
+    cgl::FileBlockCache::close();
+    std::vector<uint8_t>().swap(tempBlock_);
 }
 
 cgl::Results GraphicsDataReaderImpl::load() {
@@ -372,7 +374,7 @@ cgl::Results GraphicsDataReaderImpl::load() {
     }
     if ((buffer[0] != 'R') || (buffer[1] != 'D')) {
         LOGE("Failed to read the data from unmatch graphics data file");
-        destroy();
+        close();
         return cgl::Results::InvalidFile;
     }
 
@@ -384,32 +386,36 @@ cgl::Results GraphicsDataReaderImpl::ReadDataFromPUK(
     const GraphicsFileDataHeader&    header,
     cgl::GraphicsResourceData*       pGfxFileData
 ) {
-    size_t graphicsDataSize = header.width * header.height;
-    size_t paletteDataSize = 0;
-    size_t dataBlockOffset = gfxResInfo.dataOffset +
-                             sizeof(GraphicsFileDataHeader);
-    size_t dataBlockSize;
-
-    if (header.flag & GraphicsDataFlags::CompressedData) {
-        dataBlockSize = header.dataSize - sizeof(GraphicsFileDataHeader);
-    } else {
-        dataBlockSize = graphicsDataSize;
+    // Bound each allocation before multiplying dimensions or trusting file lengths.
+    constexpr size_t maxResourceBytes = 256 * 1024 * 1024;
+    if (header.width <= 0 || header.height <= 0 ||
+        size_t(header.width) > maxResourceBytes / size_t(header.height)) {
+        return cgl::Results::InvalidFile;
     }
-
-    // check PUK2's header
+    const size_t graphicsDataSize = size_t(header.width) * size_t(header.height);
+    const size_t recordOffset = gfxResInfo.dataOffset;
+    const size_t headerSize = sizeof(GraphicsFileDataHeader) +
+        ((header.flag & GraphicsDataFlags::DataVerPUK2) ? sizeof(GraphicsFileDataHeader_PUK2) : 0);
+    if (header.dataSize < headerSize || recordOffset > fileSize() ||
+        header.dataSize > fileSize() - recordOffset) {
+        return cgl::Results::InvalidFile;
+    }
+    size_t paletteDataSize = 0;
     uint8_t* pPalette = nullptr;
     if (header.flag & GraphicsDataFlags::DataVerPUK2) {
-        GraphicsFileDataHeader_PUK2 header_puk2;
-
-        if (read(dataBlockOffset, sizeof(header_puk2), &header_puk2) == false) {
-            LOGE("Failed to read PUK2's header, PUK1 header : [{}]"
-                 << toString(header));
-            return cgl::Results::Fail;
+        GraphicsFileDataHeader_PUK2 extra{};
+        if (!read(recordOffset + sizeof(GraphicsFileDataHeader), sizeof(extra), &extra)) {
+            return cgl::Results::InvalidFile;
         }
-
-        // update size of data block & offset
-        dataBlockOffset += sizeof(GraphicsFileDataHeader_PUK2);
-        paletteDataSize = header_puk2.paletteSize;
+        paletteDataSize = extra.paletteSize;
+    }
+    if (paletteDataSize > maxResourceBytes - graphicsDataSize) return cgl::Results::InvalidFile;
+    const size_t dataBlockOffset = recordOffset + headerSize;
+    const size_t encodedBytes = header.dataSize - headerSize;
+    size_t dataBlockSize = (header.flag & GraphicsDataFlags::CompressedData)
+        ? encodedBytes : graphicsDataSize + paletteDataSize;
+    if (dataBlockSize == 0 || dataBlockSize > maxResourceBytes || dataBlockSize > encodedBytes) {
+        return cgl::Results::InvalidFile;
     }
 
     // update temporary block if necessary
@@ -440,7 +446,7 @@ cgl::Results GraphicsDataReaderImpl::ReadDataFromPUK(
             return cgl::Results::Fail;
         }
     } else {
-        dataBlockSize = graphicsDataSize;
+        dataBlockSize = graphicsDataSize + paletteDataSize;
         memcpy(resourceData.get(), tempBlock_.data(), dataBlockSize);
     }
 

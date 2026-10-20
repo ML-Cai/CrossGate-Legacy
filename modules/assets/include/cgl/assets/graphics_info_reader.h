@@ -41,6 +41,9 @@ class IGraphicsInfoReader {
 
     virtual cgl::Results load() = 0;
 
+    // Releases loaded indexes and the file. Serialize access to this instance.
+    virtual void close() noexcept = 0;
+
     virtual size_t infoCount() const noexcept = 0;
 
     virtual bool mightContain(
