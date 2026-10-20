@@ -39,6 +39,10 @@ class IAnimeDataReader {
 
     virtual cgl::Results load() = 0;
 
+    // Releases the file and cache; previously returned data remains caller-owned.
+    // Access to one reader instance must be serialized.
+    virtual void close() noexcept = 0;
+
     virtual cgl::Results query(
         const cgl::AnimeResourceInfo& animeResInfo,
         cgl::AnimeResourceData*       pAnimeResData) = 0;

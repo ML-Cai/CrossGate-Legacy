@@ -9,6 +9,10 @@
 #pragma once
 
 #include <assert.h>
+#include <algorithm>
+#include <cstring>
+#include <cstdint>
+#include <stdexcept>
 #include <memory>
 #include <fstream>
 #include <filesystem>
@@ -67,24 +71,39 @@ class FileBlockCache {
         : blockSize_(blockSize),
           maxBlocks_(maxCachedBlocks),
           fileSize_(0) {
+        if (blockSize == 0 || maxCachedBlocks == 0) {
+            throw std::invalid_argument("FileBlockCache requires nonzero limits");
+        }
     }
 
     virtual ~FileBlockCache() = default;
 
     virtual bool open(const std::filesystem::path& filePath) {
-        if (isStreamReady()) {
-            return true;
-        }
-
+        if (isStreamReady() && fileInfo_.path == filePath) return true;
+        close();
         fileInfo_ = TryOpenBinaryFile(filePath);
-
-        if (fileInfo_.isOpen() == false) {
+        if (!fileInfo_.isOpen()) return false;
+        try {
+            fileSize_ = cgl::GetFileSize(&fileInfo_);
+            return true;
+        } catch (const std::ios_base::failure&) {
+            close();
             return false;
         }
-        fileSize_ = cgl::GetFileSize(&fileInfo_);
-
-        return true;
     }
+
+    // Single-owner, synchronous cache. Callers must serialize access, including close.
+    // Destruction also releases the file and all cached blocks through RAII.
+    virtual void close() noexcept {
+        decltype(cache_)().swap(cache_);
+        lruList_.clear();
+        fileInfo_.stream.reset();
+        fileInfo_.path.clear();
+        fileInfo_.errorMsg.clear();
+        fileSize_ = 0;
+    }
+
+    size_t cachedBlockCount() const noexcept { return cache_.size(); }
 
     virtual bool isStreamReady() const {
         return fileInfo_.isOpen();
@@ -108,7 +127,7 @@ class FileBlockCache {
             size_t blockOffset = absOffset % blockSize_;
 
             auto block = getBlock(blockId);
-            if (block == nullptr) {
+            if (block == nullptr || blockOffset >= block->bufferDataSize) {
                 return false;
             }
 
@@ -148,25 +167,25 @@ class FileBlockCache {
         auto iter = cache_.find(blockId);
         if (iter != cache_.end()) {
             // Update LRU
-            lruList_.erase(iter->second.second);
-            lruList_.push_front(blockId);
-            iter->second.second = lruList_.begin();
+            lruList_.splice(lruList_.begin(), lruList_, iter->second.second);
             return iter->second.first;
         }
 
         // Read from file if the cache doesn't exist
         const size_t offset = blockId * blockSize_;
         auto newBlock = std::make_shared<Block>(blockSize_);
-        fileInfo_.stream->seekg(offset, std::ios::beg);
-
         size_t availableBytes = (offset >= fileSize_) ? 0 : std::min(blockSize_, fileSize_ - offset);
         if (availableBytes == 0) {
             return nullptr;
         }
-        fileInfo_.stream->read(reinterpret_cast<char*>(newBlock->buffer.data()),
-                               availableBytes);
-
-        if (!(*fileInfo_.stream)) return nullptr;
+        try {
+            fileInfo_.stream->clear();
+            fileInfo_.stream->seekg(offset, std::ios::beg);
+            fileInfo_.stream->read(reinterpret_cast<char*>(newBlock->buffer.data()),
+                                   availableBytes);
+        } catch (const std::ios_base::failure&) {
+            return nullptr; // Do not cache an incomplete block.
+        }
         newBlock->bufferDataSize = availableBytes;
 
         // retire cache
@@ -178,7 +197,12 @@ class FileBlockCache {
 
         // add new cache
         lruList_.push_front(blockId);
-        cache_[blockId] = { newBlock, lruList_.begin() };
+        try {
+            cache_.emplace(blockId, std::make_pair(newBlock, lruList_.begin()));
+        } catch (...) {
+            lruList_.pop_front();
+            throw;
+        }
 
         return newBlock;
     }

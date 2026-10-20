@@ -49,8 +49,9 @@ class ReaderImpl : public cgl::IAnimeInfoReader {
     cgl::Results queryAvailableSerialNums(
         std::vector<cgl::AnimeResourceSerialNum>* pList) noexcept override;
 
+    void close() noexcept override;
+
  private:
-    void destroy();
 
     cgl::Results preLoad(size_t fileSize);
 
@@ -72,19 +73,19 @@ ReaderImpl::ReaderImpl(
 
 // -----------------------------------------------------------------------------
 ReaderImpl::~ReaderImpl() {
-    destroy();
+    close();
 }
 
 // -----------------------------------------------------------------------------
-void ReaderImpl::destroy() {
-    if ((fileInfo_.stream.has_value()) &&
-        (fileInfo_.stream->is_open())) {
-        fileInfo_.stream->close();
-    }
+void ReaderImpl::close() noexcept {
+    fileInfo_.stream.reset();
+    fileInfo_.path.clear();
+    fileInfo_.errorMsg.clear();
+    decltype(map_)().swap(map_);
 }
 
 // -----------------------------------------------------------------------------
-cgl::Results ReaderImpl::load() {
+cgl::Results ReaderImpl::load() try {
     // Get file resource path configurations.
     auto pSettings = createInfo().pSettings;
     auto resPaths  = cgl::AcquireCrossGateResourcePath(createInfo().version);
@@ -95,12 +96,7 @@ cgl::Results ReaderImpl::load() {
         return cgl::Results::Fail;
     }
 
-    // close previous data first.
-    if (fileInfo_.isOpen() == true) {
-        LOGW("The graphic index reader has already opened a file. Release the"
-             "previous one ...");
-        destroy();
-    }
+    close();
 
     // load file
     std::filesystem::path fullPath =
@@ -119,7 +115,7 @@ cgl::Results ReaderImpl::load() {
     size_t fileSize = GetFileSize(&fileInfo_);
     if (fileSize % sizeof(AnimeInfoRawData) != 0) {
         LOGE("Failed to read the data from unmatch anime info file");
-        destroy();
+        close();
         return cgl::Results::InvalidFile;
     }
 
@@ -128,7 +124,17 @@ cgl::Results ReaderImpl::load() {
     // in this case. Maybe we can use a sorted file in the future or something
     // like that, then we can use binary search to query the data.
     // But for now, we just read all data to memory.
-    return preLoad(fileSize);
+    auto result = preLoad(fileSize);
+    if (result != cgl::Results::Success) close();
+    else fileInfo_.stream.reset(); // The parsed index owns all required data.
+    return result;
+}
+catch (const std::ios_base::failure&) {
+    close();
+    return cgl::Results::InvalidFile;
+} catch (...) {
+    close();
+    throw;
 }
 
 // -----------------------------------------------------------------------------

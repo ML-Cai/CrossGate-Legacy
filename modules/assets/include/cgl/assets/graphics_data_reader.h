@@ -39,6 +39,9 @@ class IGraphicsDataReader {
 
     virtual cgl::Results load() = 0;
 
+    // Serialized access only. Returned pixels remain caller-owned after close.
+    virtual void close() noexcept = 0;
+
     virtual cgl::Results query(
         const cgl::GraphicsResourceInfo& gfxResInfo,
         cgl::GraphicsResourceData*       pGfxResData) = 0;

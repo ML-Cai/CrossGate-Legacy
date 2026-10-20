@@ -41,6 +41,9 @@ class IAnimeInfoReader {
 
     virtual cgl::Results load() = 0;
 
+    // Releases loaded indexes and the file. Serialize access to this instance.
+    virtual void close() noexcept = 0;
+
     virtual cgl::Results query(
         const cgl::AnimeResourceSerialNum& index,
         cgl::AnimeResourceInfo*            pInfo) = 0;
