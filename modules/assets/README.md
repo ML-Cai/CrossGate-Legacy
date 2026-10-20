@@ -90,3 +90,46 @@ These are per-reader CPU payload budgets, not process-memory limits: metadata,
 stream buffers, decoded caller-owned data, indexes, graphics scratch, and GPU
 resources are separate. A global coordinator and Python/HTTP telemetry bindings
 are not introduced here. Native defaults remain unchanged.
+
+## Decode scratch and palette reuse
+
+Uncompressed graphics read directly into the final caller-owned allocation,
+including any embedded palette. Compressed graphics reuse scratch only up to
+1 MiB. Larger compressed input uses temporary storage released on both success
+and failure, and discards any previously retained scratch before allocating.
+`scratchBytes` reports retained capacity, not temporary peak memory. Large
+compressed input and its decoded output still coexist during decoding; this is
+not a streaming decoder or an overall process-memory cap. `trimCache()` and
+`close()` release small retained scratch as before.
+
+Embedded palettes must contain at most 256 complete BGR triplets. If fewer than
+256 colors are present, all decoded indices must fit that palette before the
+resource is returned. This protects native and Python consumers that use those
+indices to address palette memory. Invalid resources leave prior output intact.
+
+`IPaletteReader` caches one copied palette per supported environment, keyed by
+resolved resource path: four entries, at most 3072 bytes of color payload plus
+path/object overhead. Files are closed after loading, results are copied out,
+and failed reads are not cached or published. Null output and unsupported palette
+types are rejected. Access to the same reader must be serialized.
+
+Call `clearCache()` after editing palettes in place; path changes automatically
+replace the corresponding entry on its next read. A Python tool using the current
+Session binding must recreate its session to invalidate cached palettes; the new
+C++ invalidation method is not yet exposed there. No file watcher is introduced.
+
+Truncated RLE opcode operands fail explicitly. The existing compatibility rule for
+oversized output runs remains separate and unchanged.
+
+Remaining work identified during this pass:
+
+- AnimationLibrary reparses all motions for each requested direction and retains
+  all decoded indexed frames while building the RGBA array. Reuse a bounded
+  description and validate metadata before decoding frames one at a time.
+- Index preloading still allocates a whole input file plus lookup tables without
+  an explicit index-memory budget. Large/corrupt inputs need a separate limit or
+  streaming parse policy.
+- File-cache budgets do not coordinate decoded CPU data or live GPU resources.
+  A shared resource policy needs scene ownership and in-flight GPU lifetime rules.
+- Python sessions need explicit invalidation and telemetry methods before adding
+  live editing, rather than relying on session recreation.

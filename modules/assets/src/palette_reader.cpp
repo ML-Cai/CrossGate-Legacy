@@ -6,6 +6,8 @@
 //   All rights reserved.
 // =============================================================================
 
+#include <array>
+#include <optional>
 #include "cgl/common/formatters.h"
 #include "cgl/assets/palette_reader.h"
 #include "cgl/settings/settings.h"
@@ -34,11 +36,22 @@ class PaletteReaderImpl : public cgl::IPaletteReader {
 
     ~PaletteReaderImpl();
 
+    void clearCache() noexcept override {
+        for (auto& entry : cache_) entry.reset();
+    }
+
     // Try to open specific palet_*.cgp data but not read data yet.
     cgl::Results read(cgl::EnvironmentPaletteTypes envPalette,
                       cgl::PaletteData256*         pPaletteData) override;
 
  private:
+    struct CachedPalette {
+        std::filesystem::path path;
+        cgl::PaletteData256 data;
+    };
+    // Four environment palettes, at most 4 x 768 bytes of color payload.
+    std::array<std::optional<CachedPalette>, 4> cache_;
+
     void appendDefaultpPaletteData(cgl::PaletteData256* pPaletteData) noexcept;
 
     cgl::Results readPaletteFile(const std::filesystem::path& fullPath,
@@ -96,7 +109,7 @@ void PaletteReaderImpl::appendDefaultpPaletteData(
 cgl::Results PaletteReaderImpl::readPaletteFile(
     const std::filesystem::path& fullPath,
     cgl::PaletteData256* pPaletteData
-) {
+) try {
     cgl::FileInfo fileInfo = cgl::TryOpenBinaryFile(fullPath);
     if (fileInfo.isOpen() == false) {
         LOGE("Failed to open environment palette file : `" << fullPath.string()
@@ -120,11 +133,17 @@ cgl::Results PaletteReaderImpl::readPaletteFile(
 
     return cgl::Results::Success;
 }
+catch (const std::ios_base::failure&) {
+    return cgl::Results::InvalidFile;
+}
 
 cgl::Results PaletteReaderImpl::read(
     cgl::EnvironmentPaletteTypes envPalette,
     cgl::PaletteData256*         pPaletteData
 ) {
+    if (!pPaletteData) return cgl::Results::InvalidArgs;
+    const auto index = static_cast<size_t>(envPalette);
+    if (index >= cache_.size()) return cgl::Results::InvalidArgs;
     // Get file info.
     const auto pSettings = createInfo().pSettings;
     const auto resPath = cgl::AcquireEnvPalettePath(envPalette);
@@ -138,17 +157,22 @@ cgl::Results PaletteReaderImpl::read(
         std::filesystem::path(resPath.paletteFilePath);
 
 
-    LOGD("Loading env palette(" << envPalette << ") from file : "
-         << fullPath.string());
-
-    // Load palette data
-    cgl::Results result = readPaletteFile(fullPath, pPaletteData);
-    if (result != cgl::Results::Success) {
-        return result;
+    std::error_code pathError;
+    fullPath = std::filesystem::absolute(fullPath, pathError).lexically_normal();
+    if (pathError) return cgl::Results::InvalidFile;
+    auto& entry = cache_[index];
+    if (entry && entry->path == fullPath) {
+        *pPaletteData = entry->data;
+        return cgl::Results::Success;
     }
-
-    // append default data into palette
-    appendDefaultpPaletteData(pPaletteData);
+    LOGD("Loading env palette(" << envPalette << ") from file : " << fullPath.string());
+    entry.reset(); // Do not retain an entry for a previous resource root.
+    cgl::PaletteData256 palette{};
+    const auto result = readPaletteFile(fullPath, &palette);
+    if (result != cgl::Results::Success) return result;
+    appendDefaultpPaletteData(&palette);
+    entry.emplace(CachedPalette{std::move(fullPath), palette});
+    *pPaletteData = palette;
 
     return cgl::Results::Success;
 }
