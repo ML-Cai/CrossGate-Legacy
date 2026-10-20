@@ -127,10 +127,43 @@ and budget boundaries.
 
 Remaining work identified during this pass:
 
-- Index preloading still allocates a whole input file plus lookup tables without
-  an explicit index-memory budget. Large/corrupt inputs need a separate limit or
-  streaming parse policy.
 - File-cache budgets do not coordinate decoded CPU data or live GPU resources.
   A shared resource policy needs scene ownership and in-flight GPU lifetime rules.
 - Python sessions need explicit invalidation and telemetry methods before adding
   live editing, rather than relying on session recreation.
+
+## Index preload limits
+
+Graphics/anime info readers accept two inclusive limits in CreateInfo:
+
+| Reader | maxIndexFileBytes default | maxIndexEntries default |
+| --- | ---: | ---: |
+| Graphics info | 64 MiB | 1,048,576 |
+| Anime info | 1 MiB | 65,536 |
+
+Both must be nonzero to enable loading. File alignment, bytes and on-disk record
+count are checked before allocating a backing buffer or reserving/populating
+lookup tables; duplicate records count toward the limit too. Defaults admit the
+installed eight-version corpus (largest graphics index: 493,947 records; largest
+anime index: 3,186 records). Callers can choose different limits at construction.
+These bound input and entry growth, not exact heap usage: hash nodes, buckets,
+allocator overhead, query-result copies and other readers are not included in
+an exact process-wide memory budget.
+
+Graphics info retains one bounded input buffer because its lookup maps point
+into that buffer. Anime info parses at most 512 records (6144 bytes) per batch
+instead of retaining an additional whole-file temporary allocation. Existing
+first-entry-wins graphics and last-entry-wins anime duplicate semantics remain.
+
+Format/limit/I/O failures return InvalidFile; an allocation failure returns Fail.
+Both paths close the stream and clear partial indexes before returning. Other
+unexpected exceptions also clear owned state before propagating. Successfully
+preloaded files are closed immediately. close() releases lookup storage and the
+graphics backing buffer, and remains idempotent. A subsequent valid load can
+retry. Graphics load remains idempotent while already loaded; close before
+reloading a changed file. Anime load replaces the previous index each time.
+
+The synthetic ResourceReaderTest cases cover byte/entry boundaries, disabled
+loading, oversized inputs, repeated rejection/retry with file deletion, and
+batch boundaries/duplicate behavior. AddressSanitizer checks memory accesses;
+these tests do not inject allocator failures or prove application-wide leak freedom.

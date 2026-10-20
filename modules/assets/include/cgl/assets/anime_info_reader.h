@@ -26,6 +26,10 @@ class IAnimeInfoReader {
     struct CreateInfo {
         const cgl::Settings*  pSettings;
         cgl::CrossGateVersion version;
+        // Input/entry limits, checked before backing-buffer or lookup-table allocation.
+        // They bound growth, not exact allocator/container overhead. Zero rejects loading.
+        size_t maxIndexFileBytes = 1024 * 1024;
+        size_t maxIndexEntries = 65536;
     };
 
     static cgl::IAnimeInfoReader::Ptr create(const CreateInfo& createInfo);

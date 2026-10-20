@@ -380,3 +380,97 @@ TEST_F(ResourceReaderTest, TruncatedRleOperandsDoNotPublishPartialOutput) {
         EXPECT_EQ(out.width, 777); EXPECT_EQ(out.pData, nullptr);
     }
 }
+
+TEST_F(ResourceReaderTest, GraphicsIndexLimitsAreInclusiveAndFailureCanRetry) {
+    std::vector<uint8_t> bytes(80, 0); bytes[0] = 1; bytes[40] = 2;
+    for (auto limits : {std::pair<size_t,size_t>{80, 3}, {120, 2}}) {
+        auto reader = cgl::IGraphicsInfoReader::create({&settings, version, limits.first, limits.second});
+        for (int i = 0; i < 50; ++i) {
+            write("GraphicInfo_66.bin", bytes);
+            ASSERT_EQ(reader->load(), cgl::Results::Success);
+            EXPECT_EQ(reader->infoCount(), 2);
+            reader->close();
+            auto oversized = bytes; oversized.resize(120, 0); oversized[80] = 3;
+            write("GraphicInfo_66.bin", oversized);
+            EXPECT_EQ(reader->load(), cgl::Results::InvalidFile);
+            EXPECT_EQ(reader->infoCount(), 0);
+            cgl::GraphicsResourceInfo out{}; out.width = 777;
+            EXPECT_NE(reader->query({cgl::GraphicsResourceSerialNumTypes::GraphicsSerialNum, version, 1}, &out),
+                      cgl::Results::Success);
+            EXPECT_EQ(out.width, 777);
+            ASSERT_TRUE(std::filesystem::remove(dir / "bin/GraphicInfo_66.bin"));
+        }
+    }
+}
+TEST_F(ResourceReaderTest, AnimeIndexLimitsAreInclusiveAndReloadDropsPreviousEntries) {
+    std::vector<uint8_t> bytes;
+    word(bytes, 1, 4); word(bytes, 11, 4); word(bytes, 1, 2); word(bytes, 0, 2);
+    word(bytes, 2, 4); word(bytes, 22, 4); word(bytes, 1, 2); word(bytes, 0, 2);
+    for (auto limits : {std::pair<size_t,size_t>{24, 3}, {36, 2}}) {
+        auto reader = cgl::IAnimeInfoReader::create({&settings, version, limits.first, limits.second});
+        for (int i = 0; i < 50; ++i) {
+            write("AnimeInfo_4.bin", bytes);
+            ASSERT_EQ(reader->load(), cgl::Results::Success);
+            cgl::AnimeResourceInfo out{};
+            ASSERT_EQ(reader->query({version, 1}, &out), cgl::Results::Success);
+            EXPECT_EQ(out.dataOffset, 11);
+            auto oversized = bytes; oversized.resize(36, 0);
+            write("AnimeInfo_4.bin", oversized);
+            EXPECT_EQ(reader->load(), cgl::Results::InvalidFile);
+            out.dataOffset = 777;
+            EXPECT_NE(reader->query({version, 1}, &out), cgl::Results::Success);
+            EXPECT_EQ(out.dataOffset, 777);
+            ASSERT_TRUE(std::filesystem::remove(dir / "bin/AnimeInfo_4.bin"));
+        }
+    }
+}
+TEST_F(ResourceReaderTest, ZeroIndexLimitsDisablePreloading) {
+    for (auto limits : {std::pair<size_t,size_t>{0, 2}, {80, 0}}) {
+        write("GraphicInfo_66.bin", std::vector<uint8_t>(40, 0));
+        auto graphics = cgl::IGraphicsInfoReader::create({&settings, version, limits.first, limits.second});
+        EXPECT_EQ(graphics->load(), cgl::Results::InvalidFile);
+        EXPECT_EQ(graphics->infoCount(), 0);
+        ASSERT_TRUE(std::filesystem::remove(dir / "bin/GraphicInfo_66.bin"));
+        write("AnimeInfo_4.bin", std::vector<uint8_t>(12, 0));
+        auto anime = cgl::IAnimeInfoReader::create({&settings, version, limits.first, limits.second});
+        EXPECT_EQ(anime->load(), cgl::Results::InvalidFile);
+        ASSERT_TRUE(std::filesystem::remove(dir / "bin/AnimeInfo_4.bin"));
+    }
+}
+TEST_F(ResourceReaderTest, AnimeIndexBatchesPreserveLastDuplicateAndAllEntries) {
+    std::vector<uint8_t> bytes;
+    for (uint32_t i = 0; i < 1025; ++i) {
+        word(bytes, 100 + i, 4); word(bytes, i * 10, 4); word(bytes, 2, 2); word(bytes, 0, 2);
+    }
+    word(bytes, 100, 4); word(bytes, 9999, 4); word(bytes, 3, 2); word(bytes, 0, 2);
+    write("AnimeInfo_4.bin", bytes);
+    auto reader = cgl::IAnimeInfoReader::create({&settings, version, bytes.size(), 1026});
+    ASSERT_EQ(reader->load(), cgl::Results::Success);
+    ASSERT_TRUE(std::filesystem::remove(dir / "bin/AnimeInfo_4.bin"));
+    for (uint32_t i = 0; i < 1025; ++i) {
+        cgl::AnimeResourceInfo out{};
+        ASSERT_EQ(reader->query({version, 100 + i}, &out), cgl::Results::Success);
+        EXPECT_EQ(out.dataOffset, i ? i * 10 : 9999);
+        EXPECT_EQ(out.motionCount, i ? 2 : 3);
+    }
+    std::vector<cgl::AnimeResourceSerialNum> serials;
+    ASSERT_EQ(reader->queryAvailableSerialNums(&serials), cgl::Results::Success);
+    EXPECT_EQ(serials.size(), 1025);
+    reader->close(); reader->close();
+    serials.clear();
+    reader->queryAvailableSerialNums(&serials);
+    EXPECT_TRUE(serials.empty());
+}
+TEST_F(ResourceReaderTest, DefaultIndexLimitsRejectLargeInputsBeforePreloading) {
+    write("GraphicInfo_66.bin", {0});
+    std::filesystem::resize_file(dir / "bin/GraphicInfo_66.bin", (1024ull * 1024 + 1) * 40);
+    auto graphics = cgl::IGraphicsInfoReader::create({&settings, version});
+    EXPECT_EQ(graphics->load(), cgl::Results::InvalidFile);
+    EXPECT_EQ(graphics->infoCount(), 0);
+    ASSERT_TRUE(std::filesystem::remove(dir / "bin/GraphicInfo_66.bin"));
+    write("AnimeInfo_4.bin", {0});
+    std::filesystem::resize_file(dir / "bin/AnimeInfo_4.bin", 65537ull * 12);
+    auto anime = cgl::IAnimeInfoReader::create({&settings, version});
+    EXPECT_EQ(anime->load(), cgl::Results::InvalidFile);
+    ASSERT_TRUE(std::filesystem::remove(dir / "bin/AnimeInfo_4.bin"));
+}
