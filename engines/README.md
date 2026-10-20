@@ -162,3 +162,43 @@ sprite entities exist on every entry, scene exit removes them, and final cache
 cleanup releases the clip. Unit tests cover independent playback, pause, reverse
 and nonlooping playback, large time steps, entity deletion and singleton recreation.
 The desktop tests require Vulkan, validation layers and configured original game files.
+
+## CPU animation assembly and description lifetime
+
+AnimationLibrary delegates pixel preparation to the CPU-only AnimationBuilder.
+It first reads frame metadata and validates positive dimensions, the complete
+4096x4096 canvas bound and the remaining 256 MiB animation texture-payload budget.
+Only then does it read the palette, allocate the aligned RGBA array, and decode
+one indexed frame at a time. Each indexed allocation is destroyed before the
+next frame is decoded. Offsets, bottom-up native rows, BGR conversion and index-0
+transparency preserve the previous output convention. RD/metadata dimension
+mismatches still fail before any renderer is created.
+
+The builder retains only the last character's parsed description, so acquiring
+idle/walk directions for one character avoids repeatedly parsing all motions.
+Changing character or anime reader identity discards it; description limits
+match the reader's 65,536 frames per motion and 1,048,576 frames in total, with
+at most DirectionTypes::COUNT x MotionTypes::COUNT motions. Failed frame builds
+may retain this valid description, but publish no partial pixel result or GPU clip.
+The output owns its pixels independently of the builder and readers.
+
+AnimationLibrary::clear() releases cached clips and the CPU description, and
+resets device/render-pass binding. Its existing prerequisite remains: release
+scene/entity clip references and wait for submitted GPU work before clearing.
+Use clear after reloading resources in place as well; unchanged reader addresses
+cannot detect edited files, and existing GPU clips would otherwise remain stale.
+Builder/library access must be serialized. No GPU eviction during in-flight draws
+or background upload is introduced.
+
+The reduction removes simultaneous retention of all decoded indexed frames;
+it does not eliminate the RGBA array, per-reader scratch/cache, upload staging,
+or live GPU allocations. The texture-payload limit is not a total process-memory
+limit. Metadata/header mismatches are rejected after the reader returns its
+bounded decoded result; a shared budget for all CPU/GPU allocations remains future
+work, along with explicit index-preload limits and Python invalidation/telemetry.
+
+`ctest --test-dir build -R AnimationBuilderTest --output-on-failure` runs synthetic
+CPU-only tests for pixels, alignment, cache invalidation, early budget checks,
+mid-build failure/retry and repeated cleanup. The target links no renderer,
+Vulkan or window library. Existing desktop tests cover client integration and
+scene/entity/GPU cache cleanup.

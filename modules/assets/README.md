@@ -121,11 +121,12 @@ C++ invalidation method is not yet exposed there. No file watcher is introduced.
 Truncated RLE opcode operands fail explicitly. The existing compatibility rule for
 oversized output runs remains separate and unchanged.
 
+AnimationLibrary now reuses one character description and decodes frames
+sequentially after metadata validation; see engines/README.md for ownership
+and budget boundaries.
+
 Remaining work identified during this pass:
 
-- AnimationLibrary reparses all motions for each requested direction and retains
-  all decoded indexed frames while building the RGBA array. Reuse a bounded
-  description and validate metadata before decoding frames one at a time.
 - Index preloading still allocates a whole input file plus lookup tables without
   an explicit index-memory budget. Large/corrupt inputs need a separate limit or
   streaming parse policy.

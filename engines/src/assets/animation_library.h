@@ -1,16 +1,12 @@
 #pragma once
 
-#include <compare>
+#include "assets/animation_builder.h"
 #include <map>
 #include <memory>
 #include "cgl/graphics/sprite_renderer.h"
 
 namespace cgl {
 namespace component { struct AssetsReaderState; }
-struct AnimationRequest {
-    uint32_t serial = 101406, direction = 0, motion = 5;
-    auto operator<=>(const AnimationRequest&) const = default;
-};
 // Immutable shared clip. Playback state belongs to individual entities.
 struct AnimationClip {
     graphics::ISpriteRenderer::Ptr renderer;
@@ -24,8 +20,14 @@ public:
     std::shared_ptr<const AnimationClip> acquire(const AnimationRequest& request,
         component::AssetsReaderState& readers, graphics::IDevice* device, graphics::IRenderPass* pass);
     // Release scene/entity references and wait for GPU work before clearing.
-    void clear() { clips_.clear(); }
+    void clear() noexcept {
+        clips_.clear();
+        builder_.clear();
+        device_ = nullptr;
+        pass_ = nullptr;
+    }
 private:
+    AnimationBuilder builder_;
     std::map<AnimationRequest, std::shared_ptr<const AnimationClip>> clips_;
     graphics::IDevice* device_ = nullptr;
     graphics::IRenderPass* pass_ = nullptr;

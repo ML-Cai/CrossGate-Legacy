@@ -28,3 +28,10 @@ target_include_directories(test_map_hover PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..
 target_link_libraries(test_map_hover PRIVATE GTest::gtest_main cgl::graphics cgl::assets cgl::common)
 set_target_properties(test_map_hover PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 gtest_discover_tests(test_map_hover WORKING_DIRECTORY ${CGL_BIN_PATH})
+
+# CPU-only assembly: deliberately links no renderer, Vulkan, or window library.
+add_executable(test_animation_builder test_animation_builder.cpp ../src/assets/animation_builder.cpp)
+target_include_directories(test_animation_builder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_animation_builder PRIVATE GTest::gtest_main cgl::assets cgl::settings cgl::common)
+set_target_properties(test_animation_builder PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
+gtest_discover_tests(test_animation_builder WORKING_DIRECTORY ${CGL_BIN_PATH})
