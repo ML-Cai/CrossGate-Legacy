@@ -19,7 +19,7 @@ namespace py {
 struct PaletteData256Holder {
     using Ptr = std::shared_ptr<cgl::py::PaletteData256Holder>;
 
-    cgl::PaletteData256 data;
+    cgl::PaletteData256 data{};
 };
 
 
