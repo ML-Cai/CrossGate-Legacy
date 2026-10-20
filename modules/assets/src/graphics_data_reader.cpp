@@ -240,6 +240,10 @@ bool Decompress(
             return false;
         }
 
+        // Missing opcode operands are truncated input, not the legacy
+        // oversized-output padding tolerated below.
+        if (!isValidBlock) return false;
+
         // Workaround for boundary check, It's safe in most case for regular
         // CrossGate data, but for case such as CG_VERSION_PUK3_V1:3674, it
         // might over the bounary for unknow reason. This cdoe will handle the
@@ -420,7 +424,8 @@ cgl::Results GraphicsDataReaderImpl::ReadDataFromPUK(
         }
         paletteDataSize = extra.paletteSize;
     }
-    if (paletteDataSize > maxResourceBytes - graphicsDataSize) return cgl::Results::InvalidFile;
+    if (paletteDataSize > 256 * 3 || paletteDataSize % 3 != 0 ||
+        paletteDataSize > maxResourceBytes - graphicsDataSize) return cgl::Results::InvalidFile;
     const size_t dataBlockOffset = recordOffset + headerSize;
     const size_t encodedBytes = header.dataSize - headerSize;
     size_t dataBlockSize = (header.flag & GraphicsDataFlags::CompressedData)
@@ -429,38 +434,37 @@ cgl::Results GraphicsDataReaderImpl::ReadDataFromPUK(
         return cgl::Results::InvalidFile;
     }
 
-    // update temporary block if necessary
-    if (dataBlockSize > tempBlock_.size()) {
-        tempBlock_.resize(dataBlockSize);
-    }
-
-    // read data block
-    if (read(dataBlockOffset, dataBlockSize, tempBlock_.data()) == false) {
-        LOGE("Failed to read data block for header : [{}]" << toString(header));
+    // Uncompressed pixels can be read directly into their final allocation.
+    // Keep only small compressed scratch between queries; large scratch is local.
+    constexpr size_t maxRetainedScratchBytes = 1024 * 1024;
+    auto resourceData = std::make_unique<uint8_t[]>(graphicsDataSize + paletteDataSize);
+    if (header.flag & GraphicsDataFlags::CompressedData) {
+        std::vector<uint8_t> transient;
+        std::vector<uint8_t>* scratch = &tempBlock_;
+        if (dataBlockSize > maxRetainedScratchBytes) {
+            std::vector<uint8_t>().swap(tempBlock_);
+            scratch = &transient;
+        }
+        // Replacing rather than growing prevents vector's geometric capacity
+        // from retaining more than the configured small-scratch ceiling.
+        if (scratch->size() < dataBlockSize) {
+            std::vector<uint8_t>(dataBlockSize).swap(*scratch);
+        }
+        if (!read(dataBlockOffset, dataBlockSize, scratch->data()) ||
+            !Decompress(scratch->data(), dataBlockSize, resourceData.get(),
+                        graphicsDataSize, paletteDataSize)) {
+            return cgl::Results::Fail;
+        }
+    } else if (!read(dataBlockOffset, dataBlockSize, resourceData.get())) {
         return cgl::Results::Fail;
     }
 
-    // decompress the graphic resource, allocate the data with the
-    // `graphicsDataSize` & `paletteDataSize` since we might need to allocate
-    // the private palette in the same time.
-    auto resourceData = std::make_unique<uint8_t[]>(graphicsDataSize + paletteDataSize);
-    assert(resourceData != nullptr);
-
-    if (header.flag & GraphicsDataFlags::CompressedData) {
-        if (!Decompress(tempBlock_.data(),
-                        dataBlockSize,
-                        resourceData.get(),
-                        graphicsDataSize,
-                        paletteDataSize)) {
-            LOGE("Failed to do decompress the data block for the header : "
-                 << toString(header));
-            return cgl::Results::Fail;
-        }
-    } else {
-        dataBlockSize = graphicsDataSize + paletteDataSize;
-        memcpy(resourceData.get(), tempBlock_.data(), dataBlockSize);
+    // Consumers use pixel indices to address BGR triplets. Reject a short
+    // private palette when an index would point beyond its owned allocation.
+    if (paletteDataSize > 0 && paletteDataSize < 256 * 3 &&
+        *std::max_element(resourceData.get(), resourceData.get() + graphicsDataSize) >= paletteDataSize / 3) {
+        return cgl::Results::InvalidFile;
     }
-
     // assign palette data
     if (paletteDataSize > 0) {
         pPalette = resourceData.get() + graphicsDataSize;

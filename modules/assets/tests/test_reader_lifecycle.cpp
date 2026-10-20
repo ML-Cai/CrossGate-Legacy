@@ -3,6 +3,7 @@
 #include <fstream>
 #include <filesystem>
 #include "cgl/assets/anime_info_reader.h"
+#include "cgl/assets/palette_reader.h"
 #include "cgl/assets/graphics_info_reader.h"
 #include <vector>
 #include "cgl/assets/anime_data_reader.h"
@@ -196,13 +197,13 @@ TEST_F(ResourceReaderTest, Puk2PaletteReadsExactlyOneRecord) {
         word(bytes, 1, 4); word(bytes, 1, 4); word(bytes, compressed ? 25 : 24, 4);
         word(bytes, 3, 4);
         if (compressed) bytes.push_back(4); // Raw run of 4 bytes.
-        bytes.insert(bytes.end(), {42, 10, 20, 30});
+        bytes.insert(bytes.end(), {0, 10, 20, 30});
         write("Graphic_66.bin", bytes);
         ASSERT_EQ(reader->load(), cgl::Results::Success);
         cgl::GraphicsResourceData out{};
         ASSERT_EQ(reader->query(resource, &out), cgl::Results::Success);
         reader->close();
-        EXPECT_EQ(out.pData[0], 42);
+        EXPECT_EQ(out.pData[0], 0);
         ASSERT_EQ(out.pPaletteData, out.pData.get() + 1);
         EXPECT_EQ(out.pPaletteData[0], 10); EXPECT_EQ(out.pPaletteData[2], 30);
     }
@@ -240,7 +241,7 @@ TEST_F(ResourceReaderTest, GraphicsTrimReleasesScratchAndCacheButPreservesOutput
     cgl::GraphicsResourceData out{};
     ASSERT_EQ(reader->query(resource, &out), cgl::Results::Success);
     auto s = reader->cacheStatistics();
-    EXPECT_EQ(s.residentBytes, 0); EXPECT_GE(s.scratchBytes, 1);
+    EXPECT_EQ(s.residentBytes, 0); EXPECT_EQ(s.scratchBytes, 0);
     reader->trimCache();
     EXPECT_EQ(reader->cacheStatistics().scratchBytes, 0);
     ASSERT_EQ(out.pData[0], 42);
@@ -254,4 +255,128 @@ TEST_F(ResourceReaderTest, GraphicsTrimReleasesScratchAndCacheButPreservesOutput
     reader->close();
     EXPECT_EQ(reader->cacheStatistics().residentBytes, 0);
     EXPECT_EQ(reader->cacheStatistics().scratchBytes, 0);
+}
+
+TEST_F(ResourceReaderTest, LargeCompressedScratchIsReleasedAndSmallScratchIsBounded) {
+    auto reader = cgl::IGraphicsDataReader::create({&settings, version, 0});
+    cgl::GraphicsResourceInfo resource{}; resource.version = version;
+    cgl::GraphicsResourceData out{};
+    std::vector<uint8_t> file;
+    std::vector<uint32_t> offsets;
+    const std::vector<uint32_t> sizes{16, 1024 * 1024, 32};
+    for (uint32_t pixels : sizes) {
+        std::vector<uint8_t> payload;
+        for (uint32_t done = 0; done < pixels;) {
+            uint32_t count = std::min(65535u, pixels - done);
+            payload.push_back(0x20); // Large raw run: 0x20, high byte, low byte.
+            payload.push_back(uint8_t(count >> 8)); payload.push_back(uint8_t(count));
+            payload.insert(payload.end(), count, 7); done += count;
+        }
+        offsets.push_back(uint32_t(file.size()));
+        file.insert(file.end(), {'R','D',1,0});
+        word(file, pixels, 4); word(file, 1, 4); word(file, uint32_t(16 + payload.size()), 4);
+        file.insert(file.end(), payload.begin(), payload.end());
+    }
+    write("Graphic_66.bin", file);
+    ASSERT_EQ(reader->load(), cgl::Results::Success);
+    for (int pass = 0; pass < 6; ++pass) {
+        for (size_t i = 0; i < offsets.size(); ++i) {
+            resource.dataOffset = offsets[i];
+            ASSERT_EQ(reader->query(resource, &out), cgl::Results::Success);
+            EXPECT_EQ(out.pData[0], 7); EXPECT_EQ(out.pData[sizes[i] - 1], 7);
+            auto stats = reader->cacheStatistics();
+            EXPECT_EQ(stats.residentBytes, 0);
+            if (sizes[i] > 32) EXPECT_EQ(stats.scratchBytes, 0);
+            else { EXPECT_GT(stats.scratchBytes, 0); EXPECT_LE(stats.scratchBytes, 1024 * 1024); }
+        }
+    }
+    reader->close();
+    EXPECT_EQ(reader->cacheStatistics().scratchBytes, 0);
+}
+TEST_F(ResourceReaderTest, LargeFailedDecodeDoesNotRetainScratchOrReplaceOutput) {
+    const uint32_t payloadSize = 1024 * 1024 + 1;
+    std::vector<uint8_t> bytes{'R','D',1,0};
+    word(bytes, 1, 4); word(bytes, 1, 4); word(bytes, 16 + payloadSize, 4);
+    bytes.resize(16 + payloadSize, 0x40); // Unknown opcode.
+    write("Graphic_66.bin", bytes);
+    auto reader = cgl::IGraphicsDataReader::create({&settings, version, 0});
+    ASSERT_EQ(reader->load(), cgl::Results::Success);
+    cgl::GraphicsResourceInfo resource{}; resource.version = version;
+    cgl::GraphicsResourceData out{}; out.width = 777;
+    EXPECT_NE(reader->query(resource, &out), cgl::Results::Success);
+    EXPECT_EQ(out.width, 777); EXPECT_EQ(out.pData, nullptr);
+    EXPECT_EQ(reader->cacheStatistics().scratchBytes, 0);
+}
+TEST_F(ResourceReaderTest, PrivatePaletteRejectsUnaddressableColors) {
+    for (auto paletteSize : {2u, 3u, 769u}) {
+        std::vector<uint8_t> bytes{'R','D',2,0};
+        word(bytes, 1, 4); word(bytes, 1, 4); word(bytes, 21 + paletteSize, 4);
+        word(bytes, paletteSize, 4); bytes.push_back(42);
+        bytes.resize(21 + paletteSize, 0);
+        write("Graphic_66.bin", bytes);
+        auto reader = cgl::IGraphicsDataReader::create({&settings, version, 0});
+        ASSERT_EQ(reader->load(), cgl::Results::Success);
+        cgl::GraphicsResourceInfo resource{}; resource.version = version;
+        cgl::GraphicsResourceData out{}; out.width = 777;
+        EXPECT_NE(reader->query(resource, &out), cgl::Results::Success);
+        EXPECT_EQ(out.width, 777); EXPECT_EQ(out.pData, nullptr);
+    }
+}
+TEST_F(ResourceReaderTest, PaletteCacheCopiesValuesClosesFilesAndSupportsInvalidation) {
+    std::filesystem::create_directories(dir / "bin/pal");
+    auto reader = cgl::IPaletteReader::create({&settings});
+    cgl::PaletteData256 out{};
+    write("pal/palet_00.cgp", std::vector<uint8_t>(708, 7));
+    ASSERT_EQ(reader->read(cgl::EnvironmentPaletteTypes::Daytime, &out), cgl::Results::Success);
+    EXPECT_EQ(out[16].BGR.B, 7);
+    ASSERT_TRUE(std::filesystem::remove(dir / "bin/pal/palet_00.cgp"));
+    out[16].BGR.B = 99;
+    ASSERT_EQ(reader->read(cgl::EnvironmentPaletteTypes::Daytime, &out), cgl::Results::Success);
+    EXPECT_EQ(out[16].BGR.B, 7); // Cached copy, no open input or alias into caller output.
+    reader->clearCache(); reader->clearCache();
+    EXPECT_NE(reader->read(cgl::EnvironmentPaletteTypes::Daytime, &out), cgl::Results::Success);
+    EXPECT_EQ(out[16].BGR.B, 7);
+    write("pal/palet_00.cgp", std::vector<uint8_t>(708, 8));
+    ASSERT_EQ(reader->read(cgl::EnvironmentPaletteTypes::Daytime, &out), cgl::Results::Success);
+    EXPECT_EQ(out[16].BGR.B, 8);
+    EXPECT_EQ(reader->read(cgl::EnvironmentPaletteTypes::Daytime, nullptr), cgl::Results::InvalidArgs);
+    EXPECT_EQ(reader->read(static_cast<cgl::EnvironmentPaletteTypes>(255), &out), cgl::Results::InvalidArgs);
+}
+TEST_F(ResourceReaderTest, PaletteFailuresAreNotCachedAndDoNotChangeOutput) {
+    std::filesystem::create_directories(dir / "bin/pal");
+    auto reader = cgl::IPaletteReader::create({&settings});
+    cgl::PaletteData256 out{}; out[16].BGR.B = 77;
+    for (size_t size : {0u, 1u, 707u, 709u}) {
+        write("pal/palet_00.cgp", std::vector<uint8_t>(size, 9));
+        EXPECT_NE(reader->read(cgl::EnvironmentPaletteTypes::Daytime, &out), cgl::Results::Success);
+        EXPECT_EQ(out[16].BGR.B, 77);
+    }
+    write("pal/palet_00.cgp", std::vector<uint8_t>(708, 9));
+    ASSERT_EQ(reader->read(cgl::EnvironmentPaletteTypes::Daytime, &out), cgl::Results::Success);
+    EXPECT_EQ(out[16].BGR.B, 9);
+    settings.general.EngineRootPath = (dir / "missing-root").string();
+    EXPECT_NE(reader->read(cgl::EnvironmentPaletteTypes::Daytime, &out), cgl::Results::Success);
+    EXPECT_EQ(out[16].BGR.B, 9);
+    settings.general.EngineRootPath = dir.string();
+    write("pal/palet_00.cgp", std::vector<uint8_t>(708, 10));
+    ASSERT_EQ(reader->read(cgl::EnvironmentPaletteTypes::Daytime, &out), cgl::Results::Success);
+    EXPECT_EQ(out[16].BGR.B, 10);
+}
+
+TEST_F(ResourceReaderTest, TruncatedRleOperandsDoNotPublishPartialOutput) {
+    const std::vector<std::vector<uint8_t>> payloads{
+        {0x90}, {0xa0, 0x01}, {0x10}, {0x20, 0x01}, {0x80}, {0xd0}, {0xe0, 0x01}
+    };
+    for (const auto& payload : payloads) {
+        std::vector<uint8_t> bytes{'R','D',1,0};
+        word(bytes, 1, 4); word(bytes, 1, 4); word(bytes, uint32_t(16 + payload.size()), 4);
+        bytes.insert(bytes.end(), payload.begin(), payload.end());
+        write("Graphic_66.bin", bytes);
+        auto reader = cgl::IGraphicsDataReader::create({&settings, version, 0});
+        ASSERT_EQ(reader->load(), cgl::Results::Success);
+        cgl::GraphicsResourceInfo resource{}; resource.version = version;
+        cgl::GraphicsResourceData out{}; out.width = 777;
+        EXPECT_NE(reader->query(resource, &out), cgl::Results::Success);
+        EXPECT_EQ(out.width, 777); EXPECT_EQ(out.pData, nullptr);
+    }
 }
