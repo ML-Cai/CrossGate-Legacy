@@ -7,6 +7,8 @@
 // =============================================================================
 
 #include <vector>
+#include <filesystem>
+#include <type_traits>
 #include <cstdint>
 #include <memory>
 #include <sstream>
@@ -29,6 +31,7 @@
 #include "holders.h"
 
 namespace py = pybind11;
+using namespace pybind11::literals;
 
 
 namespace {
@@ -45,13 +48,7 @@ inline void remove(std::vector<T>* v, T target) {
 // -----------------------------------------------------------------------------
 template <typename T>
 std::string type_name() {
-#if defined(__clang__) || defined(__GNUC__)
-    return abi::__cxa_demangle(typeid(T).name(), nullptr, nullptr, nullptr);
-#elif defined(_MSC_VER)
     return typeid(T).name();
-#else
-    return typeid(T).name();
-#endif
 }
 
 // -----------------------------------------------------------------------------
@@ -78,7 +75,17 @@ std::vector<cgl::CrossGateVersion> GetTypes_CrossGateVersion() {
 // -----------------------------------------------------------------------------
 class Session {
 public:
-    Session();
+    explicit Session(const std::string& engineRootPath = "", size_t cacheBudgetBytes = 4 * 1024 * 1024);
+    void ensureOpen() const {
+        if (closed_) throw std::runtime_error("Session is closed");
+    }
+    void trim_cache() noexcept;
+    void invalidate_resources() noexcept;
+    void close() noexcept { invalidate_resources(); pSettings_.reset(); closed_ = true; }
+    void clear_palette_cache() noexcept { if (paletteReader_) paletteReader_->clearCache(); }
+    void set_cache_budget(size_t bytes);
+    void reset_cache_stats() noexcept;
+    py::dict cache_stats() const;
 
     size_t acquire_graphics_data_count(
         cgl::CrossGateVersion version);
@@ -104,8 +111,8 @@ public:
         uint32_t              anime_serial_num);
 
 private:
-    int width_, height_;
-    std::vector<uint8_t> rgbData_;
+    bool closed_ = false;
+    size_t cacheBudgetBytes_;
 
     cgl::SettingsPtr pSettings_;
 
@@ -140,8 +147,65 @@ private:
 
 
 // -----------------------------------------------------------------------------
-Session::Session() {
-    pSettings_ = cgl::LoadSettings();
+Session::Session(const std::string& engineRootPath, size_t cacheBudgetBytes)
+    : cacheBudgetBytes_(cacheBudgetBytes) {
+    if (engineRootPath.empty()) pSettings_ = cgl::LoadSettings();
+    else {
+        pSettings_ = std::make_unique<cgl::Settings>();
+        pSettings_->general.EngineRootPath = std::filesystem::absolute(engineRootPath).lexically_normal().string();
+    }
+    if (!pSettings_) throw std::runtime_error("Could not load Session settings");
+}
+
+void Session::trim_cache() noexcept {
+    for (auto& [version, reader] : dataReaderMap_) reader->trimCache();
+    for (auto& [version, reader] : animeDataReaderMap_) reader->trimCache();
+    clear_palette_cache();
+}
+void Session::invalidate_resources() noexcept {
+    auto release = [](auto& readers) { std::decay_t<decltype(readers)>().swap(readers); };
+    release(infoReaderMap_); release(dataReaderMap_);
+    release(animeInfoReaderMap_); release(animeDataReaderMap_);
+    paletteReader_.reset();
+}
+void Session::set_cache_budget(size_t bytes) {
+    ensureOpen();
+    cacheBudgetBytes_ = bytes;
+    for (auto& [version, reader] : dataReaderMap_) reader->setCacheBudget(bytes);
+    for (auto& [version, reader] : animeDataReaderMap_) reader->setCacheBudget(bytes);
+}
+void Session::reset_cache_stats() noexcept {
+    for (auto& [version, reader] : dataReaderMap_) reader->resetCacheStatistics();
+    for (auto& [version, reader] : animeDataReaderMap_) reader->resetCacheStatistics();
+}
+py::dict Session::cache_stats() const {
+    py::list readers;
+    uint64_t resident = 0, scratch = 0, calls = 0, bytes = 0;
+    py::object budget = py::int_(0);
+    auto append = [&](const auto& map, const char* kind) {
+        for (unsigned i = 0; i < unsigned(cgl::CrossGateVersion::COUNT); ++i) {
+            auto version = cgl::CrossGateVersion(i);
+            auto found = map.find(version);
+            if (found == map.end()) continue;
+            const auto s = found->second->cacheStatistics();
+            std::ostringstream name; name << version;
+            readers.append(py::dict(
+                "kind"_a=kind, "version"_a=name.str(), "budget_bytes"_a=s.budgetBytes,
+                "resident_bytes"_a=s.residentBytes, "peak_resident_bytes"_a=s.peakResidentBytes,
+                "cached_blocks"_a=s.cachedBlocks, "scratch_bytes"_a=s.scratchBytes,
+                "hits"_a=s.hits, "misses"_a=s.misses, "evictions"_a=s.evictions,
+                "file_read_calls"_a=s.fileReadCalls, "file_read_bytes"_a=s.fileReadBytes,
+                "failed_reads"_a=s.failedReads, "bypass_reads"_a=s.bypassReads));
+            resident += s.residentBytes; scratch += s.scratchBytes; budget = budget + py::int_(s.budgetBytes);
+            calls += s.fileReadCalls; bytes += s.fileReadBytes;
+        }
+    };
+    append(dataReaderMap_, "graphics"); append(animeDataReaderMap_, "anime");
+    return py::dict("closed"_a=closed_, "cache_budget_per_reader_bytes"_a=cacheBudgetBytes_,
+        "readers"_a=readers, "graphics_index_readers"_a=infoReaderMap_.size(),
+        "anime_index_readers"_a=animeInfoReaderMap_.size(), "palette_reader_active"_a=bool(paletteReader_),
+        "totals"_a=py::dict("resident_bytes"_a=resident, "scratch_bytes"_a=scratch,
+            "budget_bytes"_a=budget, "file_read_calls"_a=calls, "file_read_bytes"_a=bytes));
 }
 
 // -----------------------------------------------------------------------------
@@ -150,36 +214,31 @@ ReaderInterface* Session::acquireReader(
     MapType& readerMap,
     const cgl::CrossGateVersion version
 ) {
-    auto& reader = readerMap[version];
-    if (!reader) {
-        LOGD("Create `" << type_name<ReaderInterface>() << "` for version `"
-             << version << "`");
-
-        reader = ReaderInterface::create({
-            .pSettings = pSettings_.get(),
-            .version   = version
-        });
-
-        if (!reader) {
-            std::stringstream ss;
-            ss << "Failed to create " << type_name<ReaderInterface>()
-               << " for version: " << version;
-            throw std::invalid_argument(ss.str());
-        }
-        if (reader->load() != cgl::Results::Success) {
-            std::stringstream ss;
-            ss << "Failed to load " << type_name<ReaderInterface>()
-               << " for version: " << version;
-            throw std::invalid_argument(ss.str());
-        }
+    ensureOpen();
+    if (version >= cgl::CrossGateVersion::COUNT) throw std::invalid_argument("Invalid resource version");
+    if (auto found = readerMap.find(version); found != readerMap.end()) return found->second.get();
+    typename ReaderInterface::CreateInfo info{.pSettings = pSettings_.get(), .version = version};
+    if constexpr (std::is_same_v<ReaderInterface, cgl::IGraphicsDataReader> ||
+                  std::is_same_v<ReaderInterface, cgl::IAnimeDataReader>) {
+        info.cacheBudgetBytes = cacheBudgetBytes_;
     }
-    return reader.get();
+    auto reader = ReaderInterface::create(info);
+    if (!reader || reader->load() != cgl::Results::Success) {
+        std::stringstream message;
+        message << "Failed to load " << type_name<ReaderInterface>() << " for version: " << version;
+        throw std::invalid_argument(message.str());
+    }
+    // Publish only successfully loaded readers; failures can retry on the next call.
+    auto* result = reader.get();
+    readerMap.emplace(version, std::move(reader));
+    return result;
 }
 
 // -----------------------------------------------------------------------------
 cgl::IPaletteReader* Session::acquirePaletteReader(
     cgl::EnvironmentPaletteTypes envPalette
 ) {
+    ensureOpen();
     if (!paletteReader_) {
         paletteReader_ = cgl::IPaletteReader::create({
             .pSettings = pSettings_.get(),
@@ -235,10 +294,12 @@ std::vector<uint8_t> Session::apply_palette(
 ) {
     auto pHolder = static_cast<cgl::py::GraphicsResourceBundleHolder *>(pGfxDataHandle);
     auto pPaletteHolder = static_cast<cgl::py::PaletteData256Holder *>(pPletteHandle);
+    if (!pHolder || !pPaletteHolder) throw std::invalid_argument("Graphics and palette holders are required");
     auto pGfxResData = &pHolder->data;
-
+    if (!pGfxResData->pData || pGfxResData->width <= 0 || pGfxResData->height <= 0)
+        throw std::invalid_argument("Graphics holder has no pixels");
     std::vector<uint8_t> img;
-    size_t count = pGfxResData->width * pGfxResData->height;
+    size_t count = size_t(pGfxResData->width) * size_t(pGfxResData->height);
     img.resize(count * 4);
     uint8_t* pData = pGfxResData->pData.get();
     uint8_t* pImg = img.data();
@@ -348,7 +409,18 @@ PYBIND11_MODULE(cgl, m) {
     // Session
     // -------------------------------------------------------------------------
     py::class_<Session>(m, "Session")
-        .def(py::init<>())
+        .def(py::init<const std::string&, size_t>(), py::arg("engine_root_path") = "",
+             py::arg("cache_budget_bytes") = 4 * 1024 * 1024)
+        .def("cache_stats", &Session::cache_stats)
+        .def("trim_cache", &Session::trim_cache)
+        .def("clear_palette_cache", &Session::clear_palette_cache)
+        .def("invalidate_resources", &Session::invalidate_resources)
+        .def("set_cache_budget", &Session::set_cache_budget, py::arg("bytes"))
+        .def("reset_cache_stats", &Session::reset_cache_stats)
+        .def("close", &Session::close)
+        .def("__enter__", [](Session& self) -> Session& { self.ensureOpen(); return self; },
+             py::return_value_policy::reference_internal)
+        .def("__exit__", [](Session& self, py::object, py::object, py::object) { self.close(); return false; })
 
         .def(
             "acquire_graphics_data_count",
@@ -393,16 +465,16 @@ PYBIND11_MODULE(cgl, m) {
                cgl::py::PaletteData256Holder::Ptr         palette_data
             ) -> py::object {
                 auto img = self.apply_palette(gfx_data.get(), palette_data.get());
-                auto* buffer = new std::vector<uint8_t>(std::move(img));
+                auto buffer = std::make_unique<std::vector<uint8_t>>(std::move(img));
                 uint8_t* data_ptr = buffer->data();
-
-                py::capsule free_when_done(buffer, [](void* f) {
+                py::capsule free_when_done(buffer.get(), [](void* f) {
                     delete static_cast<std::vector<uint8_t>*>(f);
                 });
 
+                buffer.release(); // The capsule owns it, including if array construction throws.
                 return py::array_t<uint8_t>(
-                    { gfx_data->info.height, gfx_data->info.width, 4 },
-                    { gfx_data->info.width * 4, 4, 1 },
+                    { py::ssize_t(gfx_data->data.height), py::ssize_t(gfx_data->data.width), py::ssize_t(4) },
+                    { py::ssize_t(gfx_data->data.width) * 4, py::ssize_t(4), py::ssize_t(1) },
                     data_ptr,
                     free_when_done
                 );

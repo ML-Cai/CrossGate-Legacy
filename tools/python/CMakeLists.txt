@@ -48,3 +48,8 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CGL_OUTPUT_DIR}
     LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL ${CGL_OUTPUT_DIR}
 )
+if (CGL_WITH_TEST)
+    add_test(NAME python_session_cache
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_session_cache.py
+                --module-dir $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+endif()

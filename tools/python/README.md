@@ -1,0 +1,102 @@
+# Python resource sessions
+
+The CPU-only `cgl.Session` binding supports native resource inspection without a
+window or GPU. Existing `Session()` calls still load settings as before. Explicit
+roots make tools/tests independent of the process settings file:
+
+```python
+import cgl
+
+with cgl.Session(engine_root_path="C:/CrossGate-Legacy",
+                 cache_budget_bytes=4 * 1024 * 1024) as session:
+    frame = session.acquire_graphics_resource(cgl.CG_VERSION_Classic, 100)
+    palette = session.acquire_env_palette(cgl.Daytime)
+    if frame is not None and palette is not None:
+        image = session.apply_palette(frame, palette)
+    snapshot = session.cache_stats()  # JSON-compatible value copy
+    session.trim_cache()
+# Previously returned holders and NumPy images remain valid after close.
+```
+
+## Cache and lifetime controls
+
+| Method | Effect |
+| --- | --- |
+| `cache_stats()` | Snapshot of current data readers and counters; does not load resources |
+| `set_cache_budget(bytes)` | File-cache budget for each active and future data reader; zero bypasses caching |
+| `reset_cache_stats()` | Reset current readers' counters; preserve occupancy and budgets |
+| `trim_cache()` | Release file-cache blocks/decode scratch and invalidate palettes; retain indexes and open data readers |
+| `clear_palette_cache()` | Invalidate palette values only |
+| `invalidate_resources()` | Destroy all readers/indexes/palette cache and map storage; next acquisition reloads lazily |
+| `close()` | Idempotent permanent close; release readers/settings and reject further acquisitions |
+
+For in-place edits of graphics, anime data or indexes, invalidate resources before
+reading again. Palette-only edits can use clear_palette_cache. Invalidation does
+not modify previously returned data. A failed reader load is never published into
+the session, so a repaired file can retry without recreating the Session.
+Other successfully loaded readers may remain cached after a later request fails;
+use invalidate_resources to discard those as well.
+
+`close`, invalidation, trim, palette clear, counter reset and observation are safe
+to repeat after closing. Acquisitions, budget changes and context entry then raise
+RuntimeError. apply_palette is a pure conversion of owned holders and remains
+usable after close; null holders raise ValueError. NumPy arrays own their converted
+buffer through a capsule, independently of readers/holders. Their shape follows
+actual decoded dimensions even if index dimensions disagree. Conversion retains
+the existing BGR channel and native-row convention used by current tools.
+
+Calls retain the Python GIL. Serialize calls per Session when designing a server;
+no free-threaded/subinterpreter guarantee, background loader or HTTP server is
+introduced. No raw pointers/ECS/GPU handles are exposed by the new API.
+
+## Statistics boundaries
+
+`readers` contains deterministic graphics/anime entries with version names,
+budget/current/peak file-cache payload, block count, retained scratch, hits,
+misses, evictions, stream reads/bytes/failures and bypass reads. `totals` sums
+current payload, retained scratch, active-reader budgets and current-reader I/O.
+Historical peaks are per reader and are not added into a misleading simultaneous
+peak. Snapshots can be mutated or JSON-serialized without affecting native state.
+
+Counters last until reset or reader destruction. Invalidation/close discard them;
+the configured per-reader budget survives invalidation. Index-reader counts and
+palette-reader existence are reported, but their exact native heap sizes are not.
+Neither caller-owned decoded/NumPy data, allocator/container overhead, settings,
+Python objects nor GPU allocations are included in cache payload statistics.
+Stream counters are not physical disk traffic. This API is not a process memory
+cap or a global budget coordinator.
+
+## Build, tests and baseline measurement
+
+Build with CGL_WITH_TOOLS=ON and CGL_WITH_TEST=ON, using a Python development
+installation and NumPy (`python -m pip install numpy`). CMake's Python3_EXECUTABLE
+must name that same interpreter. Build the cgl_pybind target, then run:
+
+```sh
+ctest --test-dir build -R python_session_cache --output-on-failure
+```
+
+Eight synthetic unittest cases need no game installation or GPU. They cover
+snapshots, hot reads, current/future budgets, integer-safe budget totals,
+invalidation/reload, repaired failed loads, context cleanup, mismatched dimensions,
+NumPy view ownership and 100 load/invalidate cycles. Allocator failure is not
+fault-injected; capsule exception ownership is protected by RAII.
+
+For a reproducible real-resource baseline, optionally install psutil to sample
+process RSS (`python -m pip install psutil`), then:
+
+```sh
+python tools/python/benchmark_session.py --module-dir build/bin --root C:/CrossGate-Legacy --iterations 20 --output baseline.json
+```
+
+The script initializes NumPy before taking the empty-session baseline.
+It measures Classic animation-description queries and one referenced frame's
+conversion through cold/hot/trim/invalidate/reload/close phases. Repeated cycles
+release returned data and readers. It does not run a map scene, assemble all
+animation frames or allocate GPU resources. Without psutil RSS fields are null.
+Use an explicit output path because existing native trace logs go to stdout.
+RSS includes interpreter/NumPy/allocator retention and need not return to startup;
+finite cycles or a plateau do not prove absence of leaks. Record the environment,
+corpus and iteration count when comparing runs. On Windows an ASan-instrumented
+PYD also needs the matching ASan runtime DLL beside it (or in Python's DLL search
+paths); the interpreter and NumPy themselves are not instrumented by this build.
