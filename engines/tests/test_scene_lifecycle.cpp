@@ -257,7 +257,8 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
     auto& readers = *world_.getSingleton<cgl::component::AssetsReaderState>();
     const auto path = std::filesystem::path(world_.getSingleton<cgl::component::EngineState>()->settings->general.EngineRootPath) / "map/0/2100.dat";
     auto original = maps_.acquire(path, readers, device, pass);
-    ASSERT_NE(original->renderer, nullptr);
+    ASSERT_FALSE(original->renderers.empty());
+    ASSERT_NE(original->renderers.front(), nullptr);
     EXPECT_EQ(original->layout.width, 100);
     EXPECT_EQ(original->layout.height, 100);
     EXPECT_FALSE(original->images.empty());
@@ -411,7 +412,7 @@ TEST_F(DesktopSceneTest, HouseFrontWallUsesNativeFootprintForActorOcclusion) {
     ASSERT_EQ(map->layout.cell(50,61)->objectId,11283);
     const auto& image=map->images.at(11283);
     ASSERT_EQ(image.tileX,4); ASSERT_EQ(image.tileY,6);
-    const cgl::MapDrawItem house{{50,61},map->renderer.get(),image.source,0,image.offsetX,image.offsetY,1,image.tileX,image.tileY};
+    const cgl::MapDrawItem house{{50,61},map->renderers.at(image.atlasIndex).get(),image.source,0,image.offsetX,image.offsetY,1,image.tileX,image.tileY};
     for(const auto cell : {cgl::MapPoint{49,58},cgl::MapPoint{54,58}}) {
         world_.forEach<cgl::component::MapPosition,cgl::component::CharacterMovement,cgl::component::Sprite>(
             [&](auto,auto* position,auto* movement,auto* sprite) {
@@ -468,4 +469,68 @@ TEST_F(DesktopSceneTest, CrowdRestartAndShutdownReleaseAllEntitiesAndClips) {
     world_.forEach<cgl::component::CrowdActor>([&](auto,auto*){++remaining;});
     EXPECT_EQ(remaining,0);
     EXPECT_FALSE(clip.expired());library_.clear();EXPECT_TRUE(clip.expired());
+}
+
+TEST_F(DesktopSceneTest, LargeMap100UsesMultipleAtlasesAndReusesThemOnRestart) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.map.FilePath="map/0/100.dat";
+    settings.animation.SerialNum=100000;
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
+    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::MapScene) &&
+          std::chrono::steady_clock::now()<deadline) {
+        manager_.update(&world_);
+        ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(scene->scene,nullptr);
+    ASSERT_EQ(scene->scene->sceneType(),cgl::SceneTypes::MapScene);
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    const auto path=std::filesystem::path(settings.general.EngineRootPath)/settings.map.FilePath;
+    auto map=maps_.acquire(path,readers,device,pass);
+    ASSERT_EQ(map->layout.width,840); ASSERT_EQ(map->layout.height,610);
+    ASSERT_GT(map->renderers.size(),1); ASSERT_LE(map->renderers.size(),8);
+    std::vector<bool> used(map->renderers.size(),false);
+    for(const auto& [id,image] : map->images) {
+        ASSERT_LT(image.atlasIndex,map->renderers.size());
+        ASSERT_NE(map->renderers[image.atlasIndex],nullptr);
+        EXPECT_GT(image.source.width,0); EXPECT_GT(image.source.height,0);
+    }
+    // Visit anchors from every page, so culling also submits later-page renderers.
+    auto* camera=world_.getSingleton<cgl::component::MapCamera>();
+    for(uint32_t y=0;y<map->layout.height;++y) for(uint32_t x=0;x<map->layout.width;++x) {
+        const auto& cell=*map->layout.cell(x,y);
+        const uint16_t ids[]{cell.groundId,cell.objectId};
+        for(int layer=0;layer<2;++layer) {
+            const auto id=ids[layer];
+            if(!cgl::IsClassicMapImage(id,layer==1)) continue;
+            const auto found=map->images.find(id);
+            if(found==map->images.end() || used[found->second.atlasIndex]) continue;
+            used[found->second.atlasIndex]=true;
+            camera->center={double(x),double(y)};
+            draw_.update(&world_);
+        }
+    }
+    EXPECT_TRUE(std::all_of(used.begin(),used.end(),[](bool v){return v;}));
+    std::vector<cgl::graphics::ISpriteRenderer*> pages;
+    for(const auto& renderer:map->renderers) pages.push_back(renderer.get());
+    for(int restart=0;restart<2;++restart) {
+        world_.getSingleton<cgl::component::KeyboardInputState>()->restartSceneRequested=true;
+        manager_.update(&world_);manager_.update(&world_);
+        ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        EXPECT_EQ(maps_.acquire(path,readers,device,pass),map);
+        for(size_t i=0;i<pages.size();++i) EXPECT_EQ(map->renderers[i].get(),pages[i]);
+        world_.getSingleton<cgl::component::FrameTime>()->deltaSeconds=.1;
+        world_.getSingleton<cgl::component::KeyboardInputState>()->moveX=1;
+        manager_.update(&world_);
+        world_.getSingleton<cgl::component::KeyboardInputState>()->moveX=0;
+        manager_.update(&world_);
+        draw_.update(&world_);
+    }
+    device->waitIdle();
+    cgl::SceneManagerDestroySystem{}.update(&world_);
+    std::weak_ptr<const cgl::MapResources> weak=map;map.reset();
+    EXPECT_FALSE(weak.expired());maps_.clear();EXPECT_TRUE(weak.expired());
 }

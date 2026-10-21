@@ -90,7 +90,7 @@ cmake --build . --config RelWithDebInfo
   The path resolves against `General.EngineRootPath`; absolute paths also work.
   Empty `FilePath` keeps the animation preview. The camera follows the character; `R`
   restarts it at the center. `Display.ViewportScale` controls the initial map scale
-  (0.125 through 16). Ground, buildings and trees share an image atlas; the
+  (0.125 through 16). Ground, buildings and trees share image atlas pages; the
   configured animation character sorts with objects by ground position. Multi-cell
   buildings also use native tileX/tileY footprints, so standing outside a front
   wall can draw the character in front even above the building's placement anchor.
@@ -113,5 +113,10 @@ cmake --build . --config RelWithDebInfo
   to see a yellow diamond outline. It follows the camera and configured scale,
   and hides outside the map, over empty ground, or when the window loses focus.
   This is a hover indicator; clicking does not move the character.
+  Large Classic maps such as `map/0/100.dat` use multiple atlas pages. Each page
+  is at most 2048x4096 (32 MiB RGBA), with up to 8 pages per map; renderer/staging
+  overhead is additional. Layout data and all unique images load at scene entry;
+  each frame visits only camera-visible bounds expanded for large sprites.
+  This is not chunk streaming, and map uploads remain cached until shutdown.
 - GraphicsDataViewer : see [tools/GraphicsDataViewer](tools/GraphicsDataViewer)
 - AnimeViewer : see [tools/AnimeViewer](tools/GraphicsDataViewer)

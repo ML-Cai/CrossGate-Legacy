@@ -57,11 +57,14 @@ std::shared_ptr<const MapResources> MapLibrary::acquire(const std::filesystem::p
         sizes.push_back({id, uint32_t(info.width), uint32_t(info.height)});
         infos.emplace(id, info);
     }
-    const auto plan = PlanMapAtlas(std::move(sizes));
-    if (!plan) throw std::runtime_error("Map images exceed the 2048x4096 atlas budget");
-    if (!plan->regions.empty()) {
-        std::vector<uint8_t> rgba(size_t(plan->width) * plan->height * 4, 0);
-        for (const auto& region : plan->regions) {
+    const auto plans = PlanMapAtlases(std::move(sizes));
+    if (!plans) throw std::runtime_error("Map images exceed 8 atlas pages of 2048x4096 or contain an oversized image");
+    uint64_t textureBytes = 0;
+    for (const auto& plan : *plans) {
+        textureBytes += uint64_t(plan.width) * plan.height * 4;
+        const auto atlasIndex = uint32_t(result->renderers.size());
+        std::vector<uint8_t> rgba(size_t(plan.width) * plan.height * 4, 0);
+        for (const auto& region : plan.regions) {
             const auto& info = infos.at(region.id);
             GraphicsResourceData data{};
             if (dataReader->query(info, &data) != Results::Success || !data.pData ||
@@ -71,24 +74,26 @@ std::shared_ptr<const MapResources> MapLibrary::acquire(const std::filesystem::p
                 reinterpret_cast<const uint8_t*>(palette.data());
             for (int y = 0; y < data.height; ++y) for (int x = 0; x < data.width; ++x) {
                 const auto index = data.pData[(data.height - 1 - y) * size_t(data.width) + x];
-                auto* dst = rgba.data() + ((size_t(region.source.y) + y) * plan->width + region.source.x + x) * 4;
+                auto* dst = rgba.data() + ((size_t(region.source.y) + y) * plan.width + region.source.x + x) * 4;
                 dst[0] = colors[index * 3 + 2]; dst[1] = colors[index * 3 + 1];
                 dst[2] = colors[index * 3]; dst[3] = index ? 255 : 0;
             }
             result->images.emplace(region.id, MapImage{region.source, info.offsetX, info.offsetY,
-                std::max(uint8_t(1), info.tileX), std::max(uint8_t(1), info.tileY)});
+                std::max(uint8_t(1), info.tileX), std::max(uint8_t(1), info.tileY), atlasIndex});
             result->reachX = std::max({result->reachX, std::abs(double(info.offsetX)),
                 std::abs(double(info.offsetX) + info.width)});
             result->reachY = std::max({result->reachY, std::abs(double(info.offsetY)),
                 std::abs(double(info.offsetY) + info.height)});
         }
-        result->renderer = graphics::ISpriteRenderer::create(device, pass, plan->width, plan->height, 1, rgba);
-        if (!result->renderer) throw std::runtime_error("Could not upload map atlas (check device texture limits)");
+        auto renderer = graphics::ISpriteRenderer::create(device, pass, plan.width, plan.height, 1, rgba);
+        if (!renderer) throw std::runtime_error("Could not upload map atlas page (check device texture limits)");
+        result->renderers.push_back(std::move(renderer));
     }
     maps_.emplace(key, result);
     device_ = device; pass_ = pass;
     LOGI("Map ready: " << result->layout.width << "x" << result->layout.height
-        << ", images=" << result->images.size() << ", atlas=" << plan->width << "x" << plan->height);
+        << ", images=" << result->images.size() << ", atlas pages=" << result->renderers.size()
+        << ", texture bytes=" << textureBytes);
     return result;
 }
 }

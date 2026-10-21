@@ -45,6 +45,59 @@ TEST(MapRenderTest, AtlasRejectsInvalidOrUnpackableImagesBeforeAllocation) {
     EXPECT_EQ(shelves->regions[1].source.y, 5);
 }
 
+TEST(MapRenderTest, MultipleAtlasPagesPreserveEveryImageAndPadding) {
+    const std::vector<cgl::MapImageSize> images{{1,5,5},{2,4,2},{3,5,5},{4,4,2}};
+    const auto pages = cgl::PlanMapAtlases(images,8,8,4);
+    ASSERT_TRUE(pages);
+    ASSERT_GT(pages->size(),1);
+    std::vector<uint16_t> found;
+    for(const auto& page : *pages) {
+        EXPECT_LE(page.width,8); EXPECT_LE(page.height,8);
+        ASSERT_FALSE(page.regions.empty());
+        for(const auto& region : page.regions) {
+            found.push_back(region.id);
+            const auto image = std::find_if(images.begin(),images.end(),[&](const auto& i){return i.id==region.id;});
+            ASSERT_NE(image,images.end());
+            EXPECT_EQ(region.source.width,image->width); EXPECT_EQ(region.source.height,image->height);
+            EXPECT_GE(region.source.x,1); EXPECT_GE(region.source.y,1);
+            EXPECT_LT(region.source.x+region.source.width,page.width);
+            EXPECT_LT(region.source.y+region.source.height,page.height);
+            for(const auto& other : page.regions) if(other.id!=region.id)
+                EXPECT_TRUE(region.source.x+region.source.width<other.source.x ||
+                    other.source.x+other.source.width<region.source.x ||
+                    region.source.y+region.source.height<other.source.y ||
+                    other.source.y+other.source.height<region.source.y);
+        }
+    }
+    std::sort(found.begin(),found.end());
+    EXPECT_EQ(found,(std::vector<uint16_t>{1,2,3,4}));
+    auto reversed=images; std::reverse(reversed.begin(),reversed.end());
+    const auto again=cgl::PlanMapAtlases(reversed,8,8,4); ASSERT_TRUE(again);
+    ASSERT_EQ(again->size(),pages->size());
+    for(size_t i=0;i<pages->size();++i) {
+        ASSERT_EQ((*pages)[i].regions.size(),(*again)[i].regions.size());
+        for(size_t j=0;j<(*pages)[i].regions.size();++j) {
+            const auto& a=(*pages)[i].regions[j];const auto& b=(*again)[i].regions[j];
+            EXPECT_EQ(a.id,b.id); EXPECT_EQ(a.source.x,b.source.x); EXPECT_EQ(a.source.y,b.source.y);
+        }
+    }
+}
+
+TEST(MapRenderTest, MultipleAtlasLimitsRejectBeforePixelAllocation) {
+    EXPECT_TRUE(cgl::PlanMapAtlases({})->empty());
+    EXPECT_FALSE(cgl::PlanMapAtlases({{1,5,5},{2,5,5}},8,8,1));
+    EXPECT_TRUE(cgl::PlanMapAtlases({{1,5,5},{2,5,5}},8,8,2));
+    EXPECT_FALSE(cgl::PlanMapAtlases({{1,7,1}},8,8));
+    EXPECT_FALSE(cgl::PlanMapAtlases({{1,1,7}},8,8));
+    EXPECT_FALSE(cgl::PlanMapAtlases({{1,0,1}}));
+    EXPECT_FALSE(cgl::PlanMapAtlases({{1,UINT32_MAX,1}}));
+    EXPECT_FALSE(cgl::PlanMapAtlases({{1,2,2},{1,1,1}}));
+    EXPECT_FALSE(cgl::PlanMapAtlases({},2049,4096));
+    EXPECT_FALSE(cgl::PlanMapAtlases({},2048,4097));
+    EXPECT_FALSE(cgl::PlanMapAtlases({},2048,4096,0));
+    EXPECT_FALSE(cgl::PlanMapAtlases({},2048,4096,9));
+}
+
 TEST(MapRenderTest, PainterOrderUsesGroundAnchorsAndDeterministicTies) {
     cgl::MapDrawItem building{{10,10}, nullptr, {0,0,580,622}, 0, -200, -600, 100};
     cgl::MapDrawItem actor{{10,9}, nullptr, {0,0,64,100}, 0, -32, -100, (1ull << 32) | 1};

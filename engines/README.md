@@ -28,10 +28,19 @@ Do not evict cached GPU resources while submitted draws can still use them.
 When `Map.FilePath` is set, InitScene requests MapScene instead. MapLibrary
 loads the MAP layout and unique ground/object images from Classic resources. It
 preserves image offsets and converts BGR palettes into top-down RGBA (index 0 is
-transparent), honoring per-image palettes. A deterministic shelf atlas with
-one-pixel transparent borders replaces the padded ground texture array. The atlas
-is bounded to 2048x4096 (32 MiB RGBA); packing is checked before image decoding.
-Images must fit within that atlas including borders. Unknown IDs and upload
+transparent), honoring per-image palettes. Deterministic shelf packing uses up to
+8 atlas pages, each bounded to 2048x4096 (32 MiB RGBA), with one-pixel transparent
+borders. All page plans and limits are checked before image decoding. One image
+must fit within a page including borders; duplicate IDs are rejected by the planner.
+Pages decode/upload sequentially, keeping only one CPU RGBA page buffer at a time.
+The maximum RGBA texture payload per map is 256 MiB, excluding GPU/staging overhead.
+Each MapImage stores its page index and region; MapResources owns all page renderers.
+Ground remains first, and objects/characters keep a single globally sorted draw
+list regardless of page, so switching pages cannot reorder overlapping sprites.
+The full MAP layout and unique images load at scene entry; per-frame iteration
+still uses VisibleMapBounds expanded by sprite reach. This is not chunk streaming.
+Classic map 100 in the local fixture is 840x610 cells, 953 images and two pages
+with 40,330,752 RGBA texture bytes (about 38.46 MiB). Unknown IDs and upload
 failures report a scene error. Classic placeholder IDs 0/2 and object markers
 200 through 265 are skipped; resource-version ID remapping and CUT files remain
 unsupported.
@@ -130,13 +139,18 @@ uses offscreen pixel readback for source rectangles and transparency under both
 draw orders. DesktopSceneTest loads map 2100 with buildings and a character, pans,
 moves, restarts three times, checks cache reuse and entity/camera cleanup.
 `cgl_client_map_*` covers startup and invalid path/scale/animation cleanup. Desktop
-tests need Classic data including `map/0/2100.dat` and Vulkan; pure map tests and
+tests need Classic data including `map/0/2100.dat`, `map/0/100.dat` and Vulkan; pure map tests and
 sprite readback do not require original game data.
 Footprint regression tests use map 2100 house 11283 (4x6, offset -210/-437):
 actor (49,58) is outside the front/west wall but would be hidden by anchor sorting;
 actors behind the other two footprint edges must remain behind. Asset-reader tests
 pin the native footprint bytes, and a real map scene test checks both front/back
 ordering with actual resources and submits both views to Vulkan.
+MapRenderTest also checks multipage packing, padding, deterministic page assignment,
+page limits, oversized images and duplicate IDs. SpriteRendererTest reads back
+alternating page A/B/A draws to check texture binding, transparency and painter order.
+The large-map lifecycle test visits anchors from every page, moves/restarts twice,
+checks page-renderer cache identity, and verifies final map release.
 
 MapHoverTest covers center/edge picking, negative map boundaries, stationary cursor
 under pan/scale changes, logical-to-render conversion with a viewport offset,

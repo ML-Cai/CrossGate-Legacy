@@ -1,7 +1,9 @@
 # Requires a Vulkan desktop and the original Classic resources / map 2100.
 get_filename_component(clientDirectory "${CLIENT}" DIRECTORY)
 file(READ "${clientDirectory}/settings.ini" content)
-if(CASE STREQUAL "missing")
+if(CASE STREQUAL "large100")
+    string(APPEND content "\n[Map]\nFilePath=map/0/100.dat\n[Animation]\nSerialNum=100000\n")
+elseif(CASE STREQUAL "missing")
     string(APPEND content "\n[Map]\nFilePath=missing-map.dat\n")
 elseif(CASE STREQUAL "animation")
     string(APPEND content "\n[Map]\nFilePath=map/0/2100.dat\n[Animation]\nSerialNum=0\n")
@@ -16,7 +18,7 @@ execute_process(COMMAND "${CLIENT}" --settings "${config}" --frames 240
     RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 50)
 file(REMOVE "${config}")
 set(log "${output}\n${errors}")
-if(CASE STREQUAL "success")
+if(CASE STREQUAL "success" OR CASE STREQUAL "large100")
     if(NOT "${status}" STREQUAL "0" OR NOT log MATCHES "Map ready:" OR
        NOT log MATCHES "Map scene entered" OR NOT log MATCHES "Map scene exited")
         message(FATAL_ERROR "Map startup/lifecycle failed (${status}):\n${log}")
@@ -28,4 +30,8 @@ else()
 endif()
 if(NOT log MATCHES "Engine close" OR log MATCHES "VUID-|Validation Error")
     message(FATAL_ERROR "Unclean shutdown or Vulkan validation error:\n${log}")
+endif()
+
+if(CASE STREQUAL "large100" AND NOT log MATCHES "atlas pages=[2-8]")
+    message(FATAL_ERROR "Large map did not use multiple atlas pages:\n${log}")
 endif()
