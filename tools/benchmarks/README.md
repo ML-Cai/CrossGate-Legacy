@@ -84,3 +84,67 @@ sprite/crowd tests passed. Windows Application Control blocked the rebuilt ASan
 scene-lifecycle test executable (WinError 4551), so that final ASan scene-suite
 rerun could not complete. No security settings were changed. The native ASan
 client remains executable and separately exercises cold loading and pass teardown.
+
+## Fenced progressive uploads
+
+Add `--load-during-playback --progressive-uploads --samples 6000` for 1024
+resources. Small clips need a submission frame and a later completion poll; larger
+clips span more frames. Allow enough frames for full coverage; incomplete runs are
+rejected. Without `--progressive-uploads`, cold loads still wait synchronously and
+provide a same-binary control. Both paths use upload-specific fences rather than
+queue-wide idle. The default preload mode remains synchronous.
+
+The progressive path has one pending clip, at most 32 MiB decoded RGBA and 4 MiB
+copy/staging per update. It is a stationary-camera diagnostic, not full NPC streaming.
+Cold work metrics now accumulate CPU time spent in all request/poll/publication
+calls for one appearance; they do not measure GPU time. `cold_ready_p99_ms` and
+`cold_ready_max_ms` measure elapsed time until that appearance is usable, including
+intervening frames. `cold_frame_count/p99_ms/max_ms` isolate frames while appearances
+are still arriving, so a long steady-state tail cannot hide cold-load stalls.
+A smaller source-data cap of 16 MiB was rejected during validation because a legal
+114-frame clip needs about 24 MiB. The revised cap is 32 MiB; the resident budget
+still includes pending destination payload. Memory bounds exclude driver padding,
+map textures, ready resources and reader scratch. No hard CPU-millisecond bound or
+absence of stalls is promised while decode/allocation remain synchronous.
+
+### Fenced upload results (2026-10-21)
+
+Radeon 880M, map2100, 1280x720, 6050 actors, IMMEDIATE, validation off. Three
+interleaved fresh-process repeats per variant, 120 warmup + 2000 sample frames,
+512 identities. Manifests, submitted actor counts and 511 completed cold loads
+match; the cold phase includes every load after fixing an off-by-one warmup issue.
+
+| Metric | Synchronous fence control | Progressive |
+| --- | ---: | ---: |
+| Median overall FPS | 174.8 | 185.5 |
+| Worst-run cold-phase p99 ms | 16.33 | 11.36 |
+| Largest sampled frame ms | 32.62 | 34.24 |
+| Worst-run appearance-ready p99 ms | 10.46 | 19.38 |
+| Maximum appearance-ready latency ms | 26.51 | 56.29 |
+
+Both variants retain all actors, but placeholders persist longer in the progressive
+case, changing the timing of visible artwork. Overall FPS includes a steady-state
+tail and is not an isolated transfer benchmark. Better cold-phase p99 comes with
+later appearance readiness; the worst frame did not improve consistently. No
+no-stall guarantee is made.
+
+A final 1024-identity progressive run (120 warmup + 3000 samples) completed all 1023
+cold loads, including the 24 MiB clip. It measured 168.7 FPS overall, 2073 cold-phase
+frames, cold p99 11.73 ms, max frame 34.17 ms, ready p99 21.17 ms and max ready
+latency 70.42 ms. This is one coverage run, not a three-repeat capacity guarantee.
+Raw reports/hashes are under ignored `build/fenced-final-results`; exploratory
+16 MiB-cap failures are separate under `build/fenced-results`.
+
+Validation: full build and 161 regression tests passed (existing env/logger suites
+excluded); 20 targeted ASan tests passed, including row/layer split readback,
+pending-draw suppression, cancellation, shared ownership, repeated scene restart
+and progressive request de-duplication. A validation-enabled native ASan map100
+idle/walk run completed all 10 resources. Forced 16 MiB resident-budget exhaustion
+failed after 108 ready resources / 107 cold loads with scene_error and normal
+shutdown. Ending after the first pending upload returned incomplete and closed
+normally. No new Vulkan validation/ASan errors were found in these native runs;
+the machine's missing Steam layer JSON messages remain. MSVC ASan is not exhaustive
+leak detection; explicit ownership/weak-reference tests complement it.
+
+Synchronization and copy-region rules follow [Vulkan fences](https://docs.vulkan.org/spec/latest/chapters/synchronization.html)
+and [VkBufferImageCopy](https://docs.vulkan.org/refpages/latest/refpages/source/VkBufferImageCopy.html).

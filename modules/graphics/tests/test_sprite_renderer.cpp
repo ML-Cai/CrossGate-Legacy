@@ -5,6 +5,8 @@
 #include <cstring>
 #include <limits>
 #include <functional>
+#include <chrono>
+#include <thread>
 #include "cgl/graphics/sprite_renderer.h"
 #include "vulkan/device.h"
 #include "vulkan/command_buffer_list.h"
@@ -318,4 +320,34 @@ TEST_F(SpriteRendererTest, SharedPipelineSurvivesTextureChurnAndReleasesWithLast
     EXPECT_FALSE(weak.expired()); // Texture still holds the immutable bundle.
     renderer_.reset();
     EXPECT_TRUE(weak.expired()); // No global/static cache retains a device resource.
+}
+
+TEST_F(SpriteRendererTest, PendingUploadSplitsRowsAndLayersAndHidesUntilComplete) {
+    renderer_=graphics::ISpriteRenderer::createPending(device_.get(),pass_.get(),2,2,2,
+        std::vector<uint8_t>(texture.begin(),texture.end()),8); // One RGBA row per chunk.
+    ASSERT_NE(renderer_,nullptr);
+    Pixels pixels{};
+    render(0,&pixels);
+    EXPECT_EQ(pixels[2*side+2],(Pixel{0,0,255,255})); // Pending draw is a no-op.
+    auto state=graphics::SpriteUploadState::Pending;
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+    while(state==graphics::SpriteUploadState::Pending && std::chrono::steady_clock::now()<deadline) {
+        state=renderer_->pollUpload();std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_EQ(state,graphics::SpriteUploadState::Ready);
+    EXPECT_EQ(renderer_->pollUpload(),state);
+    render(0,&pixels);
+    EXPECT_EQ(pixels[2*side+2],(Pixel{255,0,0,255}));
+    EXPECT_EQ(pixels[5*side+5],(Pixel{255,255,255,255}));
+    render(1,&pixels);
+    EXPECT_EQ(pixels[2*side+2],(Pixel{0,255,0,255}));
+}
+TEST_F(SpriteRendererTest, PendingCancellationWaitsForOwnCopyAndRejectsTooSmallChunk) {
+    EXPECT_EQ(graphics::ISpriteRenderer::createPending(device_.get(),pass_.get(),2,2,2,
+        std::vector<uint8_t>(texture.begin(),texture.end()),7),nullptr);
+    for(int i=0;i<8;++i) {
+        auto pending=graphics::ISpriteRenderer::createPending(device_.get(),pass_.get(),2,2,2,
+            std::vector<uint8_t>(texture.begin(),texture.end()),8);
+        ASSERT_NE(pending,nullptr); // Drop while first chunk may still be submitted.
+    }
 }

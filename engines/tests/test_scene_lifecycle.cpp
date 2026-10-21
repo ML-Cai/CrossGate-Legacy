@@ -539,7 +539,7 @@ TEST_F(DesktopSceneTest, ColdCrowdPublishesClipsAndCanExitWithPendingResources) 
     auto* engine=world_.getSingleton<cgl::component::EngineState>();
     engine->settings->map.FilePath="map/0/2100.dat";
     auto& b=engine->settings->benchmark;
-    b.ActorsPerCell=1;b.UniqueCharacters=4;b.LoadDuringPlayback=true;b.WarmupFrames=0;
+    b.ActorsPerCell=1;b.UniqueCharacters=4;b.LoadDuringPlayback=true;b.ProgressiveUploads=true;b.WarmupFrames=0;
     world_.addSingleton<cgl::component::CrowdBenchmark>();
     auto* benchmark=world_.getSingleton<cgl::component::CrowdBenchmark>();
     auto* scene=world_.getSingleton<cgl::component::SceneState>();
@@ -552,7 +552,9 @@ TEST_F(DesktopSceneTest, ColdCrowdPublishesClipsAndCanExitWithPendingResources) 
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     ASSERT_TRUE(benchmark->ready);
-    for(int i=0;i<4;++i) {manager_.update(&world_);draw_.update(&world_);}
+    while(benchmark->unique<4 && std::chrono::steady_clock::now()<deadline) {
+        manager_.update(&world_);draw_.update(&world_);std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     ASSERT_EQ(benchmark->unique,4);
     EXPECT_EQ(benchmark->coldLoadMs.size(),3);
     world_.forEach<cgl::component::CrowdActor,cgl::component::Sprite>([&](auto,auto* actor,auto* sprite){
@@ -564,4 +566,31 @@ TEST_F(DesktopSceneTest, ColdCrowdPublishesClipsAndCanExitWithPendingResources) 
     cgl::SceneManagerDestroySystem{}.update(&world_);
     size_t remaining=0;world_.forEach<cgl::component::CrowdActor>([&](auto,auto*){++remaining;});
     EXPECT_EQ(remaining,0);
+}
+
+TEST_F(DesktopSceneTest, ProgressiveLibraryDeduplicatesBoundsAndCancelsPendingUpload) {
+    cgl::AnimationLibrary progressive;
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while(world_.getSingleton<cgl::component::AssetsReaderState>()->state!=cgl::StateTypes::RUNNING &&
+          std::chrono::steady_clock::now()<deadline) {manager_.update(&world_);std::this_thread::sleep_for(std::chrono::milliseconds(1));}
+    ASSERT_EQ(world_.getSingleton<cgl::component::AssetsReaderState>()->state,cgl::StateTypes::RUNNING);
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    const cgl::AnimationRequest request{100000,0,0};
+    EXPECT_EQ(progressive.acquireProgressive(request,readers,device,pass),nullptr);
+    ASSERT_GT(progressive.pendingBytes(),0);EXPECT_LE(progressive.pendingBytes(),32*1024*1024);
+    EXPECT_THROW(progressive.setTextureBudget(1),std::invalid_argument);
+    std::shared_ptr<const cgl::AnimationClip> clip;
+    while(!clip && std::chrono::steady_clock::now()<deadline) {
+        clip=progressive.acquireProgressive(request,readers,device,pass);std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(clip,nullptr);EXPECT_EQ(progressive.pendingBytes(),0);
+    EXPECT_EQ(progressive.acquireProgressive(request,readers,device,pass),clip);
+    const cgl::AnimationRequest next{100000,0,1};
+    EXPECT_EQ(progressive.acquireProgressive(next,readers,device,pass),nullptr);
+    ASSERT_GT(progressive.pendingBytes(),0);
+    progressive.cancelPending();EXPECT_EQ(progressive.pendingBytes(),0);
+    EXPECT_EQ(progressive.acquireProgressive(next,readers,device,pass),nullptr);
+    progressive.cancelPending();
 }
