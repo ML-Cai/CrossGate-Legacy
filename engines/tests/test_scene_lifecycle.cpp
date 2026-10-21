@@ -534,3 +534,34 @@ TEST_F(DesktopSceneTest, LargeMap100UsesMultipleAtlasesAndReusesThemOnRestart) {
     std::weak_ptr<const cgl::MapResources> weak=map;map.reset();
     EXPECT_FALSE(weak.expired());maps_.clear();EXPECT_TRUE(weak.expired());
 }
+
+TEST_F(DesktopSceneTest, ColdCrowdPublishesClipsAndCanExitWithPendingResources) {
+    auto* engine=world_.getSingleton<cgl::component::EngineState>();
+    engine->settings->map.FilePath="map/0/2100.dat";
+    auto& b=engine->settings->benchmark;
+    b.ActorsPerCell=1;b.UniqueCharacters=4;b.LoadDuringPlayback=true;b.WarmupFrames=0;
+    world_.addSingleton<cgl::component::CrowdBenchmark>();
+    auto* benchmark=world_.getSingleton<cgl::component::CrowdBenchmark>();
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while(!benchmark->ready && std::chrono::steady_clock::now()<deadline) {
+        if(world_.getSingleton<cgl::component::AssetsReaderState>()->state==cgl::StateTypes::RUNNING &&
+           (!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::MapScene)) scene->nextScene=cgl::SceneTypes::MapScene;
+        manager_.update(&world_);
+        ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(benchmark->ready);
+    for(int i=0;i<4;++i) {manager_.update(&world_);draw_.update(&world_);}
+    ASSERT_EQ(benchmark->unique,4);
+    EXPECT_EQ(benchmark->coldLoadMs.size(),3);
+    world_.forEach<cgl::component::CrowdActor,cgl::component::Sprite>([&](auto,auto* actor,auto* sprite){
+        EXPECT_EQ(actor->idle,sprite->clip); EXPECT_NE(sprite->clip,nullptr);
+    });
+    scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);
+    ASSERT_LT(benchmark->unique,4); // Exit again before all requests are processed.
+    world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice->waitIdle();
+    cgl::SceneManagerDestroySystem{}.update(&world_);
+    size_t remaining=0;world_.forEach<cgl::component::CrowdActor>([&](auto,auto*){++remaining;});
+    EXPECT_EQ(remaining,0);
+}

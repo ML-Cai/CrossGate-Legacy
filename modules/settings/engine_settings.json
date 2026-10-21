@@ -129,6 +129,13 @@
                 "Description": "Explicit benchmark animation RGBA payload budget, 16..1024 MiB; excludes GPU allocation overhead."
             },
             {
+                "Name": "LoadDuringPlayback",
+                "Type": "bool",
+                "Default": "false",
+                "ExportToINI": true,
+                "Description": "Diagnostic only: load one cold character per frame after warmup, with placeholders until ready. Synchronous, not production streaming."
+            },
+            {
                 "Name": "SwitchMotions",
                 "Type": "bool",
                 "Default": "false",

@@ -9,12 +9,15 @@
 #pragma once
 
 #include <vulkan/vulkan_core.h>
+#include <memory>
 #include "cgl/graphics/render_pass.h"
 
 
 namespace cgl {
 namespace graphics {
 namespace vulkan {
+
+struct SpritePipeline;
 
 class IRenderPass : public cgl::graphics::IRenderPass {
  public:
@@ -27,11 +30,19 @@ class IRenderPass : public cgl::graphics::IRenderPass {
 
     VkDevice device() const { return device_; }
 
+    // Lazily creates one immutable sprite pipeline for this pass; no global cache.
+    // Calls must be serialized on the render thread. A new pass gets a new bundle.
+    std::shared_ptr<SpritePipeline> acquireSpritePipeline();
+
  protected:
+    // Call when retiring/recreating the native pass after submitted work completes.
+    void releaseSpritePipeline() noexcept { spritePipeline_.reset(); }
+
     // RenderPass related data
     VkRenderPass renderPass_;
 
  private:
+    std::shared_ptr<SpritePipeline> spritePipeline_;
     VkDevice device_;
 };
 

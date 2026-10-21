@@ -295,3 +295,27 @@ TEST_F(SpriteRendererTest, AlternatingAtlasRenderersPreservePainterOrderAndTrans
     EXPECT_EQ(pixels[3*side+3],(Pixel{255,255,255,255}));
     EXPECT_EQ(pixels[5*side+5],(Pixel{0,0,255,255}));
 }
+
+TEST_F(SpriteRendererTest, SharedPipelineSurvivesTextureChurnAndReleasesWithLastOwner) {
+    auto* pass=static_cast<vk::IRenderPass*>(pass_.get());
+    auto shared=pass->acquireSpritePipeline();
+    ASSERT_NE(shared,nullptr);
+    std::weak_ptr<vk::SpritePipeline> weak=shared;
+    for(int i=0;i<8;++i) {
+        renderer_=graphics::ISpriteRenderer::create(device_.get(),pass_.get(),2,2,2,texture);
+        ASSERT_NE(renderer_,nullptr);
+        EXPECT_EQ(pass->acquireSpritePipeline(),shared);
+        Pixels pixels{};
+        renderDraw([&](auto* command,const auto& area){renderer_->draw(command,area,0,0,0,1);},&pixels);
+        EXPECT_EQ(pixels[0],(Pixel{255,0,0,255}));
+        device_->waitIdle();
+        renderer_.reset();
+    }
+    renderer_=graphics::ISpriteRenderer::create(device_.get(),pass_.get(),2,2,2,texture);
+    shared.reset();
+    device_->waitIdle();
+    framebuffer_.reset(); pass_.reset();
+    EXPECT_FALSE(weak.expired()); // Texture still holds the immutable bundle.
+    renderer_.reset();
+    EXPECT_TRUE(weak.expired()); // No global/static cache retains a device resource.
+}

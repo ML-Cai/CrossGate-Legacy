@@ -3,6 +3,7 @@
 #include "vulkan/device.h"
 #include "vulkan/command_buffer_list.h"
 #include "vulkan/render_pass.h"
+#include "vulkan/sprite_pipeline.h"
 #include "vulkan/common.h"
 #include <cstring>
 #include <limits>
@@ -17,6 +18,88 @@ constexpr uint32_t fragmentCode[] =
 #include "sprite_frag.inc"
 ;
 
+} // namespace
+SpritePipeline::~SpritePipeline() {
+    if (pipeline_) vkDestroyPipeline(device_, pipeline_, nullptr);
+    if (layout_) vkDestroyPipelineLayout(device_, layout_, nullptr);
+    if (descriptorLayout_) vkDestroyDescriptorSetLayout(device_, descriptorLayout_, nullptr);
+    if (sampler_) vkDestroySampler(device_, sampler_, nullptr);
+}
+bool SpritePipeline::prepare(VkRenderPass pass) {
+    VkSamplerCreateInfo samplerInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_NEAREST;
+    samplerInfo.addressModeU = samplerInfo.addressModeV = samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    RETURN_FAIL_IF_ANY_VK_FAILED(vkCreateSampler(device_, &samplerInfo, nullptr, &sampler_), "Sprite sampler creation failed");
+
+    VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    VkDescriptorSetLayoutCreateInfo descriptorInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    descriptorInfo.bindingCount = 1; descriptorInfo.pBindings = &binding;
+    RETURN_FAIL_IF_ANY_VK_FAILED(vkCreateDescriptorSetLayout(device_, &descriptorInfo, nullptr, &descriptorLayout_), "Sprite descriptor layout failed");
+    VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 36};
+    VkPipelineLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    layoutInfo.setLayoutCount = 1; layoutInfo.pSetLayouts = &descriptorLayout_;
+    layoutInfo.pushConstantRangeCount = 1; layoutInfo.pPushConstantRanges = &push;
+    RETURN_FAIL_IF_ANY_VK_FAILED(vkCreatePipelineLayout(device_, &layoutInfo, nullptr, &layout_), "Sprite pipeline layout failed");
+    VkShaderModule vertex = VK_NULL_HANDLE, fragment = VK_NULL_HANDLE;
+    VkShaderModuleCreateInfo shader{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    shader.codeSize = sizeof(vertexCode); shader.pCode = vertexCode;
+    RETURN_FAIL_IF_ANY_VK_FAILED(vkCreateShaderModule(device_, &shader, nullptr, &vertex), "Sprite vertex shader failed");
+    shader.codeSize = sizeof(fragmentCode); shader.pCode = fragmentCode;
+    const auto fragmentResult = vkCreateShaderModule(device_, &shader, nullptr, &fragment);
+    if (fragmentResult != VK_SUCCESS) {
+        vkDestroyShaderModule(device_, vertex, nullptr);
+        LOGE("Sprite fragment shader creation failed");
+        return false;
+    }
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    for (auto& stage : stages) { stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO; stage.pName = "main"; }
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT; stages[0].module = vertex;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT; stages[1].module = fragment;
+    VkPipelineVertexInputStateCreateInfo input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    VkPipelineInputAssemblyStateCreateInfo assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+    assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkPipelineViewportStateCreateInfo viewport{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+    viewport.viewportCount = viewport.scissorCount = 1;
+    VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+    raster.polygonMode = VK_POLYGON_MODE_FILL; raster.cullMode = VK_CULL_MODE_NONE; raster.lineWidth = 1;
+    VkPipelineMultisampleStateCreateInfo samples{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+    samples.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkPipelineColorBlendAttachmentState attachment{};
+    attachment.blendEnable = VK_TRUE;
+    attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    attachment.colorBlendOp = attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+    attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    blend.attachmentCount = 1; blend.pAttachments = &attachment;
+    VkDynamicState dynamics[]{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+    dynamic.dynamicStateCount = 2; dynamic.pDynamicStates = dynamics;
+    VkGraphicsPipelineCreateInfo info{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+    info.stageCount = 2; info.pStages = stages; info.pVertexInputState = &input;
+    info.pInputAssemblyState = &assembly; info.pViewportState = &viewport; info.pRasterizationState = &raster;
+    info.pMultisampleState = &samples; info.pColorBlendState = &blend; info.pDynamicState = &dynamic;
+    info.layout = layout_; info.renderPass = pass;
+    const auto pipelineResult = vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline_);
+    vkDestroyShaderModule(device_, fragment, nullptr);
+    vkDestroyShaderModule(device_, vertex, nullptr);
+    RETURN_FAIL_IF_ANY_VK_FAILED(pipelineResult, "Sprite graphics pipeline failed");
+    LOGI("Shared sprite pipeline created");
+    return true;
+}
+
+std::shared_ptr<SpritePipeline> IRenderPass::acquireSpritePipeline() {
+    // Render-thread only, as with sprite creation and queue submission.
+    if (!spritePipeline_) {
+        auto candidate = std::make_shared<SpritePipeline>(device());
+        if (!candidate->prepare(renderPass())) return nullptr;
+        spritePipeline_ = std::move(candidate);
+    }
+    return spritePipeline_;
+}
+namespace {
 class SpriteRenderer final : public ISpriteRenderer {
 public:
     explicit SpriteRenderer(Device* device) : device_(device->device()), physical_(device->physicalDevice()),
@@ -25,17 +108,13 @@ public:
         if (uploadPool_) vkDestroyCommandPool(device_, uploadPool_, nullptr);
         if (staging_) vkDestroyBuffer(device_, staging_, nullptr);
         if (stagingMemory_) vkFreeMemory(device_, stagingMemory_, nullptr);
-        if (pipeline_) vkDestroyPipeline(device_, pipeline_, nullptr);
-        if (layout_) vkDestroyPipelineLayout(device_, layout_, nullptr);
         if (descriptorPool_) vkDestroyDescriptorPool(device_, descriptorPool_, nullptr);
-        if (descriptorLayout_) vkDestroyDescriptorSetLayout(device_, descriptorLayout_, nullptr);
-        if (sampler_) vkDestroySampler(device_, sampler_, nullptr);
         if (view_) vkDestroyImageView(device_, view_, nullptr);
         if (image_) vkDestroyImage(device_, image_, nullptr);
         if (imageMemory_) vkFreeMemory(device_, imageMemory_, nullptr);
     }
 
-    bool prepare(VkRenderPass pass, uint32_t width, uint32_t height,
+    bool prepare(IRenderPass* pass, uint32_t width, uint32_t height,
                  uint32_t frameCount, std::span<const uint8_t> rgba);
     void draw(ICommandBuffer* command, const cgl::Viewport& viewport,
               uint32_t frame, float x, float y, float scale) override;
@@ -59,26 +138,22 @@ private:
         return false;
     }
     bool upload(std::span<const uint8_t> rgba);
-    bool createPipeline(VkRenderPass pass);
 
+    std::shared_ptr<SpritePipeline> pipeline_;
     VkDevice device_;
     VkPhysicalDevice physical_;
     uint32_t queueFamily_, width_ = 0, height_ = 0, frameCount_ = 0;
     VkImage image_ = VK_NULL_HANDLE;
     VkDeviceMemory imageMemory_ = VK_NULL_HANDLE;
     VkImageView view_ = VK_NULL_HANDLE;
-    VkSampler sampler_ = VK_NULL_HANDLE;
-    VkDescriptorSetLayout descriptorLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
     VkDescriptorSet descriptor_ = VK_NULL_HANDLE;
-    VkPipelineLayout layout_ = VK_NULL_HANDLE;
-    VkPipeline pipeline_ = VK_NULL_HANDLE;
     VkBuffer staging_ = VK_NULL_HANDLE;
     VkDeviceMemory stagingMemory_ = VK_NULL_HANDLE;
     VkCommandPool uploadPool_ = VK_NULL_HANDLE;
 };
 
-bool SpriteRenderer::prepare(VkRenderPass pass, uint32_t width, uint32_t height,
+bool SpriteRenderer::prepare(IRenderPass* pass, uint32_t width, uint32_t height,
                              uint32_t frameCount, std::span<const uint8_t> rgba) {
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical_, &properties);
@@ -115,28 +190,21 @@ bool SpriteRenderer::prepare(VkRenderPass pass, uint32_t width, uint32_t height,
     viewInfo.format = imageInfo.format;
     viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, frameCount};
     RETURN_FAIL_IF_ANY_VK_FAILED(vkCreateImageView(device_, &viewInfo, nullptr, &view_), "Sprite view creation failed");
-    VkSamplerCreateInfo samplerInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
-    samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_NEAREST;
-    samplerInfo.addressModeU = samplerInfo.addressModeV = samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    RETURN_FAIL_IF_ANY_VK_FAILED(vkCreateSampler(device_, &samplerInfo, nullptr, &sampler_), "Sprite sampler creation failed");
-
-    VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-    VkDescriptorSetLayoutCreateInfo descriptorInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    descriptorInfo.bindingCount = 1; descriptorInfo.pBindings = &binding;
-    RETURN_FAIL_IF_ANY_VK_FAILED(vkCreateDescriptorSetLayout(device_, &descriptorInfo, nullptr, &descriptorLayout_), "Sprite descriptor layout failed");
+    pipeline_ = pass->acquireSpritePipeline();
+    if (!pipeline_) return false;
     VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     poolInfo.maxSets = 1; poolInfo.poolSizeCount = 1; poolInfo.pPoolSizes = &poolSize;
     RETURN_FAIL_IF_ANY_VK_FAILED(vkCreateDescriptorPool(device_, &poolInfo, nullptr, &descriptorPool_), "Sprite descriptor pool failed");
     VkDescriptorSetAllocateInfo setInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-    setInfo.descriptorPool = descriptorPool_; setInfo.descriptorSetCount = 1; setInfo.pSetLayouts = &descriptorLayout_;
+    setInfo.descriptorPool = descriptorPool_; setInfo.descriptorSetCount = 1; setInfo.pSetLayouts = &pipeline_->descriptorLayout_;
     RETURN_FAIL_IF_ANY_VK_FAILED(vkAllocateDescriptorSets(device_, &setInfo, &descriptor_), "Sprite descriptor allocation failed");
-    VkDescriptorImageInfo imageDescriptor{sampler_, view_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo imageDescriptor{pipeline_->sampler_, view_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
     write.dstSet = descriptor_; write.dstBinding = 0; write.descriptorCount = 1;
     write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; write.pImageInfo = &imageDescriptor;
     vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
-    return createPipeline(pass);
+    return true;
 }
 
 bool SpriteRenderer::upload(std::span<const uint8_t> rgba) {
@@ -189,60 +257,6 @@ bool SpriteRenderer::upload(std::span<const uint8_t> rgba) {
     return true;
 }
 
-bool SpriteRenderer::createPipeline(VkRenderPass pass) {
-    VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 36};
-    VkPipelineLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-    layoutInfo.setLayoutCount = 1; layoutInfo.pSetLayouts = &descriptorLayout_;
-    layoutInfo.pushConstantRangeCount = 1; layoutInfo.pPushConstantRanges = &push;
-    RETURN_FAIL_IF_ANY_VK_FAILED(vkCreatePipelineLayout(device_, &layoutInfo, nullptr, &layout_), "Sprite pipeline layout failed");
-    VkShaderModule vertex = VK_NULL_HANDLE, fragment = VK_NULL_HANDLE;
-    VkShaderModuleCreateInfo shader{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    shader.codeSize = sizeof(vertexCode); shader.pCode = vertexCode;
-    RETURN_FAIL_IF_ANY_VK_FAILED(vkCreateShaderModule(device_, &shader, nullptr, &vertex), "Sprite vertex shader failed");
-    shader.codeSize = sizeof(fragmentCode); shader.pCode = fragmentCode;
-    const auto fragmentResult = vkCreateShaderModule(device_, &shader, nullptr, &fragment);
-    if (fragmentResult != VK_SUCCESS) {
-        vkDestroyShaderModule(device_, vertex, nullptr);
-        LOGE("Sprite fragment shader creation failed");
-        return false;
-    }
-    VkPipelineShaderStageCreateInfo stages[2]{};
-    for (auto& stage : stages) { stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO; stage.pName = "main"; }
-    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT; stages[0].module = vertex;
-    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT; stages[1].module = fragment;
-    VkPipelineVertexInputStateCreateInfo input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-    VkPipelineInputAssemblyStateCreateInfo assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
-    assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    VkPipelineViewportStateCreateInfo viewport{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
-    viewport.viewportCount = viewport.scissorCount = 1;
-    VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
-    raster.polygonMode = VK_POLYGON_MODE_FILL; raster.cullMode = VK_CULL_MODE_NONE; raster.lineWidth = 1;
-    VkPipelineMultisampleStateCreateInfo samples{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-    samples.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-    VkPipelineColorBlendAttachmentState attachment{};
-    attachment.blendEnable = VK_TRUE;
-    attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    attachment.colorBlendOp = attachment.alphaBlendOp = VK_BLEND_OP_ADD;
-    attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-    blend.attachmentCount = 1; blend.pAttachments = &attachment;
-    VkDynamicState dynamics[]{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-    VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-    dynamic.dynamicStateCount = 2; dynamic.pDynamicStates = dynamics;
-    VkGraphicsPipelineCreateInfo info{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-    info.stageCount = 2; info.pStages = stages; info.pVertexInputState = &input;
-    info.pInputAssemblyState = &assembly; info.pViewportState = &viewport; info.pRasterizationState = &raster;
-    info.pMultisampleState = &samples; info.pColorBlendState = &blend; info.pDynamicState = &dynamic;
-    info.layout = layout_; info.renderPass = pass;
-    const auto pipelineResult = vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline_);
-    vkDestroyShaderModule(device_, fragment, nullptr);
-    vkDestroyShaderModule(device_, vertex, nullptr);
-    RETURN_FAIL_IF_ANY_VK_FAILED(pipelineResult, "Sprite graphics pipeline failed");
-    return true;
-}
 
 void SpriteRenderer::draw(ICommandBuffer* command, const cgl::Viewport& viewport,
                            uint32_t frame, float x, float y, float scale) {
@@ -265,9 +279,9 @@ void SpriteRenderer::drawRegion(ICommandBuffer* command, const cgl::Viewport& vi
                        float(source.width) / width_, float(source.height) / height_, float(frame)};
     vkCmdSetViewport(buffer, 0, 1, &area);
     vkCmdSetScissor(buffer, 0, 1, &scissor);
-    vkCmdBindPipeline(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
-    vkCmdBindDescriptorSets(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout_, 0, 1, &descriptor_, 0, nullptr);
-    vkCmdPushConstants(buffer, layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), push);
+    vkCmdBindPipeline(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->pipeline_);
+    vkCmdBindDescriptorSets(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->layout_, 0, 1, &descriptor_, 0, nullptr);
+    vkCmdPushConstants(buffer, pipeline_->layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), push);
     vkCmdDraw(buffer, 6, 1, 0, 0);
 }
 }
@@ -281,6 +295,6 @@ cgl::graphics::ISpriteRenderer::Ptr cgl::graphics::ISpriteRenderer::create(
     if (!nativeDevice || !nativePass || !nativePass->renderPass() ||
         nativeDevice->device() != nativePass->device()) return nullptr;
     auto renderer = std::make_unique<vulkan::SpriteRenderer>(nativeDevice);
-    if (!renderer->prepare(nativePass->renderPass(), width, height, frameCount, rgba)) return nullptr;
+    if (!renderer->prepare(nativePass, width, height, frameCount, rgba)) return nullptr;
     return renderer;
 }

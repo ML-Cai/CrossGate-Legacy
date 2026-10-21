@@ -14,6 +14,7 @@
 #include "cgl/trace/logger.h"
 #include <stdexcept>
 #include <chrono>
+#include <random>
 #include "benchmark/crowd_benchmark.h"
 
 namespace {
@@ -74,6 +75,8 @@ public:
         if (auto* b=world->getSingleton<cgl::component::CrowdBenchmark>()) b->ready=false;
         for (auto entity : crowd_) world->destroyEntity(entity);
         crowd_.clear();
+        crowdClips_.clear(); crowdWalks_.clear(); coldRequests_.clear();
+        crowdFrames_=0; crowdSeconds_=0; crowdWalking_=false;
         if (character_) world->destroyEntity(character_);
         character_ = 0;
         world->removeSingleton<cgl::component::MapCamera>();
@@ -86,6 +89,11 @@ public:
     void update(cgl::ECSCore* world) noexcept override {
         const auto seconds = world->getSingleton<cgl::component::FrameTime>()->deltaSeconds;
         if (auto* benchmark=world->getSingleton<cgl::component::CrowdBenchmark>()) {
+            try { loadColdCharacter(world,*benchmark); }
+            catch (const std::exception& error) {
+                cgl::RaiseError(world->getSingleton<cgl::component::SceneState>(), "Cold character load failed: ",error.what());
+                return;
+            }
             crowdSeconds_ += seconds;
             const bool walking=(uint64_t(crowdSeconds_)%2)!=0;
             if (world->getSingleton<cgl::component::EngineState>()->settings->benchmark.SwitchMotions && walking!=crowdWalking_) {
@@ -188,8 +196,9 @@ private:
         const size_t count=b.ActorCount ? b.ActorCount : cells.size()*perCell;
         if(cells.empty() || count>20000 || count>cells.size()*10 || b.UniqueCharacters>count)
             throw std::runtime_error("Crowd count exceeds visible cell capacity or unique count exceeds actors");
-        std::vector<std::shared_ptr<const cgl::AnimationClip>> clips,walks;
-        for(unsigned v=0;v<unsigned(cgl::CrossGateVersion::COUNT) && clips.size()<b.UniqueCharacters;++v) {
+        std::vector<cgl::AnimationRequest> requests;
+        auto& clips=crowdClips_; auto& walks=crowdWalks_;
+        for(unsigned v=0;v<unsigned(cgl::CrossGateVersion::COUNT) && requests.size()<b.UniqueCharacters;++v) {
             const auto version=cgl::CrossGateVersion(v);
             auto* infoReader=readers.pAnimeInfoReader[version].get();
             auto* dataReader=readers.pAnimeDataReader[version].get();
@@ -219,30 +228,61 @@ private:
                     if(!validMetadata) break;
                 }
                 if(!validMetadata) { ++state.filtered; continue; }
-                auto clip=animations_.acquire({serial.value,0,0,version},readers,device,pass);
-                state.animationBytes+=uint64_t(clip->width)*clip->height*clip->frameCount*4;
-                clips.push_back(std::move(clip));
-                if (b.SwitchMotions) {
-                    auto walk=animations_.acquire({serial.value,0,1,version},readers,device,pass);
-                    state.animationBytes+=uint64_t(walk->width)*walk->height*walk->frameCount*4;
-                    walks.push_back(std::move(walk));
-                }
-                state.resources.emplace_back(v,serial.value); state.unique=uint32_t(clips.size());
-                if(clips.size()==b.UniqueCharacters) break;
+                requests.push_back({serial.value,0,0,version});
+                if(requests.size()==b.UniqueCharacters) break;
             }
         }
-        if(clips.size()!=b.UniqueCharacters) throw std::runtime_error("Insufficient distinct animation resources in installed corpus");
+        if(requests.size()!=b.UniqueCharacters) throw std::runtime_error("Insufficient distinct animation resources in installed corpus");
+        // Metadata is selected at entry; pixel decoding/upload for cold resources
+        // deliberately runs inside the measured loop. This exposes synchronous stalls.
+        if(b.LoadDuringPlayback) {
+            std::mt19937 random(0xC61);
+            std::shuffle(requests.begin(),requests.end(),random);
+        }
+        for(const auto& r:requests) state.resources.emplace_back(unsigned(r.version),r.serial);
+        const size_t initial=b.LoadDuringPlayback ? 1 : requests.size();
+        for(size_t i=0;i<initial;++i) loadCrowdClip(requests[i],readers,device,pass,b.SwitchMotions,state);
+        coldRequests_=std::move(requests);
         for(size_t i=0;i<count;++i) {
             const auto cellIndex=i%cells.size();
             const auto entity=world->createEntity(); crowd_.push_back(entity);
             world->addComponent<cgl::component::MapPosition>(entity,cells[cellIndex]);
-            const auto resource=cgl::CrowdResourceIndex(i,cells.size(),clips.size());
-            world->addComponent<cgl::component::Sprite>(entity,clips[resource]);
-            world->addComponent<cgl::component::CrowdActor>(entity,clips[resource],b.SwitchMotions?walks[resource]:nullptr);
+            const auto resource=cgl::CrowdResourceIndex(i,cells.size(),coldRequests_.size());
+            world->addComponent<cgl::component::Sprite>(entity,clips[resource<clips.size()?resource:0]);
+            const auto ready=resource<clips.size()?resource:0;
+            world->addComponent<cgl::component::CrowdActor>(entity,clips[ready],b.SwitchMotions?walks[ready]:nullptr,resource);
             world->addComponent<cgl::component::AnimationPlayer>(entity,double((i*73)%1000));
             ++state.actors;
         }
         LOGI("Crowd ready: cells=" << cells.size() << ", actors=" << count << ", resources=" << clips.size());
+    }
+    void loadCrowdClip(const cgl::AnimationRequest& request,cgl::component::AssetsReaderState& readers,
+        cgl::graphics::IDevice* device,cgl::graphics::IRenderPass* pass,bool switchMotions,
+        cgl::component::CrowdBenchmark& state) {
+        auto idle=animations_.acquire(request,readers,device,pass);
+        auto walk=switchMotions ? animations_.acquire({request.serial,request.direction,1,request.version},readers,device,pass) : nullptr;
+        state.animationBytes+=uint64_t(idle->width)*idle->height*idle->frameCount*4;
+        if(walk) state.animationBytes+=uint64_t(walk->width)*walk->height*walk->frameCount*4;
+        crowdClips_.push_back(std::move(idle)); crowdWalks_.push_back(std::move(walk));
+        state.unique=uint32_t(crowdClips_.size());
+    }
+    void loadColdCharacter(cgl::ECSCore* world,cgl::component::CrowdBenchmark& state) {
+        const auto& b=world->getSingleton<cgl::component::EngineState>()->settings->benchmark;
+        if(!b.LoadDuringPlayback || crowdFrames_++<b.WarmupFrames || state.unique>=coldRequests_.size()) return;
+        const auto start=std::chrono::steady_clock::now();
+        const size_t resource=state.unique;
+        auto& readers=*world->getSingleton<cgl::component::AssetsReaderState>();
+        auto* device=world->getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+        auto* pass=world->getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+        loadCrowdClip(coldRequests_[resource],readers,device,pass,b.SwitchMotions,state);
+        world->forEach<cgl::component::CrowdActor,cgl::component::Sprite,cgl::component::AnimationPlayer>(
+            [&](auto,auto* actor,auto* sprite,auto* player) {
+                if(actor->resource!=resource) return;
+                actor->idle=crowdClips_[resource]; actor->walk=crowdWalks_[resource];
+                sprite->clip=crowdWalking_?actor->walk:actor->idle;
+                player->timeMs=0;player->frame=0;
+            });
+        state.coldLoadMs.push_back(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count());
     }
     void updateHover(cgl::ECSCore* world, const cgl::Viewport& viewport) noexcept {
         auto& hover = world->getSingleton<cgl::component::MapHover>()->cell;
@@ -272,6 +312,9 @@ private:
     std::shared_ptr<const cgl::MapHoverOutline> outline_;
     cgl::Entity character_ = 0;
     std::vector<cgl::Entity> crowd_;
+    std::vector<std::shared_ptr<const cgl::AnimationClip>> crowdClips_,crowdWalks_;
+    std::vector<cgl::AnimationRequest> coldRequests_;
+    uint32_t crowdFrames_=0;
     double crowdSeconds_=0;
     bool crowdWalking_=false;
     std::vector<cgl::MapDrawItem> drawItems_;
