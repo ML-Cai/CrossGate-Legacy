@@ -10,6 +10,7 @@
 #include <GLFW/glfw3.h>
 #include <filesystem>
 #include <chrono>
+#include "benchmark/crowd_benchmark.h"
 #include "cgl/settings/settings.h"
 #include "cgl/engine/engine.h"
 #include "cgl/trace/logger.h"
@@ -109,9 +110,19 @@ void ClientEngine::initSingletonStage(cgl::ECSCore* pEcs) {
     ecs().addSingleton<cgl::component::CursorPositionState>();
     ecs().addSingleton<cgl::component::FrameTime>();
 
-    // add window create info
+    const auto& bench = pEngineState_->settings->benchmark;
+    const bool pressure = bench.ActorCount || bench.ActorsPerCell;
+    if (pressure) {
+        if (bench.AnimationBudgetMiB<16 || bench.AnimationBudgetMiB>1024 || pEngineState_->settings->map.FilePath.empty() || !bench.SampleFrames || bench.SampleFrames > 100000 || bench.WarmupFrames > 100000 ||
+            bench.ReportPath.empty() || bench.Width < 320 || bench.Width > 3840 || bench.Height < 240 || bench.Height > 2160)
+            cgl::RaiseError(pEngineState_, "Invalid benchmark limits/report/viewport");
+        else {
+            animationLibrary_.setTextureBudget(uint64_t(bench.AnimationBudgetMiB)*1024*1024);
+            ecs().addSingleton<cgl::component::CrowdBenchmark>();
+        }
+    }
     ecs().addSingleton<cgl::component::WindowCreateInfo>(
-        800, 600, "CGL");
+        pressure ? bench.Width : 800, pressure ? bench.Height : 600, "CGL");
 }
 
 // -----------------------------------------------------------------------------
@@ -172,6 +183,9 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
     assert(pWinHandle != nullptr);
 
     uint32_t frames = 0;
+    cgl::CrowdSamples samples;
+    const auto& settings = *pEngineState_->settings;
+    auto* benchmark = pEcs->getSingleton<cgl::component::CrowdBenchmark>();
     auto previous = std::chrono::steady_clock::now();
     while (!pWinHandle->windowShouldClose && (!frameLimit || frames < frameLimit)) {
         const auto now = std::chrono::steady_clock::now();
@@ -183,7 +197,10 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
         if (pWinHandle->windowShouldClose) break;
 
         if (anyStateError()) break;
+        const auto updateStart = std::chrono::steady_clock::now();
+        const bool wasReady = benchmark && benchmark->ready;
         sceneMgrSys_.update(pEcs);
+        const auto updateEnd = std::chrono::steady_clock::now();
         if (anyStateError()) break;
         renderDrawSys_.update(pEcs);
         auto* frame = pEcs->getSingleton<cgl::component::FrameRenderState>();
@@ -191,7 +208,21 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             cgl::RaiseError(pEngineState_, frame->lastError);
             break;
         }
+        const auto end = std::chrono::steady_clock::now();
+        if (benchmark && wasReady) {
+            auto ms=[](auto span){ return std::chrono::duration<double,std::milli>(span).count(); };
+            samples.add(ms(end-now),ms(updateEnd-updateStart),ms(end-updateEnd),benchmark->sortMs,
+                        settings.benchmark.WarmupFrames);
+            if (samples.frame.size() >= settings.benchmark.SampleFrames) break;
+        }
         ++frames;
+    }
+    if (benchmark) {
+        const auto* swap = pRenderDevState_->pSwapchain.get();
+        const char* status = anyStateError() ? "scene_error" :
+            samples.frame.size() == settings.benchmark.SampleFrames ? "complete" : "incomplete";
+        samples.write(settings,*benchmark,swap ? swap->presentModeName() : "unavailable",status);
+        LOGI("Benchmark " << status << ": FPS=" << (samples.frame.empty()?0:1000/cgl::CrowdSamples::mean(samples.frame)));
     }
 }
 
@@ -237,7 +268,8 @@ bool ClientEngine::run(uint32_t frameLimit) {
     }
 
     if (anyStateError() == false) {
-        runStage(&ecs_, frameLimit);
+        try { runStage(&ecs_, frameLimit); }
+        catch (const std::exception& error) { cgl::RaiseError(pEngineState_, "Frame loop failed: ",error.what()); }
     }
 
     const bool success = !anyStateError();

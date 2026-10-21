@@ -49,7 +49,7 @@ cgl::graphics::IDevice::Ptr cgl::graphics::IDevice::create(
 cgl::graphics::ISwapchain::Ptr
 cgl::graphics::ISwapchain::create(
     cgl::graphics::IDevice* pDevice,
-    void*                   pWindowNativeHandle
+    void*                   pWindowNativeHandle, bool vsync
 ) {
     // check input
     if ((pDevice == nullptr) || (pWindowNativeHandle == nullptr)) {
@@ -58,7 +58,7 @@ cgl::graphics::ISwapchain::create(
 
     // create backend
     auto p = std::make_unique<cgl::graphics::vulkan::Swapchain>(
-                pDevice, pWindowNativeHandle);
+                pDevice, pWindowNativeHandle, vsync);
     if (p->prepare(pWindowNativeHandle)) {
         return p;
     }

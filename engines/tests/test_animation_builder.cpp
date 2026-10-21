@@ -60,8 +60,13 @@ protected:
     }
     void TearDown() override {
         builder.clear();
-        readers.pAnimeInfoReader[version]->close(); readers.pAnimeDataReader[version]->close();
-        readers.pGfxInfoReader[version]->close(); readers.pGfxDataReader[version]->close();
+        for(unsigned i=0;i<unsigned(cgl::CrossGateVersion::COUNT);++i) {
+            const auto v=cgl::CrossGateVersion(i);
+            if(readers.pAnimeInfoReader[v]) readers.pAnimeInfoReader[v]->close();
+            if(readers.pAnimeDataReader[v]) readers.pAnimeDataReader[v]->close();
+            if(readers.pGfxInfoReader[v]) readers.pGfxInfoReader[v]->close();
+            if(readers.pGfxDataReader[v]) readers.pGfxDataReader[v]->close();
+        }
         std::error_code ec;
         std::filesystem::remove_all(dir, ec);
         EXPECT_FALSE(ec) << ec.message();
@@ -150,4 +155,29 @@ TEST_F(AnimationBuilderTest, MissingReadersAndUnavailableMotionsFailCleanly) {
     EXPECT_THROW(builder.build({100000, 0, 999}, readers), std::runtime_error);
     EXPECT_THROW(builder.build({100000, 2, 0}, readers), std::runtime_error);
     EXPECT_EQ(readers.pGfxDataReader[version]->cacheStatistics().fileReadCalls, 0);
+}
+
+TEST_F(AnimationBuilderTest, VersionIsPartOfDescriptionAndRequestIdentity) {
+    builder.build(request,readers);
+    const auto other=cgl::CrossGateVersion::CG_VERSION_PUK1;
+    std::filesystem::copy_file(dir/"bin/AnimeInfo_4.bin",dir/"bin/AnimeInfoEx_1.Bin");
+    std::filesystem::copy_file(dir/"bin/Anime_4.bin",dir/"bin/AnimeEx_1.Bin");
+    std::filesystem::copy_file(dir/"bin/GraphicInfo_66.bin",dir/"bin/GraphicInfoEx_5.bin");
+    std::filesystem::copy_file(dir/"bin/Graphic_66.bin",dir/"bin/GraphicEx_5.bin");
+    { std::fstream f(dir/"bin/AnimeEx_1.Bin",std::ios::in|std::ios::out|std::ios::binary);
+      f.seekp(4);const char duration[4]={9,3,0,0};f.write(duration,4); }
+    readers.pAnimeInfoReader[other]=cgl::IAnimeInfoReader::create({&settings,other});
+    readers.pAnimeDataReader[other]=cgl::IAnimeDataReader::create({&settings,other,0});
+    readers.pGfxInfoReader[other]=cgl::IGraphicsInfoReader::create({&settings,other});
+    readers.pGfxDataReader[other]=cgl::IGraphicsDataReader::create({&settings,other,0});
+    ASSERT_EQ(readers.pAnimeInfoReader[other]->load(),cgl::Results::Success);
+    ASSERT_EQ(readers.pAnimeDataReader[other]->load(),cgl::Results::Success);
+    ASSERT_EQ(readers.pGfxInfoReader[other]->load(),cgl::Results::Success);
+    ASSERT_EQ(readers.pGfxDataReader[other]->load(),cgl::Results::Success);
+    auto alternate=request;alternate.version=other;
+    EXPECT_NE(alternate,request);
+    EXPECT_EQ(builder.build(alternate,readers).durationMs,777);
+    EXPECT_EQ(builder.build(request,readers).durationMs,100);
+    alternate.version=cgl::CrossGateVersion::COUNT;
+    EXPECT_THROW(builder.build(alternate,readers),std::runtime_error);
 }

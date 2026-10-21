@@ -35,3 +35,9 @@ target_include_directories(test_animation_builder PRIVATE ${CMAKE_CURRENT_SOURCE
 target_link_libraries(test_animation_builder PRIVATE GTest::gtest_main cgl::assets cgl::settings cgl::common)
 set_target_properties(test_animation_builder PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 gtest_discover_tests(test_animation_builder WORKING_DIRECTORY ${CGL_BIN_PATH})
+
+add_executable(test_crowd_benchmark test_crowd_benchmark.cpp)
+target_include_directories(test_crowd_benchmark PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_crowd_benchmark PRIVATE GTest::gtest_main cgl::settings cgl::common)
+set_target_properties(test_crowd_benchmark PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
+gtest_discover_tests(test_crowd_benchmark WORKING_DIRECTORY ${CGL_BIN_PATH})

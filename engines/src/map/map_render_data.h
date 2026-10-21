@@ -54,6 +54,7 @@ inline MapFootprint GroundFootprint(const MapDrawItem& item) noexcept {
 // a single sprite cannot express every possible interlocking geometry.
 inline size_t SortMapDrawItems(std::vector<MapDrawItem>& items) {
     std::sort(items.begin(),items.end(),MapDrawLess);
+    if (std::none_of(items.begin(),items.end(),[](const auto& item){return item.tileX>1 || item.tileY>1;})) return 0;
     const size_t n=items.size();
     std::vector<size_t> sweep(n); std::iota(sweep.begin(),sweep.end(),0);
     struct Rect { double left,right,top,bottom; };
@@ -68,19 +69,24 @@ inline size_t SortMapDrawItems(std::vector<MapDrawItem>& items) {
     });
     std::vector<std::vector<size_t>> after(n);
     std::vector<size_t> incoming(n,0);
-    for(size_t i=0;i<n;++i) for(size_t j=i+1;j<n;++j) {
-        const auto a=sweep[i],b=sweep[j];
-        const auto& ra=rects[a];const auto& rb=rects[b];
-        if(rb.left>=ra.right) break;
-        if(ra.top>=rb.bottom || rb.top>=ra.bottom) continue;
-        if(items[a].tileX<=1 && items[a].tileY<=1 &&
-           items[b].tileX<=1 && items[b].tileY<=1) continue;
-        const auto fa=GroundFootprint(items[a]),fb=GroundFootprint(items[b]);
-        const bool aBehind=fa.minX>=fb.maxX || fa.maxY<=fb.minY;
-        const bool bBehind=fb.minX>=fa.maxX || fb.maxY<=fa.minY;
-        if(aBehind==bBehind) continue; // Side-by-side or intersecting: ambiguous.
-        const auto first=aBehind?a:b,last=aBehind?b:a;
-        after[first].push_back(last); ++incoming[last];
+    // Only large footprints can impose additional constraints. Actor/actor
+    // and single-cell pairs already follow the baseline order. Query candidates
+    // from each large footprint instead of enumerating dense actor pairs.
+    for(size_t a=0;a<n;++a) {
+        if(items[a].tileX<=1 && items[a].tileY<=1) continue;
+        const auto& ra=rects[a];
+        for(const auto b:sweep) {
+            const auto& rb=rects[b];
+            if(rb.left>=ra.right) break;
+            if(a==b || rb.right<=ra.left || ra.top>=rb.bottom || rb.top>=ra.bottom) continue;
+            if((items[b].tileX>1 || items[b].tileY>1) && b<a) continue;
+            const auto fa=GroundFootprint(items[a]),fb=GroundFootprint(items[b]);
+            const bool aBehind=fa.minX>=fb.maxX || fa.maxY<=fb.minY;
+            const bool bBehind=fb.minX>=fa.maxX || fb.maxY<=fa.minY;
+            if(aBehind==bBehind) continue;
+            const auto first=aBehind?a:b,last=aBehind?b:a;
+            after[first].push_back(last); ++incoming[last];
+        }
     }
     std::priority_queue<size_t,std::vector<size_t>,std::greater<size_t>> ready;
     for(size_t i=0;i<n;++i) if(!incoming[i]) ready.push(i);
