@@ -6,9 +6,12 @@
 //   All rights reserved.
 // =============================================================================
 
+#include <array>
+#include <algorithm>
 #include <fstream>
 #include <filesystem>
 #include <memory>
+#include <new>
 #include "cgl/common/formatters.h"
 #include "cgl/assets/anime_info_reader.h"
 #include "cgl/settings/settings.h"
@@ -113,17 +116,16 @@ cgl::Results ReaderImpl::load() try {
 
     // verify the size
     size_t fileSize = GetFileSize(&fileInfo_);
-    if (fileSize % sizeof(AnimeInfoRawData) != 0) {
-        LOGE("Failed to read the data from unmatch anime info file");
+    if (createInfo().maxIndexFileBytes == 0 || createInfo().maxIndexEntries == 0 ||
+        fileSize > createInfo().maxIndexFileBytes ||
+        fileSize / sizeof(AnimeInfoRawData) > createInfo().maxIndexEntries ||
+        fileSize % sizeof(AnimeInfoRawData) != 0) {
+        LOGE("Invalid or oversized anime index: bytes=" << fileSize);
         close();
         return cgl::Results::InvalidFile;
     }
 
-    // Anime info file is not sorted and just few kilobytes in size (usually
-    // less than 10KB) in most cases, so we can preload all entries to memory
-    // in this case. Maybe we can use a sorted file in the future or something
-    // like that, then we can use binary search to query the data.
-    // But for now, we just read all data to memory.
+    // Keep only a small parsing batch while constructing the bounded index.
     auto result = preLoad(fileSize);
     if (result != cgl::Results::Success) close();
     else fileInfo_.stream.reset(); // The parsed index owns all required data.
@@ -132,6 +134,9 @@ cgl::Results ReaderImpl::load() try {
 catch (const std::ios_base::failure&) {
     close();
     return cgl::Results::InvalidFile;
+} catch (const std::bad_alloc&) {
+    close();
+    return cgl::Results::Fail;
 } catch (...) {
     close();
     throw;
@@ -139,44 +144,22 @@ catch (const std::ios_base::failure&) {
 
 // -----------------------------------------------------------------------------
 cgl::Results ReaderImpl::preLoad(size_t fileSize) {
-    // allocate buffers
-    auto pBuffer = std::make_unique<uint8_t[]>(fileSize);
-    assert(pBuffer != nullptr);
-
-    // read all buffer data
-    auto& f = fileInfo_.stream.value();
-    f.read(reinterpret_cast<char *>(pBuffer.get()), fileSize);
-
-    if (!f) {
-        // it should not happened since we have check the file size before
-        // preload(), but still check for safety.
-        LOGE("File read failed: only " << f.gcount() <<" bytes readed "
-             << "(expected {" << fileSize << "})");
-        return cgl::Results::InvalidFile;
-    }
-
-    // parse all entries
     const size_t count = fileSize / sizeof(AnimeInfoRawData);
-    auto pEntries = reinterpret_cast<AnimeInfoRawData *>(pBuffer.get());
     map_.reserve(count);
-
-    for (size_t i = 0; i < count; i++) {
-        const auto& entry = pEntries[i];
-
-        // // debug purpose
-        // if (true) {
-        //     LOGI("- i[{}] index {}, address {}, motionCount {}",
-        //          i, entry.index, entry.address, entry.motionCount);
-        // }
-
-        // fill the map
-        cgl::AnimeResourceInfo info;
-        info.serialNum.version = createInfo().version;
-        info.serialNum.value   = entry.index;
-        info.dataOffset        = entry.address;
-        info.motionCount       = entry.motionCount;
-
-        map_[entry.index] = std::move(info);
+    std::array<AnimeInfoRawData, 512> batch{};
+    auto& stream = fileInfo_.stream.value();
+    for (size_t first = 0; first < count;) {
+        const size_t entries = std::min(batch.size(), count - first);
+        stream.read(reinterpret_cast<char*>(batch.data()), entries * sizeof(AnimeInfoRawData));
+        for (size_t i = 0; i < entries; ++i) {
+            const auto& entry = batch[i];
+            cgl::AnimeResourceInfo info{};
+            info.serialNum = {createInfo().version, entry.index};
+            info.dataOffset = entry.address;
+            info.motionCount = entry.motionCount;
+            map_[entry.index] = info; // Preserve last-entry-wins duplicate handling.
+        }
+        first += entries;
     }
 
     return cgl::Results::Success;

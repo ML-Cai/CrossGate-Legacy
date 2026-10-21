@@ -9,6 +9,7 @@
 #include <fstream>
 #include <filesystem>
 #include <memory>
+#include <new>
 #include "cgl/common/formatters.h"
 #include "cgl/assets/graphics_info_reader.h"
 #include "cgl/settings/settings.h"
@@ -188,9 +189,12 @@ cgl::Results GraphicIndexReaderImpl::load() try {
 
     // verify the file size
     size_t bufferSize = GetFileSize(&fileInfo_);
-    if (bufferSize % sizeof(GraphicInfoEntry) != 0) {
-        LOGE("Failed to read the data from unmatched/borken graphics resource"
-             "info file, path : " << fileInfo_.path.string());
+    if (createInfo().maxIndexFileBytes == 0 || createInfo().maxIndexEntries == 0 ||
+        bufferSize > createInfo().maxIndexFileBytes ||
+        bufferSize / sizeof(GraphicInfoEntry) > createInfo().maxIndexEntries ||
+        bufferSize % sizeof(GraphicInfoEntry) != 0) {
+        LOGE("Invalid or oversized graphics index: bytes=" << bufferSize
+             << ", path=" << fileInfo_.path.string());
         close();
         return cgl::Results::InvalidFile;
     }
@@ -207,6 +211,9 @@ cgl::Results GraphicIndexReaderImpl::load() try {
 catch (const std::ios_base::failure&) {
     close();
     return cgl::Results::InvalidFile;
+} catch (const std::bad_alloc&) {
+    close();
+    return cgl::Results::Fail;
 } catch (...) {
     close();
     throw;

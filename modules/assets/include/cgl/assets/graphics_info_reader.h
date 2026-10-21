@@ -25,6 +25,10 @@ class IGraphicsInfoReader {
     struct CreateInfo {
         const cgl::Settings*  pSettings;
         cgl::CrossGateVersion version;
+        // Input/entry limits, checked before backing-buffer or lookup-table allocation.
+        // They bound growth, not exact allocator/container overhead. Zero rejects loading.
+        size_t maxIndexFileBytes = 64 * 1024 * 1024;
+        size_t maxIndexEntries = 1024 * 1024;
     };
 
     static cgl::IGraphicsInfoReader::Ptr create(const CreateInfo& createInfo);
