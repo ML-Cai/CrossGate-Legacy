@@ -267,3 +267,48 @@ The next streaming steps should preserve these constraints:
 
 This PR provides the shared immutable bundle and diagnostic coverage; background
 workers and a fence-retired bounded uploader are subsequent independent changes.
+
+## Progressive sprite uploads
+
+`ISpriteRenderer::createPending` moves CPU RGBA ownership into a pending renderer.
+It copies whole rows across array layers, at most 4 MiB per chunk by default.
+`pollUpload` queries its fence without waiting; after completion it reuses staging
+and the command buffer for at most one next chunk. The final copy transitions the
+whole image to shader-read layout. Pending draws are ignored. Publication only
+happens after the final fence signals. Synchronous `create` now waits on its own
+fence instead of `vkQueueWaitIdle`; it remains useful during scene initialization.
+
+`AnimationLibrary::acquireProgressive` holds one pending clip, caps decoded RGBA at
+32 MiB, and reserves the destination payload against the existing resident texture
+budget. CPU pixels move into the uploader, avoiding a second full RGBA copy. One
+staging buffer is at most 4 MiB; these are payload bounds, not GPU allocation/RSS
+bounds. The limit covers the measured 24 MiB/114-frame corpus clip. Larger clips
+fail explicitly before RGBA allocation; no silent appearance substitution counts
+as successful loading. Other requests retry while the slot is occupied; identical
+requests share the pending operation and later the ready cache entry.
+
+The current cold benchmark pumps this path once per frame. This is not a global
+upload scheduler: callers must serialize it and must not poll once per entity.
+Cached idle plus pending walk still submits at most one chunk in a benchmark update.
+A clip is attached to actors only when idle and the requested walk are ready.
+Scene exit cancels the pending clip; cancellation/destruction can wait for its own
+already-submitted chunk before freeing CPU/staging/image resources. Ready resources
+still follow the existing wait-before-cache-clear rule. Shutdown and forced budget
+failure use the same ownership path. No GPU object is freed merely because a scene
+stops referring to a pending request.
+
+Remaining work: decoding and Vulkan allocation still execute synchronously, so a
+large cold clip can stall its first request. Background decoding needs a bounded
+byte/job queue with serialized reader access, cancellation generations, visibility
+priority and worker shutdown before reader destruction. The pending slot currently
+has no queued jobs to cancel and no concurrent worker publication. A production
+streaming service should centralize per-frame upload byte/submission/time telemetry,
+choose priorities, expose ready latency, and evict only resources unused by both
+entities and submitted GPU work. Dedicated transfer queues, persistent staging pools,
+real GPU allocation telemetry and 4/8 GB card validation are subsequent work.
+
+GPU allocations and descriptor pools are still created per texture. Before growing
+the number of resident directions/motions, collect actual allocation counts/bytes,
+check device allocation limits, and introduce pooled/suballocated storage where
+measurements justify it. Resident payload limits alone do not prevent allocation
+count exhaustion or driver overhead. This is separate from the CPU decode queue.

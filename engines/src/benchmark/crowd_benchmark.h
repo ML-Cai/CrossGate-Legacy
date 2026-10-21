@@ -17,7 +17,7 @@ struct CrowdBenchmark {
     uint32_t width=0, height=0, switches=0;
     uint64_t animationBytes = 0;
     double loadMs = 0, sortMs = 0;
-    std::vector<double> coldLoadMs;
+    std::vector<double> coldLoadMs, coldReadyMs;
     std::vector<std::pair<uint32_t,uint32_t>> resources;
 };
 }
@@ -39,10 +39,11 @@ inline size_t CrowdResourceIndex(size_t actor, size_t cells, size_t unique) {
     return (actor+layer/period)%unique;
 }
 struct CrowdSamples {
-    std::vector<double> frame, update, render, sort;
+    std::vector<double> frame, update, render, sort, coldFrame;
     size_t seen = 0;
-    void add(double frameMs, double updateMs, double renderMs, double sortMs, uint32_t warmup) {
+    void add(double frameMs, double updateMs, double renderMs, double sortMs, uint32_t warmup, bool coldActive=false) {
         if (seen++ < warmup) return;
+        if(coldActive) coldFrame.push_back(frameMs);
         frame.push_back(frameMs); update.push_back(updateMs); render.push_back(renderMs); sort.push_back(sortMs);
     }
     static double mean(const std::vector<double>& v) {
@@ -86,6 +87,12 @@ struct CrowdSamples {
         out << "],\n\"cold_load_count\":" << state.coldLoadMs.size()
             << ",\"cold_load_p99_ms\":" << percentile(state.coldLoadMs,.99)
             << ",\"cold_load_max_ms\":" << percentile(state.coldLoadMs,1)
+            << ",\"cold_frame_count\":" << coldFrame.size()
+            << ",\"cold_frame_p99_ms\":" << percentile(coldFrame,.99)
+            << ",\"cold_frame_max_ms\":" << percentile(coldFrame,1)
+            << ",\"cold_ready_p99_ms\":" << percentile(state.coldReadyMs,.99)
+            << ",\"cold_ready_max_ms\":" << percentile(state.coldReadyMs,1)
+            << ",\"progressive_uploads\":" << (settings.benchmark.ProgressiveUploads?"true":"false")
             << ",\"load_during_playback\":" << (settings.benchmark.LoadDuringPlayback?"true":"false")
             << ",\"frame_times_ms\":[";
         for(size_t i=0;i<frame.size();++i) { if(i) out << ','; out << frame[i]; }

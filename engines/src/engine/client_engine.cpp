@@ -199,6 +199,8 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
         if (anyStateError()) break;
         const auto updateStart = std::chrono::steady_clock::now();
         const bool wasReady = benchmark && benchmark->ready;
+        const bool wasCold = wasReady && settings.benchmark.LoadDuringPlayback &&
+            benchmark->unique < settings.benchmark.UniqueCharacters;
         sceneMgrSys_.update(pEcs);
         const auto updateEnd = std::chrono::steady_clock::now();
         if (anyStateError()) break;
@@ -212,7 +214,7 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
         if (benchmark && wasReady) {
             auto ms=[](auto span){ return std::chrono::duration<double,std::milli>(span).count(); };
             samples.add(ms(end-now),ms(updateEnd-updateStart),ms(end-updateEnd),benchmark->sortMs,
-                        settings.benchmark.WarmupFrames);
+                        settings.benchmark.WarmupFrames,wasCold);
             if (samples.frame.size() >= settings.benchmark.SampleFrames) break;
         }
         ++frames;

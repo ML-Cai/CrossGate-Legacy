@@ -74,8 +74,10 @@ public:
     void onExit(cgl::ECSCore* world) noexcept override {
         if (auto* b=world->getSingleton<cgl::component::CrowdBenchmark>()) b->ready=false;
         for (auto entity : crowd_) world->destroyEntity(entity);
+        animations_.cancelPending();
         crowd_.clear();
         crowdClips_.clear(); crowdWalks_.clear(); coldRequests_.clear();
+        coldWorkMs_=0; coldStart_={};
         crowdFrames_=0; crowdSeconds_=0; crowdWalking_=false;
         if (character_) world->destroyEntity(character_);
         character_ = 0;
@@ -261,6 +263,10 @@ private:
         cgl::component::CrowdBenchmark& state) {
         auto idle=animations_.acquire(request,readers,device,pass);
         auto walk=switchMotions ? animations_.acquire({request.serial,request.direction,1,request.version},readers,device,pass) : nullptr;
+        storeCrowdClip(std::move(idle),std::move(walk),state);
+    }
+    void storeCrowdClip(std::shared_ptr<const cgl::AnimationClip> idle,std::shared_ptr<const cgl::AnimationClip> walk,
+                        cgl::component::CrowdBenchmark& state) {
         state.animationBytes+=uint64_t(idle->width)*idle->height*idle->frameCount*4;
         if(walk) state.animationBytes+=uint64_t(walk->width)*walk->height*walk->frameCount*4;
         crowdClips_.push_back(std::move(idle)); crowdWalks_.push_back(std::move(walk));
@@ -268,13 +274,24 @@ private:
     }
     void loadColdCharacter(cgl::ECSCore* world,cgl::component::CrowdBenchmark& state) {
         const auto& b=world->getSingleton<cgl::component::EngineState>()->settings->benchmark;
-        if(!b.LoadDuringPlayback || crowdFrames_++<b.WarmupFrames || state.unique>=coldRequests_.size()) return;
+        // Scene entry also updates once, before benchmark sampling begins.
+        if(!b.LoadDuringPlayback || crowdFrames_++<=b.WarmupFrames || state.unique>=coldRequests_.size()) return;
         const auto start=std::chrono::steady_clock::now();
         const size_t resource=state.unique;
         auto& readers=*world->getSingleton<cgl::component::AssetsReaderState>();
         auto* device=world->getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
         auto* pass=world->getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
-        loadCrowdClip(coldRequests_[resource],readers,device,pass,b.SwitchMotions,state);
+        if(coldStart_==std::chrono::steady_clock::time_point{}) coldStart_=start;
+        if(b.ProgressiveUploads) {
+            const auto& request=coldRequests_[resource];
+            auto idle=animations_.acquireProgressive(request,readers,device,pass);
+            auto walk=idle && b.SwitchMotions ? animations_.acquireProgressive({request.serial,request.direction,1,request.version},readers,device,pass) : nullptr;
+            if(!idle || (b.SwitchMotions && !walk)) {
+                coldWorkMs_+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
+                return;
+            }
+            storeCrowdClip(std::move(idle),std::move(walk),state);
+        } else loadCrowdClip(coldRequests_[resource],readers,device,pass,b.SwitchMotions,state);
         world->forEach<cgl::component::CrowdActor,cgl::component::Sprite,cgl::component::AnimationPlayer>(
             [&](auto,auto* actor,auto* sprite,auto* player) {
                 if(actor->resource!=resource) return;
@@ -282,7 +299,10 @@ private:
                 sprite->clip=crowdWalking_?actor->walk:actor->idle;
                 player->timeMs=0;player->frame=0;
             });
-        state.coldLoadMs.push_back(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count());
+        const auto end=std::chrono::steady_clock::now();
+        state.coldLoadMs.push_back(coldWorkMs_+std::chrono::duration<double,std::milli>(end-start).count());
+        state.coldReadyMs.push_back(std::chrono::duration<double,std::milli>(end-coldStart_).count());
+        coldWorkMs_=0;coldStart_={};
     }
     void updateHover(cgl::ECSCore* world, const cgl::Viewport& viewport) noexcept {
         auto& hover = world->getSingleton<cgl::component::MapHover>()->cell;
@@ -314,6 +334,8 @@ private:
     std::vector<cgl::Entity> crowd_;
     std::vector<std::shared_ptr<const cgl::AnimationClip>> crowdClips_,crowdWalks_;
     std::vector<cgl::AnimationRequest> coldRequests_;
+    double coldWorkMs_=0;
+    std::chrono::steady_clock::time_point coldStart_{};
     uint32_t crowdFrames_=0;
     double crowdSeconds_=0;
     bool crowdWalking_=false;

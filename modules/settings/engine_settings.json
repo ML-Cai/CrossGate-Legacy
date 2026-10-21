@@ -129,6 +129,13 @@
                 "Description": "Explicit benchmark animation RGBA payload budget, 16..1024 MiB; excludes GPU allocation overhead."
             },
             {
+                "Name": "ProgressiveUploads",
+                "Type": "bool",
+                "Default": "false",
+                "ExportToINI": true,
+                "Description": "Cold-load diagnostic: one pending clip, <=32 MiB decoded, <=4 MiB GPU copy per update; nonblocking fence polling."
+            },
+            {
                 "Name": "LoadDuringPlayback",
                 "Type": "bool",
                 "Default": "false",

@@ -24,6 +24,7 @@ parser.add_argument("--warmup", type=int, default=120)
 parser.add_argument("--samples", type=int, default=600)
 parser.add_argument("--repeats", type=int, default=3)
 parser.add_argument("--timeout", type=float, default=120)
+parser.add_argument("--progressive-uploads", action="store_true")
 parser.add_argument("--load-during-playback", action="store_true")
 parser.add_argument("--switch-motions", action="store_true")
 parser.add_argument("--validation", action="store_true")
@@ -37,6 +38,8 @@ if (not densities or any(d < 1 or d > 10 for d in densities) or args.repeats < 1
     parser.error("invalid density, resource count, viewport, budget or sampling limits")
 if args.load_during_playback and args.samples < args.unique - 1:
     parser.error("cold-load mode requires at least unique-1 sample frames")
+if args.progressive_uploads and not args.load_during_playback:
+    parser.error("progressive uploads require --load-during-playback")
 exe = args.exe.resolve(strict=True)
 root = args.root.resolve(strict=True)
 out = args.output_dir.resolve()
@@ -68,6 +71,7 @@ UniqueCharacters={args.unique}
 AnimationBudgetMiB={args.budget_mib}
 SwitchMotions={str(args.switch_motions).lower()}
 LoadDuringPlayback={str(args.load_during_playback).lower()}
+ProgressiveUploads={str(args.progressive_uploads).lower()}
 Width={args.width}
 Height={args.height}
 WarmupFrames={args.warmup}

@@ -105,9 +105,9 @@ public:
     explicit SpriteRenderer(Device* device) : device_(device->device()), physical_(device->physicalDevice()),
         queueFamily_(device->graphicsQueueFamily()) {}
     ~SpriteRenderer() override {
-        if (uploadPool_) vkDestroyCommandPool(device_, uploadPool_, nullptr);
-        if (staging_) vkDestroyBuffer(device_, staging_, nullptr);
-        if (stagingMemory_) vkFreeMemory(device_, stagingMemory_, nullptr);
+        // Cancellation only waits for this renderer's submitted copy, not queue idle.
+        if (submitted_) vkWaitForFences(device_,1,&uploadFence_,VK_TRUE,UINT64_MAX);
+        releaseUpload();
         if (descriptorPool_) vkDestroyDescriptorPool(device_, descriptorPool_, nullptr);
         if (view_) vkDestroyImageView(device_, view_, nullptr);
         if (image_) vkDestroyImage(device_, image_, nullptr);
@@ -116,6 +116,12 @@ public:
 
     bool prepare(IRenderPass* pass, uint32_t width, uint32_t height,
                  uint32_t frameCount, std::span<const uint8_t> rgba);
+    bool preparePending(IRenderPass* pass,uint32_t width,uint32_t height,uint32_t frames,
+                        std::vector<uint8_t> rgba,size_t chunkBytes) {
+        deferred_=true; chunkBytes_=chunkBytes; pixels_=std::move(rgba);
+        return prepare(pass,width,height,frames,pixels_);
+    }
+    SpriteUploadState pollUpload() override;
     void draw(ICommandBuffer* command, const cgl::Viewport& viewport,
               uint32_t frame, float x, float y, float scale) override;
     void drawRegion(ICommandBuffer* command, const cgl::Viewport& viewport,
@@ -138,6 +144,14 @@ private:
         return false;
     }
     bool upload(std::span<const uint8_t> rgba);
+    bool submitChunk(std::span<const uint8_t> rgba);
+    void releaseUpload() noexcept;
+    bool deferred_=false, submitted_=false;
+    SpriteUploadState uploadState_=SpriteUploadState::Pending;
+    size_t chunkBytes_=0, uploadedRows_=0;
+    std::vector<uint8_t> pixels_;
+    VkFence uploadFence_=VK_NULL_HANDLE;
+    VkCommandBuffer uploadCommand_=VK_NULL_HANDLE;
 
     std::shared_ptr<SpritePipeline> pipeline_;
     VkDevice device_;
@@ -166,6 +180,7 @@ bool SpriteRenderer::prepare(IRenderPass* pass, uint32_t width, uint32_t height,
         LOGE("Invalid sprite texture dimensions or byte count");
         return false;
     }
+    if(deferred_ && chunkBytes_<size_t(width)*4) return false;
     width_ = width; height_ = height; frameCount_ = frameCount;
     VkImageCreateInfo imageInfo{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -207,54 +222,87 @@ bool SpriteRenderer::prepare(IRenderPass* pass, uint32_t width, uint32_t height,
     return true;
 }
 
+void SpriteRenderer::releaseUpload() noexcept {
+    if (uploadPool_) vkDestroyCommandPool(device_,uploadPool_,nullptr);
+    if (uploadFence_) vkDestroyFence(device_,uploadFence_,nullptr);
+    if (staging_) vkDestroyBuffer(device_,staging_,nullptr);
+    if (stagingMemory_) vkFreeMemory(device_,stagingMemory_,nullptr);
+    uploadPool_=VK_NULL_HANDLE;uploadFence_=VK_NULL_HANDLE;staging_=VK_NULL_HANDLE;stagingMemory_=VK_NULL_HANDLE;
+    std::vector<uint8_t>().swap(pixels_);
+}
 bool SpriteRenderer::upload(std::span<const uint8_t> rgba) {
-    VkBufferCreateInfo bufferInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-    bufferInfo.size = rgba.size(); bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    RETURN_FAIL_IF_ANY_VK_FAILED(vkCreateBuffer(device_, &bufferInfo, nullptr, &staging_), "Sprite staging buffer failed");
+    if(!deferred_) chunkBytes_=rgba.size();
+    VkBufferCreateInfo buffer{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    buffer.size=std::min(chunkBytes_,rgba.size());buffer.usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    RETURN_FAIL_IF_ANY_VK_FAILED(vkCreateBuffer(device_,&buffer,nullptr,&staging_),"Sprite staging buffer failed");
     VkMemoryRequirements requirements;
-    vkGetBufferMemoryRequirements(device_, staging_, &requirements);
-    if (!allocate(requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &stagingMemory_)) return false;
-    RETURN_FAIL_IF_ANY_VK_FAILED(vkBindBufferMemory(device_, staging_, stagingMemory_, 0), "Sprite staging binding failed");
-    void* mapped = nullptr;
-    RETURN_FAIL_IF_ANY_VK_FAILED(vkMapMemory(device_, stagingMemory_, 0, rgba.size(), 0, &mapped), "Sprite mapping failed");
-    std::memcpy(mapped, rgba.data(), rgba.size());
-    vkUnmapMemory(device_, stagingMemory_);
-
-    VkCommandPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-    poolInfo.queueFamilyIndex = queueFamily_;
-    RETURN_FAIL_IF_ANY_VK_FAILED(vkCreateCommandPool(device_, &poolInfo, nullptr, &uploadPool_), "Sprite upload pool failed");
-    VkCommandBufferAllocateInfo allocateInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-    allocateInfo.commandPool = uploadPool_; allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; allocateInfo.commandBufferCount = 1;
-    VkCommandBuffer command;
-    RETURN_FAIL_IF_ANY_VK_FAILED(vkAllocateCommandBuffers(device_, &allocateInfo, &command), "Sprite upload command failed");
-    VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    RETURN_FAIL_IF_ANY_VK_FAILED(vkBeginCommandBuffer(command, &begin), "Sprite upload begin failed");
-    VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = image_; barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, frameCount_};
-    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-    VkBufferImageCopy copy{};
-    copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, frameCount_};
-    copy.imageExtent = {width_, height_, 1};
-    vkCmdCopyBufferToImage(command, staging_, image_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
-    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-    RETURN_FAIL_IF_ANY_VK_FAILED(vkEndCommandBuffer(command), "Sprite upload end failed");
-    VkQueue queue;
-    vkGetDeviceQueue(device_, queueFamily_, 0, &queue);
-    VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-    submit.commandBufferCount = 1; submit.pCommandBuffers = &command;
-    RETURN_FAIL_IF_ANY_VK_FAILED(vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE), "Sprite upload submission failed");
-    // Initial upload only. Playback never maps or uploads texture data.
-    RETURN_FAIL_IF_ANY_VK_FAILED(vkQueueWaitIdle(queue), "Sprite upload wait failed");
-    vkDestroyCommandPool(device_, uploadPool_, nullptr); uploadPool_ = VK_NULL_HANDLE;
-    vkDestroyBuffer(device_, staging_, nullptr); staging_ = VK_NULL_HANDLE;
-    vkFreeMemory(device_, stagingMemory_, nullptr); stagingMemory_ = VK_NULL_HANDLE;
+    vkGetBufferMemoryRequirements(device_,staging_,&requirements);
+    if(!allocate(requirements,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,&stagingMemory_)) return false;
+    RETURN_FAIL_IF_ANY_VK_FAILED(vkBindBufferMemory(device_,staging_,stagingMemory_,0),"Sprite staging binding failed");
+    VkCommandPoolCreateInfo pool{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};pool.queueFamilyIndex=queueFamily_;
+    RETURN_FAIL_IF_ANY_VK_FAILED(vkCreateCommandPool(device_,&pool,nullptr,&uploadPool_),"Sprite upload pool failed");
+    VkCommandBufferAllocateInfo command{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    command.commandPool=uploadPool_;command.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY;command.commandBufferCount=1;
+    RETURN_FAIL_IF_ANY_VK_FAILED(vkAllocateCommandBuffers(device_,&command,&uploadCommand_),"Sprite upload command failed");
+    VkFenceCreateInfo fence{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    RETURN_FAIL_IF_ANY_VK_FAILED(vkCreateFence(device_,&fence,nullptr,&uploadFence_),"Sprite upload fence failed");
+    if(!submitChunk(rgba)) return false;
+    if(!deferred_) {
+        RETURN_FAIL_IF_ANY_VK_FAILED(vkWaitForFences(device_,1,&uploadFence_,VK_TRUE,UINT64_MAX),"Sprite upload wait failed");
+        submitted_=false;uploadState_=SpriteUploadState::Ready;releaseUpload();
+    }
     return true;
+}
+bool SpriteRenderer::submitChunk(std::span<const uint8_t> rgba) {
+    const size_t rowBytes=size_t(width_)*4,totalRows=size_t(height_)*frameCount_;
+    const size_t rows=std::min(totalRows-uploadedRows_,chunkBytes_/rowBytes),bytes=rows*rowBytes;
+    void* mapped=nullptr;
+    RETURN_FAIL_IF_ANY_VK_FAILED(vkMapMemory(device_,stagingMemory_,0,bytes,0,&mapped),"Sprite mapping failed");
+    std::memcpy(mapped,rgba.data()+uploadedRows_*rowBytes,bytes);vkUnmapMemory(device_,stagingMemory_);
+    RETURN_FAIL_IF_ANY_VK_FAILED(vkResetCommandPool(device_,uploadPool_,0),"Sprite upload pool reset failed");
+    RETURN_FAIL_IF_ANY_VK_FAILED(vkResetFences(device_,1,&uploadFence_),"Sprite upload fence reset failed");
+    VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};begin.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    RETURN_FAIL_IF_ANY_VK_FAILED(vkBeginCommandBuffer(uploadCommand_,&begin),"Sprite upload begin failed");
+    VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;
+    barrier.image=image_;barrier.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,frameCount_};
+    if(!uploadedRows_) {
+        barrier.oldLayout=VK_IMAGE_LAYOUT_UNDEFINED;barrier.newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+        vkCmdPipelineBarrier(uploadCommand_,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,nullptr,0,nullptr,1,&barrier);
+    }
+    std::vector<VkBufferImageCopy> regions;
+    for(size_t offset=0;offset<rows;) {
+        const size_t row=uploadedRows_+offset,localRow=row%height_;
+        const auto count=uint32_t(std::min(rows-offset,height_-localRow));
+        VkBufferImageCopy copy{};copy.bufferOffset=offset*rowBytes;
+        copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,uint32_t(row/height_),1};
+        copy.imageOffset={0,int32_t(localRow),0};copy.imageExtent={width_,count,1};
+        regions.push_back(copy);offset+=count;
+    }
+    vkCmdCopyBufferToImage(uploadCommand_,staging_,image_,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,uint32_t(regions.size()),regions.data());
+    if(uploadedRows_+rows==totalRows) {
+        barrier.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;barrier.newLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(uploadCommand_,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,0,0,nullptr,0,nullptr,1,&barrier);
+    }
+    RETURN_FAIL_IF_ANY_VK_FAILED(vkEndCommandBuffer(uploadCommand_),"Sprite upload end failed");
+    VkQueue queue;vkGetDeviceQueue(device_,queueFamily_,0,&queue);
+    VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};submit.commandBufferCount=1;submit.pCommandBuffers=&uploadCommand_;
+    RETURN_FAIL_IF_ANY_VK_FAILED(vkQueueSubmit(queue,1,&submit,uploadFence_),"Sprite upload submission failed");
+    submitted_=true;uploadedRows_+=rows;
+    return true;
+}
+SpriteUploadState SpriteRenderer::pollUpload() {
+    if(uploadState_!=SpriteUploadState::Pending) return uploadState_;
+    const auto status=vkGetFenceStatus(device_,uploadFence_);
+    if(status==VK_NOT_READY) return SpriteUploadState::Pending;
+    if(status!=VK_SUCCESS) {uploadState_=SpriteUploadState::Failed;return uploadState_;}
+    submitted_=false;
+    if(uploadedRows_==size_t(height_)*frameCount_) {
+        uploadState_=SpriteUploadState::Ready;releaseUpload();
+    } else if(!submitChunk(pixels_)) uploadState_=SpriteUploadState::Failed;
+    return uploadState_;
 }
 
 
@@ -265,7 +313,7 @@ void SpriteRenderer::draw(ICommandBuffer* command, const cgl::Viewport& viewport
 
 void SpriteRenderer::drawRegion(ICommandBuffer* command, const cgl::Viewport& viewport,
                                 uint32_t frame, SpriteRegion source, float x, float y, float scale) {
-    if (!command || frame >= frameCount_ || !viewport.width || !viewport.height ||
+    if (uploadState_!=SpriteUploadState::Ready || !command || frame >= frameCount_ || !viewport.width || !viewport.height ||
         !source.width || !source.height || source.x >= width_ || source.y >= height_ ||
         source.width > width_ - source.x || source.height > height_ - source.y ||
         viewport.x < 0 || viewport.y < 0 || !std::isfinite(x) || !std::isfinite(y) ||
@@ -296,5 +344,16 @@ cgl::graphics::ISpriteRenderer::Ptr cgl::graphics::ISpriteRenderer::create(
         nativeDevice->device() != nativePass->device()) return nullptr;
     auto renderer = std::make_unique<vulkan::SpriteRenderer>(nativeDevice);
     if (!renderer->prepare(nativePass, width, height, frameCount, rgba)) return nullptr;
+    return renderer;
+}
+
+cgl::graphics::ISpriteRenderer::Ptr cgl::graphics::ISpriteRenderer::createPending(
+    IDevice* device,IRenderPass* pass,uint32_t width,uint32_t height,uint32_t frameCount,
+    std::vector<uint8_t> rgba,size_t chunkBytes) {
+    auto* nativeDevice=dynamic_cast<vulkan::Device*>(device);
+    auto* nativePass=dynamic_cast<vulkan::IRenderPass*>(pass);
+    if(!nativeDevice || !nativePass || !nativePass->renderPass() || nativeDevice->device()!=nativePass->device()) return nullptr;
+    auto renderer=std::make_unique<vulkan::SpriteRenderer>(nativeDevice);
+    if(!renderer->preparePending(nativePass,width,height,frameCount,std::move(rgba),chunkBytes)) return nullptr;
     return renderer;
 }
