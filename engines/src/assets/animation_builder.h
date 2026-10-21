@@ -10,6 +10,7 @@ class IAnimeInfoReader;
 class IAnimeDataReader;
 struct AnimationRequest {
     uint32_t serial = 101406, direction = 0, motion = 5;
+    CrossGateVersion version = CrossGateVersion::CG_VERSION_Classic;
     auto operator<=>(const AnimationRequest&) const = default;
 };
 struct AnimationPixels {

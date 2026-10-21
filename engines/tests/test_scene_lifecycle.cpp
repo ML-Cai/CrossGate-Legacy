@@ -1,4 +1,5 @@
 #include "assets/map_library.h"
+#include "benchmark/crowd_benchmark.h"
 #include "map/map_camera.h"
 #include "map/map_render_data.h"
 #include "map/map_hover.h"
@@ -426,4 +427,45 @@ TEST_F(DesktopSceneTest, HouseFrontWallUsesNativeFootprintForActorOcclusion) {
         world_.getSingleton<cgl::component::FrameTime>()->deltaSeconds=.1;
         manager_.update(&world_);draw_.update(&world_);
     }
+}
+
+TEST_F(DesktopSceneTest, CrowdRestartAndShutdownReleaseAllEntitiesAndClips) {
+    auto* engine=world_.getSingleton<cgl::component::EngineState>();
+    engine->settings->map.FilePath="map/0/2100.dat";
+    engine->settings->benchmark.ActorsPerCell=1;
+    engine->settings->benchmark.UniqueCharacters=10;
+    world_.addSingleton<cgl::component::CrowdBenchmark>();
+    auto* benchmark=world_.getSingleton<cgl::component::CrowdBenchmark>();
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while(!benchmark->ready && std::chrono::steady_clock::now()<deadline) {
+        if (world_.getSingleton<cgl::component::AssetsReaderState>()->state==cgl::StateTypes::RUNNING &&
+            (!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::MapScene))
+            scene->nextScene=cgl::SceneTypes::MapScene;
+        manager_.update(&world_);
+        ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(benchmark->ready);
+    ASSERT_EQ(scene->scene->sceneType(),cgl::SceneTypes::MapScene);
+    const auto expected=benchmark->actors;
+    ASSERT_GT(expected,0);EXPECT_EQ(expected,benchmark->visibleCells);
+    std::weak_ptr<const cgl::AnimationClip> clip;
+    for(int i=0;i<3;++i) {
+        size_t actors=0;
+        world_.forEach<cgl::component::Sprite>([&](auto,auto* sprite){++actors;clip=sprite->clip;});
+        EXPECT_EQ(actors,expected);
+        draw_.update(&world_);
+        scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);
+        ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        EXPECT_EQ(benchmark->actors,expected);
+    }
+    EXPECT_THROW(library_.setTextureBudget(1),std::invalid_argument);
+    EXPECT_FALSE(clip.expired());
+    world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice->waitIdle();
+    cgl::SceneManagerDestroySystem{}.update(&world_);
+    size_t remaining=0;
+    world_.forEach<cgl::component::CrowdActor>([&](auto,auto*){++remaining;});
+    EXPECT_EQ(remaining,0);
+    EXPECT_FALSE(clip.expired());library_.clear();EXPECT_TRUE(clip.expired());
 }

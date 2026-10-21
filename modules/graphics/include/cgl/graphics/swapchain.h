@@ -23,13 +23,15 @@ class ISwapchain {
 
     static cgl::graphics::ISwapchain::Ptr create(
         cgl::graphics::IDevice* pDevice,
-        void* pWindowNativeHandle);
+        void* pWindowNativeHandle, bool vsync = true);
 
     explicit ISwapchain() = default;
 
     virtual ~ISwapchain() = default;
 
     virtual uint32_t imageCount() const = 0;
+
+    virtual const char* presentModeName() const noexcept = 0;
 
     virtual cgl::Size2u extent() const = 0;
 

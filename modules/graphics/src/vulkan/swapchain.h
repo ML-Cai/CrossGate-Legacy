@@ -23,7 +23,7 @@ class Device;
 class Swapchain : public cgl::graphics::ISwapchain {
  public:
     explicit Swapchain(cgl::graphics::IDevice* pDevice,
-                       void* pWindowNativeHandle);
+                       void* pWindowNativeHandle, bool vsync = true);
 
     virtual ~Swapchain();
 
@@ -31,6 +31,10 @@ class Swapchain : public cgl::graphics::ISwapchain {
 
     bool prepare(void* pWindowNativeHandle);
 
+    const char* presentModeName() const noexcept override {
+        return presentMode_ == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate" :
+               presentMode_ == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" : "fifo";
+    }
     uint32_t imageCount() const override {
         return static_cast<uint32_t>(swapChainImages_.size());
     }
@@ -60,6 +64,8 @@ class Swapchain : public cgl::graphics::ISwapchain {
     VkSwapchainKHR swapChain() const { return swapChain_; }
 
  private:
+    bool vsync_ = true;
+    VkPresentModeKHR presentMode_ = VK_PRESENT_MODE_FIFO_KHR;
     cgl::graphics::vulkan::Device* pNativeDevice_;
     uint32_t curImageIndex_;
     VkSwapchainKHR swapChain_;

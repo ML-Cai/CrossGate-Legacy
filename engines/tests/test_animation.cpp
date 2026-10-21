@@ -237,3 +237,35 @@ TEST(CharacterMovementTest, MissingClipDoesNotStartAStep) {
     EXPECT_DOUBLE_EQ(actor.position().x,50);
     EXPECT_FALSE(actor.movement()->stepping);
 }
+
+namespace { struct JoinA { int value=0; }; struct JoinB { int value=0; }; struct JoinC {}; }
+TEST(engine_ecs, DenseJoinMatchesSparseIntersectionAfterSwapRemoval) {
+    cgl::ECSCore world;
+    std::vector<cgl::Entity> ids;
+    for(int i=0;i<1000;++i) {
+        auto e=world.createEntity();ids.push_back(e);world.addComponent<JoinA>(e,i);
+        if(i%7==0) world.addComponent<JoinB>(e,i);
+        if(i%5==0) world.addComponent<JoinC>(e);
+    }
+    world.destroyEntity(ids[35]);world.destroyEntity(ids[70]);
+    std::unordered_set<cgl::Entity> seen;
+    world.forEach<JoinC,JoinA,JoinB>([&](auto e,auto*,auto* a,auto* b){
+        EXPECT_EQ(a->value,b->value);EXPECT_EQ(a->value%35,0);
+        EXPECT_TRUE(seen.insert(e).second);++a->value;
+    });
+    for(int i=0;i<1000;++i) {
+        const bool match=i%35==0 && i!=35 && i!=70;
+        EXPECT_EQ(seen.count(ids[i]),match?1:0);
+        if(match) EXPECT_EQ(world.getComponent<JoinA>(ids[i])->value,i+1);
+    }
+}
+TEST(engine_ecs, DenseJoinHandlesMissingEmptyAndDuplicateStores) {
+    cgl::ECSCore world;auto e=world.createEntity();world.addComponent<JoinA>(e,3);
+    int count=0;
+    world.forEach<JoinA,JoinB>([&](auto,auto*,auto*){++count;});EXPECT_EQ(count,0);
+    world.forEach<JoinA,JoinA>([&](auto entity,auto* a,auto* b){EXPECT_EQ(entity,e);EXPECT_EQ(a,b);++count;});
+    EXPECT_EQ(count,1);
+    world.forEach<>([&](auto entity){EXPECT_EQ(entity,e);++count;});EXPECT_EQ(count,2);
+    world.addComponent<JoinB>(e,4);world.destroyEntity(e);
+    world.forEach<JoinA,JoinB>([&](auto,auto*,auto*){++count;});EXPECT_EQ(count,2);
+}

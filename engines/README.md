@@ -202,3 +202,9 @@ CPU-only tests for pixels, alignment, cache invalidation, early budget checks,
 mid-build failure/retry and repeated cleanup. The target links no renderer,
 Vulkan or window library. Existing desktop tests cover client integration and
 scene/entity/GPU cache cleanup.
+
+## Crowd performance diagnostics
+
+See [native crowd benchmark](../tools/benchmarks/README.md) for density stress tests,
+uncapped frame timing, reproduction commands and measured limitations.
+Animation requests can select an installed data version; Classic remains the default.

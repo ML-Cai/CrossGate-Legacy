@@ -147,6 +147,9 @@ public:
         return static_cast<ComponentStorage<T>*>(it->second.get())->has(e);
     }
 
+    // Component values may be updated in callbacks. Defer structural changes
+    // (entity/component creation/removal) until after traversal; iteration order
+    // is unspecified.
     template<typename... Components, typename Func>
     void forEach(Func&& func) {
         if constexpr (sizeof...(Components) == 1) {
@@ -158,12 +161,22 @@ public:
             for (size_t i = 0; i < ents.size(); ++i) {
                 func(ents[i], &storage->getByIndex(i));
             }
+        } else if constexpr (sizeof...(Components) == 0) {
+            for (Entity e : entities_) func(e);
         } else {
-            // multi component (naive join)
-            for (Entity e : entities_) {
-                if ((hasComponent<Components>(e) && ...)) {
-                    func(e, getComponent<Components>(e)...);
-                }
+            // Cache typed stores once and scan the smallest dense entity list.
+            // Resolve each component once, instead of probing the world and then
+            // repeating has/get lookups for every entity in unordered order.
+            auto stores=std::tuple{getStorage<Components>()...};
+            if (!std::apply([](auto*... s){return ((s!=nullptr)&&...);},stores)) return;
+            const std::vector<Entity>* candidates=nullptr;
+            auto consider=[&](auto* store) {
+                if(!candidates || store->entities().size()<candidates->size()) candidates=&store->entities();
+            };
+            std::apply([&](auto*... s){(consider(s),...);},stores);
+            for(Entity e:*candidates) {
+                auto values=std::apply([&](auto*... s){return std::tuple{s->get(e)...};},stores);
+                std::apply([&](auto*... c){if((c&&...)) func(e,c...);},values);
             }
         }
     }

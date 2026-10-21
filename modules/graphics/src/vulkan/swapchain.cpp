@@ -11,6 +11,7 @@
 #include "cgl/trace/logger.h"
 #include "vulkan/device.h"
 #include "vulkan/swapchain.h"
+#include "vulkan/present_mode.h"
 #include "vulkan/semaphore.h"
 #include "vulkan/common.h"
 
@@ -163,8 +164,8 @@ bool VerifySwapPresentMode(
 // cgl::graphics::vulkan::Swapchain
 // -----------------------------------------------------------------------------
 Swapchain::Swapchain(cgl::graphics::IDevice* pDevice,
-                     void* pWindowNativeHandle)
-    : swapChain_(VK_NULL_HANDLE),
+                     void* pWindowNativeHandle, bool vsync)
+    : vsync_(vsync), swapChain_(VK_NULL_HANDLE),
       curImageIndex_(0) {
     pNativeDevice_ = reinterpret_cast<cgl::graphics::vulkan::Device *>(pDevice);
 }
@@ -227,6 +228,11 @@ bool Swapchain::createSwapChain(void* pWindowNativeHandle) {
     LOGD("Surface format: " << string_VkFormat(surfaceFmt_.format)
          << "/" << string_VkColorSpaceKHR(surfaceFmt_.colorSpace));
 
+    presentMode_=SelectPresentMode(supportInfo.presentModes,vsync_);
+    if (!vsync_ && presentMode_!=VK_PRESENT_MODE_IMMEDIATE_KHR)
+        LOGW("Immediate presentation unavailable; fallback remains synchronized");
+    LOGI("Presentation mode: " << presentModeName());
+
     uint32_t queueFamilyIndices[] = {pNativeDevice_->graphicsQueueFamily(),
                                      pNativeDevice_->presentQueueFamily()};
 
@@ -241,7 +247,7 @@ bool Swapchain::createSwapChain(void* pWindowNativeHandle) {
         .imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         .preTransform     = supportInfo.capabilities.currentTransform,
         .compositeAlpha   = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode      = VK_PRESENT_MODE_FIFO_KHR,
+        .presentMode      = presentMode_,
         .clipped          = VK_TRUE,
         .oldSwapchain     = VK_NULL_HANDLE,
     };

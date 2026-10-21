@@ -36,7 +36,10 @@ void cgl::RenderDeviceInitSystem::update(cgl::ECSCore* pECS) {
     }
 
     // create render device
-    auto pDevice = cgl::graphics::IDevice::create(pWinHandle->nativeHandle, true);
+    const auto* engine = pECS->getSingleton<cgl::component::EngineState>();
+    const bool validation = !engine || !engine->settings || engine->settings->display.Validation;
+    const bool vsync = !engine || !engine->settings || engine->settings->display.VSync;
+    auto pDevice = cgl::graphics::IDevice::create(pWinHandle->nativeHandle, validation);
     if (pDevice == nullptr) {
         cgl::RaiseError(pState, "Failed to primary render device.");
         return;
@@ -45,7 +48,7 @@ void cgl::RenderDeviceInitSystem::update(cgl::ECSCore* pECS) {
     // create swapchain
     auto pSwapchain = cgl::graphics::ISwapchain::create(
                             pDevice.get(),
-                            pWinHandle->nativeHandle);
+                            pWinHandle->nativeHandle, vsync);
     if (pSwapchain == nullptr) {
         cgl::RaiseError(pState, "Failed to primary swapchain.");
         return;

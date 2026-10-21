@@ -48,6 +48,92 @@
                 "Default" : "1.0",
                 "ExportToINI" : true,
                 "Description" : "Scaling factor for the game viewport."
+            },
+            {
+                "Name": "VSync",
+                "Type": "bool",
+                "Default": "true",
+                "ExportToINI": true,
+                "Description": "Use FIFO presentation; false requests immediate, then mailbox fallback."
+            },
+            {
+                "Name": "Validation",
+                "Type": "bool",
+                "Default": "true",
+                "ExportToINI": true,
+                "Description": "Enable Vulkan validation; disable for performance measurements."
+            }
+        ],
+        "Benchmark": [
+            {
+                "Name": "ActorCount",
+                "Type": "uint32_t",
+                "Default": "0",
+                "ExportToINI": true,
+                "Description": "Optional fixed actor count, maximum 20000; zero derives count from visible cells."
+            },
+            {
+                "Name": "UniqueCharacters",
+                "Type": "uint32_t",
+                "Default": "1",
+                "ExportToINI": true,
+                "Description": "Distinct version/serial animation resources; no silent substitution."
+            },
+            {
+                "Name": "ActorsPerCell",
+                "Type": "uint32_t",
+                "Default": "0",
+                "ExportToINI": true,
+                "Description": "Zero disables density mode; otherwise fill each visible cell with 1..10 actors."
+            },
+            {
+                "Name": "WarmupFrames",
+                "Type": "uint32_t",
+                "Default": "120",
+                "ExportToINI": true,
+                "Description": "Ready frames excluded from measurement."
+            },
+            {
+                "Name": "SampleFrames",
+                "Type": "uint32_t",
+                "Default": "600",
+                "ExportToINI": true,
+                "Description": "Measured frames before automatic exit."
+            },
+            {
+                "Name": "Width",
+                "Type": "uint32_t",
+                "Default": "1280",
+                "ExportToINI": true,
+                "Description": "Benchmark viewport width."
+            },
+            {
+                "Name": "Height",
+                "Type": "uint32_t",
+                "Default": "720",
+                "ExportToINI": true,
+                "Description": "Benchmark viewport height."
+            },
+            {
+                "Name": "ReportPath",
+                "Type": "std::string",
+                "Default": "",
+                "ExportToINI": true,
+                "Description": "JSON report output path; required in benchmark mode."
+            },
+            {
+                "Name": "AnimationBudgetMiB",
+                "Type": "uint32_t",
+                "Default": "256",
+                "ExportToINI": true,
+                "Description": "Explicit benchmark animation RGBA payload budget, 16..1024 MiB; excludes GPU allocation overhead."
+            },
+            {
+                "Name": "SwitchMotions",
+                "Type": "bool",
+                "Default": "false",
+                "ExportToINI": true,
+                "Description": "Preload idle+walk, then switch the entire crowd every second without frame-loop uploads."
             }
         ]
     }

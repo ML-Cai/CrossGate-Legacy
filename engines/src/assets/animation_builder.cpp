@@ -11,7 +11,8 @@ void require(bool condition, const char* message) {
 }
 AnimationPixels AnimationBuilder::build(const AnimationRequest& request,
     component::AssetsReaderState& readers, uint64_t availableBytes) {
-    constexpr auto version = CrossGateVersion::CG_VERSION_Classic;
+    const auto version = request.version;
+    require(version < CrossGateVersion::COUNT, "Invalid animation resource version");
     constexpr uint64_t maxBytes = 256ull * 1024 * 1024;
     constexpr size_t maxFramesPerMotion = 65536, maxDescriptionFrames = 1024 * 1024;
     require(request.direction < uint32_t(DirectionTypes::COUNT) &&
@@ -21,6 +22,7 @@ AnimationPixels AnimationBuilder::build(const AnimationRequest& request,
     require(infoSource && dataSource && readers.pGfxInfoReader[version] &&
             readers.pGfxDataReader[version] && readers.pPaletteReader, "Animation readers are unavailable");
     if (!description_ || description_->serialNum.value != request.serial ||
+        description_->serialNum.version != version ||
         infoReader_ != infoSource || dataReader_ != dataSource) {
         clear();
         AnimeResourceInfo info{};

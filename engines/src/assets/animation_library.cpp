@@ -10,7 +10,7 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquire(
     if (!device || !pass || (device_ && device_ != device) || (pass_ && pass_ != pass))
         throw std::invalid_argument("Animation library requires one live device/render pass");
     if (const auto found = clips_.find(request); found != clips_.end()) return found->second;
-    constexpr uint64_t maxPreviewBytes = 256ull * 1024 * 1024;
+    const uint64_t maxPreviewBytes = textureBudget_;
     uint64_t cachedBytes = 0;
     for (const auto& [key, cached] : clips_)
         cachedBytes += uint64_t(cached->width) * cached->height * cached->frameCount * 4;

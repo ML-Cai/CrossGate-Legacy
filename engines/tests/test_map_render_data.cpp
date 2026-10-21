@@ -136,3 +136,27 @@ TEST(MapRenderTest, ClassicPlaceholdersAreFilteredOnlyForTheirLayer) {
     EXPECT_TRUE(cgl::IsClassicMapImage(266, true));
 }
 }
+
+TEST(MapRenderTest, DensePointActorsKeepStableBaselineOrder) {
+    std::vector<cgl::MapDrawItem> actors;
+    for(uint64_t i=0;i<6000;++i) actors.push_back({{double(i%30),double((i/30)%20)},nullptr,{0,0,64,100},0,-32,-90,i,0,0});
+    std::reverse(actors.begin(),actors.end());
+    EXPECT_EQ(cgl::SortMapDrawItems(actors),0);
+    EXPECT_TRUE(std::is_sorted(actors.begin(),actors.end(),cgl::MapDrawLess));
+}
+TEST(MapRenderTest, DenseActorsRespectOneLargeBuildingPrecedence) {
+    std::vector<cgl::MapDrawItem> items{{{4,5},nullptr,{0,0,300,350},0,-150,-300,999,3,4}};
+    for(uint64_t i=0;i<169;++i) items.push_back({{double(i%13),double(i/13)},nullptr,{0,0,64,120},0,-32,-110,i,0,0});
+    EXPECT_EQ(cgl::SortMapDrawItems(items),0);
+    const auto building=std::find_if(items.begin(),items.end(),[](auto& item){return item.stableId==999;});
+    ASSERT_NE(building,items.end());
+    auto bp=cgl::MapToWorld(building->cell);auto bf=cgl::GroundFootprint(*building);
+    for(auto it=items.begin();it!=items.end();++it) {
+        if(it==building) continue;
+        auto p=cgl::MapToWorld(it->cell);auto f=cgl::GroundFootprint(*it);
+        if(p.x-32>=bp.x+150 || p.x+32<=bp.x-150 || p.y-110>=bp.y+50 || p.y+10<=bp.y-300) continue;
+        const bool buildingBehind=bf.minX>=f.maxX || bf.maxY<=f.minY;
+        const bool actorBehind=f.minX>=bf.maxX || f.maxY<=bf.minY;
+        if(buildingBehind!=actorBehind) EXPECT_EQ(building<it,buildingBehind);
+    }
+}
