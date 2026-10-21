@@ -24,6 +24,7 @@ parser.add_argument("--warmup", type=int, default=120)
 parser.add_argument("--samples", type=int, default=600)
 parser.add_argument("--repeats", type=int, default=3)
 parser.add_argument("--timeout", type=float, default=120)
+parser.add_argument("--load-during-playback", action="store_true")
 parser.add_argument("--switch-motions", action="store_true")
 parser.add_argument("--validation", action="store_true")
 parser.add_argument("--vsync", action="store_true")
@@ -34,6 +35,8 @@ if (not densities or any(d < 1 or d > 10 for d in densities) or args.repeats < 1
         or not 16 <= args.budget_mib <= 1024 or not 1 <= args.samples <= 100000
         or not 0 <= args.warmup <= 100000 or not 320 <= args.width <= 3840 or not 240 <= args.height <= 2160):
     parser.error("invalid density, resource count, viewport, budget or sampling limits")
+if args.load_during_playback and args.samples < args.unique - 1:
+    parser.error("cold-load mode requires at least unique-1 sample frames")
 exe = args.exe.resolve(strict=True)
 root = args.root.resolve(strict=True)
 out = args.output_dir.resolve()
@@ -64,6 +67,7 @@ ActorsPerCell={density}
 UniqueCharacters={args.unique}
 AnimationBudgetMiB={args.budget_mib}
 SwitchMotions={str(args.switch_motions).lower()}
+LoadDuringPlayback={str(args.load_during_playback).lower()}
 Width={args.width}
 Height={args.height}
 WarmupFrames={args.warmup}
@@ -100,12 +104,14 @@ ReportPath={report_path.as_posix()}
                     wall_seconds=time.perf_counter() - started, report=str(report_path))
         gpu = re.search(r"Select physical device\[[^\]]+\]:(.+)", log_path.read_text(encoding="utf-8", errors="replace"))
         data["gpu_name"] = gpu.group(1).strip() if gpu else None
+        data["shared_pipeline_creations"] = log_path.read_text(encoding="utf-8",errors="replace").count("Shared sprite pipeline created")
         data["frames_over_16ms"] = sum(ms > 1000/60 for ms in data.get("frame_times_ms", []))
         data["uncapped_verified"] = data.get("present_mode") == "immediate"
         data["valid_sample"] = (not timed_out and child.returncode == 0 and data.get("status") == "complete"
                                 and data.get("unique_resources") == args.unique
                                 and data.get("actors") == data.get("drawn_actors_last_frame")
                                 and (args.vsync or data["uncapped_verified"])
+                                and (not args.load_during_playback or data.get("cold_load_count")==args.unique-1)
                                 and (not args.switch_motions or data.get("motion_switches",0)>0))
         runs.append(data)
         print(name, {key: data.get(key) for key in

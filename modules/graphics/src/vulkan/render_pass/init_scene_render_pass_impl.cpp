@@ -40,6 +40,7 @@ InitSceneRenderPass::~InitSceneRenderPass() {
 
 void InitSceneRenderPass::destroy() {
     frameBufferList_.clear();
+    releaseSpritePipeline();
     CGL_SAFE_DESTROY_RENDER_PASS(this->device(), renderPass_);
 }
 

@@ -222,3 +222,48 @@ scene/entity/GPU cache cleanup.
 See [native crowd benchmark](../tools/benchmarks/README.md) for density stress tests,
 uncapped frame timing, reproduction commands and measured limitations.
 Animation requests can select an installed data version; Classic remains the default.
+
+## Sprite pipeline ownership and incoming characters
+
+Vulkan sprite renderers share one immutable pipeline, pipeline layout, descriptor
+layout and nearest sampler per render-pass object. The pass retains the bundle
+across texture churn, and live renderers retain it if the pass wrapper is released.
+There is no process-global cache or raw-handle key that can survive device reuse.
+Texture images, views, descriptor sets/pools and upload staging remain per renderer.
+Creation is serialized on the render thread. Existing shutdown rules still apply:
+wait for submitted work, release renderers/passes, then destroy the device.
+A failed bundle is not published; its partial Vulkan objects are destroyed by RAII.
+The fixed shader/blend/sample/subpass configuration must gain an explicit variant
+key before this cache can serve different pipeline states. No cross-pass sharing
+is attempted.
+
+`Benchmark.LoadDuringPlayback` diagnoses the case where previously unseen NPC/player
+appearances are encountered during play; see the benchmark README. It is intentionally
+synchronous and does not establish a production no-stall guarantee.
+
+The next streaming steps should preserve these constraints:
+
+- Main-thread appearance requests return a ready handle or placeholder immediately;
+  repeated version/serial/direction/motion requests share one pending operation.
+- Workers decode CPU pixels using serialized reader access (current readers/builders
+  are not thread safe). Bound queued jobs, decoded bytes and total CPU scratch;
+  a thread pool alone does not bound memory. Vulkan calls stay on the render thread.
+- A GPU uploader limits bytes, submissions and CPU work per frame. Large clips must
+  be split into bounded copy regions/layers; a count of one clip is not a time budget.
+  Replace queue-wide idle with submission fences/completion polling. Retain staging
+  and destination handles until completion, and publish only ready resources.
+- Visibility/distance prioritizes work; a scene generation cancels obsolete requests.
+  Cancellation before submit frees CPU data; after submit it waits for GPU completion
+  before releasing staging/destination. Completed stale jobs must not publish into
+  a new scene. Offscreen eviction must respect live and in-flight references.
+- Shutdown stops acceptance, joins workers before closing readers, retires submitted
+  uploads, clears ready caches, then destroys render passes/device. Track pending
+  bytes, resident bytes, upload latency and dropped/cancelled work separately.
+- Verify random late arrivals while moving, rapid direction/motion changes, repeated
+  requests, oversized clips, queue saturation, scene changes and shutdown mid-upload.
+  Measure frame p99/max alongside appearance-ready latency; do not hide slow loading
+  by leaving placeholders forever. Actual GPU allocation/budget telemetry is still
+  needed for 4/8 GB dedicated-card targets.
+
+This PR provides the shared immutable bundle and diagnostic coverage; background
+workers and a fence-retired bounded uploader are subsequent independent changes.

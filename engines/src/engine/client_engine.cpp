@@ -220,7 +220,7 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
     if (benchmark) {
         const auto* swap = pRenderDevState_->pSwapchain.get();
         const char* status = anyStateError() ? "scene_error" :
-            samples.frame.size() == settings.benchmark.SampleFrames ? "complete" : "incomplete";
+            samples.frame.size() == settings.benchmark.SampleFrames && benchmark->unique == settings.benchmark.UniqueCharacters ? "complete" : "incomplete";
         samples.write(settings,*benchmark,swap ? swap->presentModeName() : "unavailable",status);
         LOGI("Benchmark " << status << ": FPS=" << (samples.frame.empty()?0:1000/cgl::CrowdSamples::mean(samples.frame)));
     }

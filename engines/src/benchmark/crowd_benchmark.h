@@ -10,13 +10,14 @@
 
 namespace cgl { struct AnimationClip; }
 namespace cgl::component {
-struct CrowdActor { std::shared_ptr<const AnimationClip> idle, walk; };
+struct CrowdActor { std::shared_ptr<const AnimationClip> idle, walk; size_t resource = 0; };
 struct CrowdBenchmark {
     bool ready = false;
     uint32_t actors = 0, unique = 0, visibleCells = 0, drawnActors = 0, drawCalls = 0, filtered = 0;
     uint32_t width=0, height=0, switches=0;
     uint64_t animationBytes = 0;
     double loadMs = 0, sortMs = 0;
+    std::vector<double> coldLoadMs;
     std::vector<std::pair<uint32_t,uint32_t>> resources;
 };
 }
@@ -82,7 +83,11 @@ struct CrowdSamples {
             if(i) out << ',';
             out << '[' << state.resources[i].first << ',' << state.resources[i].second << ']';
         }
-        out << "],\n\"frame_times_ms\":[";
+        out << "],\n\"cold_load_count\":" << state.coldLoadMs.size()
+            << ",\"cold_load_p99_ms\":" << percentile(state.coldLoadMs,.99)
+            << ",\"cold_load_max_ms\":" << percentile(state.coldLoadMs,1)
+            << ",\"load_during_playback\":" << (settings.benchmark.LoadDuringPlayback?"true":"false")
+            << ",\"frame_times_ms\":[";
         for(size_t i=0;i<frame.size();++i) { if(i) out << ','; out << frame[i]; }
         out << "]\n}\n";
         out.flush();
