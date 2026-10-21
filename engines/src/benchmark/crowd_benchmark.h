@@ -92,6 +92,7 @@ struct CrowdSamples {
             << ",\"cold_frame_max_ms\":" << percentile(coldFrame,1)
             << ",\"cold_ready_p99_ms\":" << percentile(state.coldReadyMs,.99)
             << ",\"cold_ready_max_ms\":" << percentile(state.coldReadyMs,1)
+            << ",\"background_decode\":" << (settings.benchmark.BackgroundDecode?"true":"false")
             << ",\"progressive_uploads\":" << (settings.benchmark.ProgressiveUploads?"true":"false")
             << ",\"load_during_playback\":" << (settings.benchmark.LoadDuringPlayback?"true":"false")
             << ",\"frame_times_ms\":[";

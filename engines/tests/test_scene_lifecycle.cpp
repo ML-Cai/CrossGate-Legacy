@@ -539,7 +539,7 @@ TEST_F(DesktopSceneTest, ColdCrowdPublishesClipsAndCanExitWithPendingResources) 
     auto* engine=world_.getSingleton<cgl::component::EngineState>();
     engine->settings->map.FilePath="map/0/2100.dat";
     auto& b=engine->settings->benchmark;
-    b.ActorsPerCell=1;b.UniqueCharacters=4;b.LoadDuringPlayback=true;b.ProgressiveUploads=true;b.WarmupFrames=0;
+    b.ActorsPerCell=1;b.UniqueCharacters=4;b.LoadDuringPlayback=true;b.ProgressiveUploads=true;b.BackgroundDecode=true;b.WarmupFrames=0;
     world_.addSingleton<cgl::component::CrowdBenchmark>();
     auto* benchmark=world_.getSingleton<cgl::component::CrowdBenchmark>();
     auto* scene=world_.getSingleton<cgl::component::SceneState>();
@@ -560,12 +560,15 @@ TEST_F(DesktopSceneTest, ColdCrowdPublishesClipsAndCanExitWithPendingResources) 
     world_.forEach<cgl::component::CrowdActor,cgl::component::Sprite>([&](auto,auto* actor,auto* sprite){
         EXPECT_EQ(actor->idle,sprite->clip); EXPECT_NE(sprite->clip,nullptr);
     });
+    b.UniqueCharacters=20; // Force uncached work beyond the warmed four-clip set.
     scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);
-    ASSERT_LT(benchmark->unique,4); // Exit again before all requests are processed.
+    ASSERT_LT(benchmark->unique,20);
+    for(int i=0;i<20 && !library_.pendingBytes();++i) manager_.update(&world_);
+    EXPECT_GT(library_.pendingBytes(),0); // CPU running/ready or GPU upload, never published yet.
     world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice->waitIdle();
     cgl::SceneManagerDestroySystem{}.update(&world_);
     size_t remaining=0;world_.forEach<cgl::component::CrowdActor>([&](auto,auto*){++remaining;});
-    EXPECT_EQ(remaining,0);
+    EXPECT_EQ(remaining,0);EXPECT_EQ(library_.pendingBytes(),0);
 }
 
 TEST_F(DesktopSceneTest, ProgressiveLibraryDeduplicatesBoundsAndCancelsPendingUpload) {
@@ -579,6 +582,8 @@ TEST_F(DesktopSceneTest, ProgressiveLibraryDeduplicatesBoundsAndCancelsPendingUp
     auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
     const cgl::AnimationRequest request{100000,0,0};
     EXPECT_EQ(progressive.acquireProgressive(request,readers,device,pass),nullptr);
+    cgl::component::AssetsReaderState otherReaders{};
+    EXPECT_THROW(progressive.acquireProgressive(request,otherReaders,device,pass),std::invalid_argument);
     ASSERT_GT(progressive.pendingBytes(),0);EXPECT_LE(progressive.pendingBytes(),32*1024*1024);
     EXPECT_THROW(progressive.setTextureBudget(1),std::invalid_argument);
     std::shared_ptr<const cgl::AnimationClip> clip;
@@ -591,6 +596,8 @@ TEST_F(DesktopSceneTest, ProgressiveLibraryDeduplicatesBoundsAndCancelsPendingUp
     EXPECT_EQ(progressive.acquireProgressive(next,readers,device,pass),nullptr);
     ASSERT_GT(progressive.pendingBytes(),0);
     progressive.cancelPending();EXPECT_EQ(progressive.pendingBytes(),0);
+    EXPECT_EQ(progressive.acquireProgressive(next,readers,device,pass),nullptr);
+    progressive.clear();EXPECT_EQ(progressive.pendingBytes(),0);
     EXPECT_EQ(progressive.acquireProgressive(next,readers,device,pass),nullptr);
     progressive.cancelPending();
 }

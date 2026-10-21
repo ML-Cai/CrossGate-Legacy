@@ -30,6 +30,7 @@ std::shared_ptr<const MapResources> MapLibrary::acquire(const std::filesystem::p
         throw std::invalid_argument("Map library requires one live device/render pass");
     const auto key = std::filesystem::absolute(path).lexically_normal();
     if (const auto found = maps_.find(key); found != maps_.end()) return found->second;
+    std::lock_guard readerLock(*readers.queryMutex);
     auto result = std::make_shared<MapResources>();
     if (IMapLayoutReader::create()->read(key, &result->layout) != Results::Success)
         throw std::runtime_error("Could not read MAP layout: " + key.string());

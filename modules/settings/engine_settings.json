@@ -129,6 +129,13 @@
                 "Description": "Explicit benchmark animation RGBA payload budget, 16..1024 MiB; excludes GPU allocation overhead."
             },
             {
+                "Name": "BackgroundDecode",
+                "Type": "bool",
+                "Default": "false",
+                "ExportToINI": true,
+                "Description": "Cold progressive diagnostic: one background CPU decode slot sharing the 32 MiB reservation; all Vulkan calls stay on the render thread."
+            },
+            {
                 "Name": "ProgressiveUploads",
                 "Type": "bool",
                 "Default": "false",

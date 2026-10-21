@@ -32,7 +32,7 @@ gtest_discover_tests(test_map_hover WORKING_DIRECTORY ${CGL_BIN_PATH})
 # CPU-only assembly: deliberately links no renderer, Vulkan, or window library.
 add_executable(test_animation_builder test_animation_builder.cpp ../src/assets/animation_builder.cpp)
 target_include_directories(test_animation_builder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
-target_link_libraries(test_animation_builder PRIVATE GTest::gtest_main cgl::assets cgl::settings cgl::common)
+target_link_libraries(test_animation_builder PRIVATE GTest::gtest_main Threads::Threads cgl::assets cgl::settings cgl::common)
 set_target_properties(test_animation_builder PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 gtest_discover_tests(test_animation_builder WORKING_DIRECTORY ${CGL_BIN_PATH})
 
@@ -41,3 +41,10 @@ target_include_directories(test_crowd_benchmark PRIVATE ${CMAKE_CURRENT_SOURCE_D
 target_link_libraries(test_crowd_benchmark PRIVATE GTest::gtest_main cgl::settings cgl::common)
 set_target_properties(test_crowd_benchmark PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 gtest_discover_tests(test_crowd_benchmark WORKING_DIRECTORY ${CGL_BIN_PATH})
+
+# Background decode scheduling/lifetime tests have no window or Vulkan dependency.
+add_executable(test_animation_decode_worker test_animation_decode_worker.cpp ../src/assets/animation_decode_worker.cpp)
+target_include_directories(test_animation_decode_worker PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_animation_decode_worker PRIVATE GTest::gtest_main Threads::Threads cgl::common)
+set_target_properties(test_animation_decode_worker PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
+gtest_discover_tests(test_animation_decode_worker WORKING_DIRECTORY ${CGL_BIN_PATH} PROPERTIES TIMEOUT 15)

@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 set(PROJECT_NAME "cgl_engine")
 set(PROJECT_ALIAS "cgl::engine")
 project(${PROJECT_NAME})
+find_package(Threads REQUIRED)
 
 #-------------------------------------------------------------------------------
 # [Dependency check] [google-test]
@@ -39,7 +40,7 @@ add_library(${PROJECT_NAME} ${LIBRARY_SRC})
 add_library(${PROJECT_ALIAS} ALIAS ${PROJECT_NAME})
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(${PROJECT_NAME} PRIVATE glfw cgl::assets cgl::graphics cgl::settings cgl::trace cgl::common Vulkan::Vulkan)
+target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads glfw cgl::assets cgl::graphics cgl::settings cgl::trace cgl::common Vulkan::Vulkan)
 
 #-------------------------------------------------------------------------------
 # [build Tests]

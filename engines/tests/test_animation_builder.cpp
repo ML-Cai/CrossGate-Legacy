@@ -181,3 +181,11 @@ TEST_F(AnimationBuilderTest, VersionIsPartOfDescriptionAndRequestIdentity) {
     alternate.version=cgl::CrossGateVersion::COUNT;
     EXPECT_THROW(builder.build(alternate,readers),std::runtime_error);
 }
+
+TEST_F(AnimationBuilderTest, PreCancelledWorkNeverTouchesUnavailableReaders) {
+    cgl::component::AssetsReaderState readers{};
+    cgl::AnimationBuilder builder;
+    std::atomic_bool cancelled{true};
+    try {builder.build({100000,0,0},readers,32*1024*1024,&cancelled);FAIL();}
+    catch(const std::runtime_error& error) {EXPECT_STREQ(error.what(),"Animation decode cancelled");}
+}

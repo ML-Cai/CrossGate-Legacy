@@ -200,43 +200,46 @@ private:
             throw std::runtime_error("Crowd count exceeds visible cell capacity or unique count exceeds actors");
         std::vector<cgl::AnimationRequest> requests;
         auto& clips=crowdClips_; auto& walks=crowdWalks_;
-        for(unsigned v=0;v<unsigned(cgl::CrossGateVersion::COUNT) && requests.size()<b.UniqueCharacters;++v) {
-            const auto version=cgl::CrossGateVersion(v);
-            auto* infoReader=readers.pAnimeInfoReader[version].get();
-            auto* dataReader=readers.pAnimeDataReader[version].get();
-            if(!infoReader || !dataReader) continue;
-            std::vector<cgl::AnimeResourceSerialNum> serials;
-            if(infoReader->queryAvailableSerialNums(&serials)!=cgl::Results::Success) continue;
-            std::sort(serials.begin(),serials.end(),[](const auto& a,const auto& b){return a.value<b.value;});
-            for(const auto& serial:serials) {
-                cgl::AnimeResourceInfo info{}; cgl::AnimeResourceData data{};
-                if(infoReader->query(serial,&info)!=cgl::Results::Success ||
-                   dataReader->query(info,&data)!=cgl::Results::Success) continue;
-                if (!cgl::IsCrowdCharacterDescription(data)) { ++state.filtered; continue; }
-                const auto key=cgl::AnimeDataMapKey{cgl::DirectionTypes(0),cgl::MotionTypes(0)};
-                auto motion=data.motionMap.find(key);
-                if(motion==data.motionMap.end() || motion->second.motionGraphicsSerialNums.empty() || !motion->second.duration) continue;
-                bool validMetadata = true;
-                for (unsigned m=0;m<2;++m) {
-                    const auto& frameIds=data.motionMap.at({cgl::DirectionTypes(0),cgl::MotionTypes(m)}).motionGraphicsSerialNums;
-                    for (auto graphic:frameIds) {
-                        cgl::GraphicsResourceInfo frame{};
-                        if (!readers.pGfxInfoReader[version] || readers.pGfxInfoReader[version]->query(
-                            {cgl::GraphicsResourceSerialNumTypes::GraphicsSerialNum,version,graphic},&frame)!=cgl::Results::Success ||
-                            frame.width<=0 || frame.height<=0 || frame.width>4096 || frame.height>4096) {
-                            validMetadata=false; break;
+        {
+            std::lock_guard readerLock(*readers.queryMutex);
+            for(unsigned v=0;v<unsigned(cgl::CrossGateVersion::COUNT) && requests.size()<b.UniqueCharacters;++v) {
+                const auto version=cgl::CrossGateVersion(v);
+                auto* infoReader=readers.pAnimeInfoReader[version].get();
+                auto* dataReader=readers.pAnimeDataReader[version].get();
+                if(!infoReader || !dataReader) continue;
+                std::vector<cgl::AnimeResourceSerialNum> serials;
+                if(infoReader->queryAvailableSerialNums(&serials)!=cgl::Results::Success) continue;
+                std::sort(serials.begin(),serials.end(),[](const auto& a,const auto& b){return a.value<b.value;});
+                for(const auto& serial:serials) {
+                    cgl::AnimeResourceInfo info{}; cgl::AnimeResourceData data{};
+                    if(infoReader->query(serial,&info)!=cgl::Results::Success ||
+                       dataReader->query(info,&data)!=cgl::Results::Success) continue;
+                    if (!cgl::IsCrowdCharacterDescription(data)) { ++state.filtered; continue; }
+                    const auto key=cgl::AnimeDataMapKey{cgl::DirectionTypes(0),cgl::MotionTypes(0)};
+                    auto motion=data.motionMap.find(key);
+                    if(motion==data.motionMap.end() || motion->second.motionGraphicsSerialNums.empty() || !motion->second.duration) continue;
+                    bool validMetadata = true;
+                    for (unsigned m=0;m<2;++m) {
+                        const auto& frameIds=data.motionMap.at({cgl::DirectionTypes(0),cgl::MotionTypes(m)}).motionGraphicsSerialNums;
+                        for (auto graphic:frameIds) {
+                            cgl::GraphicsResourceInfo frame{};
+                            if (!readers.pGfxInfoReader[version] || readers.pGfxInfoReader[version]->query(
+                                {cgl::GraphicsResourceSerialNumTypes::GraphicsSerialNum,version,graphic},&frame)!=cgl::Results::Success ||
+                                frame.width<=0 || frame.height<=0 || frame.width>4096 || frame.height>4096) {
+                                validMetadata=false; break;
+                            }
                         }
+                        if(!validMetadata) break;
                     }
-                    if(!validMetadata) break;
+                    if(!validMetadata) { ++state.filtered; continue; }
+                    requests.push_back({serial.value,0,0,version});
+                    if(requests.size()==b.UniqueCharacters) break;
                 }
-                if(!validMetadata) { ++state.filtered; continue; }
-                requests.push_back({serial.value,0,0,version});
-                if(requests.size()==b.UniqueCharacters) break;
             }
         }
         if(requests.size()!=b.UniqueCharacters) throw std::runtime_error("Insufficient distinct animation resources in installed corpus");
         // Metadata is selected at entry; pixel decoding/upload for cold resources
-        // deliberately runs inside the measured loop. This exposes synchronous stalls.
+        // starts inside the measured loop, either synchronously or via the CPU worker.
         if(b.LoadDuringPlayback) {
             std::mt19937 random(0xC61);
             std::shuffle(requests.begin(),requests.end(),random);
@@ -284,8 +287,8 @@ private:
         if(coldStart_==std::chrono::steady_clock::time_point{}) coldStart_=start;
         if(b.ProgressiveUploads) {
             const auto& request=coldRequests_[resource];
-            auto idle=animations_.acquireProgressive(request,readers,device,pass);
-            auto walk=idle && b.SwitchMotions ? animations_.acquireProgressive({request.serial,request.direction,1,request.version},readers,device,pass) : nullptr;
+            auto idle=animations_.acquireProgressive(request,readers,device,pass,b.BackgroundDecode);
+            auto walk=idle && b.SwitchMotions ? animations_.acquireProgressive({request.serial,request.direction,1,request.version},readers,device,pass,b.BackgroundDecode) : nullptr;
             if(!idle || (b.SwitchMotions && !walk)) {
                 coldWorkMs_+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
                 return;

@@ -312,3 +312,50 @@ the number of resident directions/motions, collect actual allocation counts/byte
 check device allocation limits, and introduce pooled/suballocated storage where
 measurements justify it. Resident payload limits alone do not prevent allocation
 count exhaustion or driver overhead. This is separate from the CPU decode queue.
+
+## Background animation decode
+
+`AnimationLibrary::acquireProgressive` now defaults to background CPU decoding.
+A single persistent CPU-only worker is started lazily and reused, rather than
+creating a thread per appearance. The queued/running/completed result and the GPU
+pending slot share ONE end-to-end slot: decoding does not run ahead of an upload.
+Reservation is min(remaining resident payload budget, 32 MiB) before submission;
+it remains reserved until the result is taken, even if actual pixels are smaller.
+Retained vector capacity is checked as well as the builder's planned pixel size,
+so a small resized result cannot keep a larger unaccounted buffer.
+`pendingBytes()` reports this reservation during decoding, then destination payload
+during upload. This is not measured CPU RSS/VRAM. Failed and cancelled jobs cannot
+leave an unbounded collection of results. GPU staging remains <=4 MiB per update.
+
+The worker only assembles CPU pixels. Vulkan allocation, descriptors, copy submission,
+fence polling and publication stay on the render thread. The first request returns
+nullptr promptly; later calls take a ready result without waiting and move its pixel
+buffer into the uploader. A CPU task exception is transferred to the owner; no partial
+clip is published. The same requested key shares the existing task/cache entry;
+other keys retry while this conservative slot is occupied. Synchronous uncached
+acquire is rejected while CPU/GPU work is pending. This is backpressure, not a
+production visibility-priority queue or per-NPC task scheduler.
+
+Engine builders, map loading and crowd metadata enumeration serialize reader queries
+with `AssetsReaderState::queryMutex`. The shared mutex preserves the component's
+move support; the state must NOT move or replace/close readers while a worker uses
+it. Every additional engine reader query must use that lock. Module readers and
+Python Session instances are not made implicitly thread safe by this engine lock.
+Never hold the reader lock while cancelling/joining a worker that may need it.
+Avoid synchronous main-thread queries while decoding; even safe lock contention can
+stall a frame. Current scene transitions cancel/join access before loading a new map.
+
+Cancellation checks precede metadata/frame work and each pixel row. It cannot abort
+a reader call already executing. Scene exit waits for CPU access to finish, discards
+its result, then retires any submitted GPU chunk. This strict cancellation barrier
+prevents an old completion from publishing into a new scene without a generation
+counter. Clear/destruction stops and joins the worker BEFORE clearing builder/cache
+state or allowing readers/device to be destroyed; no detached thread holds readers.
+A cleared library can start a new worker when reused. Cancellation/scene transitions
+can wait; normal frame polling does not wait for task completion.
+
+Follow-ups remain important: a bounded priority queue for simultaneous appearances
+(the single slot has head-of-line blocking), ready/failed request states for tools,
+visibility cancellation and measured time-to-appearance targets, GPU suballocation /
+descriptor pooling, live allocation telemetry and fence-safe resident eviction.
+Do not add a large thread pool or decoded-result queue to hide this backpressure.
