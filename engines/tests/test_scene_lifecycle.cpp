@@ -12,6 +12,7 @@
 #include "assets/assets_components.h"
 #include "assets/animation_library.h"
 #include "animation/animation_components.h"
+#include "map/remote_characters.h"
 #include "render/frame_render_systems.h"
 #include "render/render_systems.h"
 #include "scene/scene_systems.h"
@@ -600,4 +601,61 @@ TEST_F(DesktopSceneTest, ProgressiveLibraryDeduplicatesBoundsAndCancelsPendingUp
     progressive.clear();EXPECT_EQ(progressive.pendingBytes(),0);
     EXPECT_EQ(progressive.acquireProgressive(next,readers,device,pass),nullptr);
     progressive.cancelPending();
+}
+
+TEST_F(DesktopSceneTest, ServerSnapshotsKeepMovementAndReleaseRemoteEntities) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.map.FilePath="map/0/100.dat";settings.animation.SerialNum=100000;
+    settings.serverdemo.Enabled=true;
+    library_.setTextureBudget(512ull*1024*1024);
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
+    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::MapScene) && std::chrono::steady_clock::now()<deadline) {
+        manager_.update(&world_);
+        ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(scene->scene,nullptr);ASSERT_EQ(scene->scene->sceneType(),cgl::SceneTypes::MapScene);
+    auto count=[&]{size_t n=0;world_.forEach<cgl::component::RemoteCharacter>([&](auto,auto*){++n;});return n;};
+    EXPECT_EQ(count(),288);
+    auto* input=world_.getSingleton<cgl::component::KeyboardInputState>();
+    auto* time=world_.getSingleton<cgl::component::FrameTime>();
+    const auto start=world_.getSingleton<cgl::component::MapCamera>()->center;
+    input->moveY=-1;time->deltaSeconds=.05;
+    for(int i=0;i<60;++i) {manager_.update(&world_);draw_.update(&world_);}
+    input->moveY=0;
+    const auto moved=world_.getSingleton<cgl::component::MapCamera>()->center;
+    EXPECT_GT(std::hypot(moved.x-start.x,moved.y-start.y),1);
+    world_.forEach<cgl::component::CharacterMovement,cgl::component::MapPosition>([&](auto,auto*,auto* p){
+        EXPECT_DOUBLE_EQ(p->cell.x,moved.x);EXPECT_DOUBLE_EQ(p->cell.y,moved.y);
+    });
+    for(int i=0;i<3;++i) {input->newBatchRequested=true;manager_.update(&world_);EXPECT_EQ(count(),288);draw_.update(&world_);}
+    for(int i=0;i<2;++i) {
+        input->restartSceneRequested=true;manager_.update(&world_);manager_.update(&world_);
+        ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;EXPECT_EQ(count(),288);
+    }
+    world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice->waitIdle();
+    std::vector<std::weak_ptr<const cgl::AnimationClip>> clips;
+    world_.forEach<cgl::component::Sprite>([&](auto,auto* sprite){clips.push_back(sprite->clip);});
+    cgl::SceneManagerDestroySystem{}.update(&world_);
+    EXPECT_EQ(count(),0);EXPECT_EQ(library_.pendingBytes(),0);
+    library_.clear();
+    for(const auto& clip:clips) EXPECT_TRUE(clip.expired());
+}
+
+TEST(RemoteCharacters, RejectsMalformedSnapshotBeforeMutatingWorld) {
+    cgl::ECSCore world;
+    cgl::RemoteCharacters remote({cgl::AnimationRequest{100000,0,0}});
+    remote.apply(world,{1,{{1,{2,3},0},{2,{3,4},0}}},nullptr);
+    auto count=[&]{size_t n=0;world.forEach<cgl::component::RemoteCharacter>([&](auto,auto*){++n;});return n;};
+    EXPECT_EQ(count(),2);
+    EXPECT_THROW(remote.apply(world,{2,{{3,{2,3},0},{3,{3,4},0}}},nullptr),std::invalid_argument);
+    EXPECT_THROW(remote.apply(world,{2,{{3,{2,3},1}}},nullptr),std::invalid_argument);
+    EXPECT_EQ(count(),2);
+    remote.apply(world,{1,{}},nullptr);EXPECT_EQ(count(),2); // Stale packets ignored.
+    remote.apply(world,{2,{{2,{5,6},0}}},nullptr);EXPECT_EQ(count(),1);
+    world.forEach<cgl::component::RemoteCharacter,cgl::component::MapPosition>([&](auto,auto* actor,auto* p){
+        EXPECT_EQ(actor->serverId,2);EXPECT_DOUBLE_EQ(p->cell.x,5);EXPECT_DOUBLE_EQ(p->cell.y,6);
+    });
+    remote.clear(world);EXPECT_EQ(count(),0);
 }

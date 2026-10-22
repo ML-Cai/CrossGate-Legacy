@@ -29,6 +29,10 @@ public:
     // Reader storage must outlive clear()/destruction. All GPU work stays here.
     std::shared_ptr<const AnimationClip> acquireProgressive(const AnimationRequest& request,
         component::AssetsReaderState& readers, graphics::IDevice* device, graphics::IRenderPass* pass, bool backgroundDecode=true);
+    std::shared_ptr<const AnimationClip> findReady(const AnimationRequest& request) const {
+        const auto it=clips_.find(request);
+        return it==clips_.end() ? nullptr : it->second;
+    }
     uint64_t pendingBytes() const noexcept {
         if(!pending_) return decoder_.reservedBytes();
         const auto& c=pending_->second;return uint64_t(c->width)*c->height*c->frameCount*4;

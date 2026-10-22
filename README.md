@@ -120,3 +120,47 @@ cmake --build . --config RelWithDebInfo
   This is not chunk streaming, and map uploads remain cached until shutdown.
 - GraphicsDataViewer : see [tools/GraphicsDataViewer](tools/GraphicsDataViewer)
 - AnimeViewer : see [tools/AnimeViewer](tools/GraphicsDataViewer)
+
+
+### Map 100: playable local server snapshot demo
+
+Build `cgl-client`, then run from its binary directory:
+
+```powershell
+.\cgl-client.exe --settings .\server-demo100.ini
+```
+
+Set `General.EngineRootPath` in the INI to your installed game assets. The demo
+loads `map/0/100.dat`, uses a 1280x720 window, and disables VSync and validation
+for interactive performance testing. Enable `Display.Validation` for diagnostics.
+
+- WASD moves the player with the camera following its ground anchor; diagonals
+  are supported. No collision is applied.
+- N replaces the simulated server roster with a fresh random batch; R restarts
+  the scene. Close the window to exit.
+- Each complete snapshot contains 128 remote actors whose ground anchors are
+  in the viewport, plus 160 in the surrounding interest band. The interest
+  rectangle has 1.5 times the viewport width and height (2.25 times its area).
+  The local player is additional. Small maps clamp counts to at most 10 per cell.
+- Snapshots refresh every two seconds, or earlier after crossing half the
+  prefetch margin. Existing IDs and world positions inside the interest region
+  survive updates; moving the camera can change the visible count between packets.
+- The title shows wall-clock FPS and ready/total visible and prefetch actors.
+  Initial placeholders share the player's clip, then change to the requested
+  appearance when its fenced upload finishes. Map occlusion still applies.
+
+This is a local server simulator, with no network dependency. Its CPU-only
+`LocalCharacterFeed` produces complete snapshots; `RemoteCharacters` applies IDs,
+positions, appearance changes and removals to ECS. Appearance loading prioritizes
+visible actors before the outer band, with one background decode/upload in flight
+and at most one upload poll per update. Removing an actor does not cancel an
+in-flight upload in the frame loop. Scene exit cancels pending work, and the
+engine retains ready GPU clips until safe teardown.
+
+The demo chooses distinct appearances per snapshot when the installed catalog
+contains enough choices; otherwise skins can repeat. It uses a metadata-only catalog
+of up to 512 characters. Its cache is bounded by this finite catalog and a 512 MiB
+animation texture payload budget, separate from map textures and driver overhead.
+It is not a production eviction policy for infinitely many server-provided skins.
+Invalid appearance loads are reported and remain placeholders. The geometry test
+counts ground anchors, not unobscured pixels or sprites extending across an edge.

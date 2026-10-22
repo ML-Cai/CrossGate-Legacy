@@ -156,6 +156,7 @@
                 "ExportToINI": true,
                 "Description": "Preload idle+walk, then switch the entire crowd every second without frame-loop uploads."
             }
-        ]
+        ],
+        "ServerDemo": [{"Name":"Enabled","Type":"bool","Default":"false","ExportToINI":true,"Description":"Local server snapshot simulator: 128 visible actors and a 1.5x interest region."}]
     }
 }

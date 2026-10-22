@@ -109,10 +109,17 @@ void cgl::WindowInputSystem::updateEvents(cgl::ECSCore* pECS) {
 
     glfwPollEvents();
 
+    if(!pWindowHandle_->pendingTitle.empty()) {
+        glfwSetWindowTitle(pWindow,pWindowHandle_->pendingTitle.c_str());
+        pWindowHandle_->pendingTitle.clear();
+    }
     auto* keyboard = pECS->getSingleton<cgl::component::KeyboardInputState>();
     const bool down = glfwGetWindowAttrib(pWindow, GLFW_FOCUSED) && glfwGetKey(pWindow, GLFW_KEY_R) == GLFW_PRESS;
     if (down && !keyboard->restartKeyDown) keyboard->restartSceneRequested = true;
     keyboard->restartKeyDown = down;
+    const bool batchDown=glfwGetWindowAttrib(pWindow, GLFW_FOCUSED) && glfwGetKey(pWindow, GLFW_KEY_N)==GLFW_PRESS;
+    if(batchDown && !keyboard->newBatchKeyDown) keyboard->newBatchRequested=true;
+    keyboard->newBatchKeyDown=batchDown;
     keyboard->panX = keyboard->panY = 0;
     keyboard->moveX = keyboard->moveY = 0;
     if (glfwGetWindowAttrib(pWindow, GLFW_FOCUSED)) {

@@ -1,7 +1,7 @@
 include(GoogleTest)
 add_executable(test_scene_lifecycle test_scene_lifecycle.cpp)
 target_include_directories(test_scene_lifecycle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
-target_link_libraries(test_scene_lifecycle PRIVATE GTest::gtest_main cgl::engine cgl::graphics cgl::assets cgl::settings cgl::common Vulkan::Vulkan glfw)
+target_link_libraries(test_scene_lifecycle PRIVATE GTest::gtest_main cgl::engine cgl::graphics cgl::assets cgl::settings cgl::common cgl::trace Vulkan::Vulkan glfw)
 set_target_properties(test_scene_lifecycle PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 gtest_discover_tests(test_scene_lifecycle WORKING_DIRECTORY ${CGL_BIN_PATH})
 
@@ -48,3 +48,9 @@ target_include_directories(test_animation_decode_worker PRIVATE ${CMAKE_CURRENT_
 target_link_libraries(test_animation_decode_worker PRIVATE GTest::gtest_main Threads::Threads cgl::common)
 set_target_properties(test_animation_decode_worker PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 gtest_discover_tests(test_animation_decode_worker WORKING_DIRECTORY ${CGL_BIN_PATH} PROPERTIES TIMEOUT 15)
+
+add_executable(test_local_character_feed test_local_character_feed.cpp)
+target_include_directories(test_local_character_feed PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_local_character_feed PRIVATE GTest::gtest_main cgl::common)
+set_target_properties(test_local_character_feed PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
+gtest_discover_tests(test_local_character_feed WORKING_DIRECTORY ${CGL_BIN_PATH})

@@ -112,6 +112,12 @@ void ClientEngine::initSingletonStage(cgl::ECSCore* pEcs) {
 
     const auto& bench = pEngineState_->settings->benchmark;
     const bool pressure = bench.ActorCount || bench.ActorsPerCell;
+    const bool serverDemo=pEngineState_->settings->serverdemo.Enabled;
+    if(serverDemo) {
+        if(pressure || pEngineState_->settings->map.FilePath.empty())
+            cgl::RaiseError(pEngineState_, "ServerDemo requires a map and cannot run with Benchmark");
+        animationLibrary_.setTextureBudget(512ull*1024*1024);
+    }
     if (pressure) {
         if ((bench.BackgroundDecode && (!bench.LoadDuringPlayback || !bench.ProgressiveUploads)) || bench.AnimationBudgetMiB<16 || bench.AnimationBudgetMiB>1024 || pEngineState_->settings->map.FilePath.empty() || !bench.SampleFrames || bench.SampleFrames > 100000 || bench.WarmupFrames > 100000 ||
             bench.ReportPath.empty() || bench.Width < 320 || bench.Width > 3840 || bench.Height < 240 || bench.Height > 2160)
@@ -122,7 +128,7 @@ void ClientEngine::initSingletonStage(cgl::ECSCore* pEcs) {
         }
     }
     ecs().addSingleton<cgl::component::WindowCreateInfo>(
-        pressure ? bench.Width : 800, pressure ? bench.Height : 600, "CGL");
+        pressure ? bench.Width : (serverDemo ? 1280 : 800), pressure ? bench.Height : (serverDemo ? 720 : 600), "CGL");
 }
 
 // -----------------------------------------------------------------------------

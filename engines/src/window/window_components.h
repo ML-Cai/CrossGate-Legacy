@@ -25,6 +25,7 @@ struct WindowCreateInfo {
 struct KeyboardInputState {
     bool restartSceneRequested = false;
     bool restartKeyDown = false;
+    bool newBatchRequested = false, newBatchKeyDown = false;
     float panX = 0, panY = 0;
     float moveX = 0, moveY = 0;
 };
@@ -35,6 +36,7 @@ struct WindowHandle {
     bool windowShouldClose;
     uint32_t width;
     uint32_t height;
+    std::string pendingTitle; // Consumed by the platform input update.
 };
 
 // -----------------------------------------------------------------------------
