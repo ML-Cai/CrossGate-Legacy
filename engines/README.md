@@ -364,8 +364,7 @@ Do not add a large thread pool or decoded-result queue to hide this backpressure
 
 MapScene creates and clears the optional CrowdScenario (benchmark) or
 ServerDemoScenario (local server simulation). They are concrete scene-owned
-helpers, not a replacement scene/state framework. Ordinary player movement,
-camera follow, hover and world rendering remain in MapScene for the next refactor.
+helpers, not a replacement scene/state framework. MapScene adapts player input and owns scenario/world-renderer lifetimes.
 The benchmark's draw counters still observe the same shared rendering path.
 
 CrowdScenario owns benchmark entity IDs, motion switching and cold-load sampling.
@@ -383,3 +382,30 @@ Ready clips remain engine-cache-owned until GPU-safe shutdown. Helpers do not
 clear engine caches or destroy the device, and must not outlive their ECS world.
 Tests exercise demo-to-benchmark-to-demo transitions with pending appearance work,
 plus repeated restart, cold-load publication and final weak-reference expiration.
+
+## World update and recording boundaries
+
+UpdateMapWorld advances grid movement, camera follow and animation using explicit
+movement/time/map dimensions, with no window or device access. MapScene continues
+to orchestrate benchmark/demo modes and restart requests; the benchmark preserves
+its existing animation/update cadence.
+
+MapWorldRenderer records ground first, then the globally footprint-sorted object
+and actor list, then the hover outline. It consumes borrowed map/clip renderers,
+camera and a viewport-local hover value; it does not move actors, advance playback,
+write world hover, poll uploads or acquire resources. Scratch draw pointers are
+cleared on both success and exceptions and own no GPU/clip lifetime. Engine caches
+still retain submitted resources until safe teardown. This is a same-thread
+recording boundary, not an immutable snapshot for concurrent rendering.
+
+ResolveMapHover is shared by update and presentation. Update writes MapHover for
+the full render surface; draw can compute a local presentation value for the
+actual viewport without overwriting that world selection. Pointer snapshots retain
+logical-window versus framebuffer dimensions for high-DPI conversion. Benchmark
+hover is cleared during update. Render counters/timing are returned separately
+and copied into the existing benchmark diagnostics by the scene adapter.
+
+CPU-only recording doubles test ground/object/actor/overlay ordering, playback
+and hover immutability, absence of upload polling, exception recovery and clip
+reference release. The existing real Vulkan scene suite also verifies the draw
+boundary while preserving map depth, movement, restart and mode transitions.

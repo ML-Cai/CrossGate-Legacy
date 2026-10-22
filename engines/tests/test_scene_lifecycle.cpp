@@ -278,6 +278,10 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
     EXPECT_EQ(world_.getSingleton<cgl::component::MapHover>()->cell, (cgl::MapCellCoord{50,49}));
     for (int i = 0; i < 3; ++i) draw_.update(&world_);
     cursor->inside = false;
+    // Drawing may use the new pointer snapshot for presentation, but the world
+    // selection remains the result of its last update until update runs again.
+    draw_.update(&world_);
+    EXPECT_EQ(world_.getSingleton<cgl::component::MapHover>()->cell, (cgl::MapCellCoord{50,49}));
     manager_.update(&world_);
     EXPECT_FALSE(world_.getSingleton<cgl::component::MapHover>()->cell);
     cursor->inside = true;

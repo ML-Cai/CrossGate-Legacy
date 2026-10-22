@@ -63,3 +63,11 @@ target_link_libraries(test_local_character_feed PRIVATE GTest::gtest_main cgl::c
 set_target_properties(test_local_character_feed PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 gtest_discover_tests(test_local_character_feed WORKING_DIRECTORY ${CGL_BIN_PATH}
     PROPERTIES LABELS "unit" TIMEOUT 60)
+
+# Recording test doubles exercise rendering boundaries without a device/window.
+add_executable(test_map_world test_map_world.cpp)
+target_include_directories(test_map_world PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_map_world PRIVATE GTest::gtest_main cgl::engine cgl::graphics cgl::assets cgl::settings cgl::common)
+set_target_properties(test_map_world PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
+gtest_discover_tests(test_map_world WORKING_DIRECTORY ${CGL_BIN_PATH}
+    PROPERTIES LABELS "unit\;memory" TIMEOUT 60)

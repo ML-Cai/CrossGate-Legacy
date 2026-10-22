@@ -5,7 +5,8 @@
 #include "animation/animation_system.h"
 #include "map/map_render_data.h"
 #include "map/map_hover.h"
-#include "map/character_movement.h"
+#include "map/map_world_update.h"
+#include "map/map_world_renderer.h"
 #include "map/server_demo_scenario.h"
 #include "benchmark/crowd_scenario.h"
 #include "engine/ecs.h"
@@ -89,12 +90,13 @@ public:
         world->removeSingleton<cgl::component::MapHover>();
         outline_.reset();
         map_.reset(); // Engine caches retain resources for pending submissions.
-        drawItems_.clear();
+        renderer_.clear();
         LOGI("Map scene exited");
     }
     void update(cgl::ECSCore* world) noexcept override {
         const auto seconds = world->getSingleton<cgl::component::FrameTime>()->deltaSeconds;
         if (auto* benchmark=world->getSingleton<cgl::component::CrowdBenchmark>()) {
+            world->getSingleton<cgl::component::MapHover>()->cell.reset();
             try { crowdScenario_->update(world,*benchmark); }
             catch (const std::exception& error) {
                 cgl::RaiseError(world->getSingleton<cgl::component::SceneState>(), "Cold character load failed: ",error.what());
@@ -102,13 +104,8 @@ public:
             return;
         }
         auto* input = world->getSingleton<cgl::component::KeyboardInputState>();
-        cgl::UpdateCharacterMovement(*world, input->moveX, input->moveY, seconds,
-            map_->layout.width, map_->layout.height);
-        // Keep the character's ground anchor at the viewport center. Translating
-        // the camera makes terrain and objects scroll opposite to movement.
-        world->getSingleton<cgl::component::MapCamera>()->center =
-            world->getComponent<cgl::component::MapPosition>(character_)->cell;
-        cgl::UpdateAnimations(*world, seconds);
+        cgl::UpdateMapWorld(*world,character_,map_->layout.width,map_->layout.height,
+            input->moveX,input->moveY,seconds);
         const auto& window = *world->getSingleton<cgl::component::WindowHandle>();
         const cgl::Viewport viewport(0,0,window.width,window.height);
         if(serverDemo_) {
@@ -126,79 +123,30 @@ public:
     void draw(cgl::ECSCore* world, cgl::graphics::ICommandBuffer* command, const cgl::Viewport& viewport) noexcept override {
         try {
             auto* benchmark=world->getSingleton<cgl::component::CrowdBenchmark>();
-            if (benchmark) {
-                benchmark->drawnActors=benchmark->drawCalls=0;
-                world->getSingleton<cgl::component::MapHover>()->cell.reset();
-            } else updateHover(world, viewport);
-            const auto& camera = *world->getSingleton<cgl::component::MapCamera>();
-            auto submit = [&](const cgl::MapDrawItem& item) {
-                if (record(item,camera,command,viewport) && benchmark) {
-                    ++benchmark->drawCalls;
-                    if (item.stableId & (1ull<<32)) ++benchmark->drawnActors;
-                }
-            };
-            drawItems_.clear();
-            const auto bounds = cgl::VisibleMapBounds(camera, viewport, map_->layout.width, map_->layout.height, map_->reachX, map_->reachY);
-            for (int y = bounds.top; y <= bounds.bottom; ++y) for (int x = bounds.left; x <= bounds.right; ++x) {
-                const auto& cell = *map_->layout.cell(x, y);
-                if (const auto found = map_->images.find(cell.groundId); found != map_->images.end()) {
-                    const auto& image = found->second;
-                    submit({{double(x), double(y)}, map_->renderers.at(image.atlasIndex).get(), image.source, 0,
-                        image.offsetX, image.offsetY, 0});
-                }
-                if (cgl::IsClassicMapImage(cell.objectId, true)) {
-                    if (const auto found = map_->images.find(cell.objectId); found != map_->images.end()) {
-                        const auto& image = found->second;
-                        drawItems_.push_back({{double(x), double(y)}, map_->renderers.at(image.atlasIndex).get(), image.source, 0,
-                            image.offsetX, image.offsetY, uint64_t(y) * map_->layout.width + x,
-                            image.tileX, image.tileY});
-                    }
-                }
-            }
-            world->forEach<cgl::component::MapPosition, cgl::component::Sprite, cgl::component::AnimationPlayer>(
-                [&](cgl::Entity entity, auto* position, auto* sprite, auto* player) {
-                    const auto& clip = sprite->clip;
-                    if (clip) drawItems_.push_back({position->cell, clip->renderer.get(), {0, 0, clip->width, clip->height},
-                        player->frame, clip->offsetX, clip->offsetY, (1ull << 32) | entity, 0, 0});
-                });
-            const auto sortStart=std::chrono::steady_clock::now();
-            cgl::SortMapDrawItems(drawItems_);
-            if (benchmark) benchmark->sortMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-sortStart).count();
-            for (const auto& item : drawItems_) submit(item);
-            const auto& hovered = world->getSingleton<cgl::component::MapHover>()->cell;
-            if (hovered && outline_) {
-                const auto center = cgl::MapToScreen({double(hovered->x), double(hovered->y)}, camera, viewport);
-                const double scale = camera.scale / outline_->scale;
-                outline_->renderer->draw(command, viewport, 0,
-                    float(center.x - outline_->width * scale * 0.5),
-                    float(center.y - outline_->height * scale * 0.5), float(scale));
+            const auto& camera=*world->getSingleton<cgl::component::MapCamera>();
+            const auto hovered=benchmark ? std::optional<cgl::MapCellCoord>{} :
+                cgl::ResolveMapHover(pointerInput(world),camera,viewport,map_->layout);
+            const auto stats=renderer_.draw(*world,*map_,camera,hovered,outline_.get(),command,viewport);
+            if(benchmark) {
+                benchmark->drawnActors=stats.drawnActors;
+                benchmark->drawCalls=stats.drawCalls;
+                benchmark->sortMs=stats.sortMs;
             }
         } catch (const std::exception& error) {
             cgl::RaiseError(world->getSingleton<cgl::component::SceneState>(), "Map drawing failed: ", error.what());
         }
     }
 private:
-    void updateHover(cgl::ECSCore* world, const cgl::Viewport& viewport) noexcept {
-        auto& hover = world->getSingleton<cgl::component::MapHover>()->cell;
-        hover.reset();
-        const auto* cursor = world->getSingleton<cgl::component::CursorPositionState>();
-        if (!cursor || !cursor->inside) return;
-        const auto& window = *world->getSingleton<cgl::component::WindowHandle>();
-        const auto point = cgl::WindowToViewport({cursor->x, cursor->y},
-            {double(cursor->windowWidth), double(cursor->windowHeight)},
-            {double(window.width), double(window.height)}, viewport);
-        if (point) hover = cgl::PickMapCell(*point,
-            *world->getSingleton<cgl::component::MapCamera>(), viewport, map_->layout);
+    static cgl::MapPointerInput pointerInput(cgl::ECSCore* world) noexcept {
+        const auto* cursor=world->getSingleton<cgl::component::CursorPositionState>();
+        if(!cursor) return {};
+        const auto& window=*world->getSingleton<cgl::component::WindowHandle>();
+        return {{cursor->x,cursor->y},{double(cursor->windowWidth),double(cursor->windowHeight)},
+            {double(window.width),double(window.height)},cursor->inside};
     }
-    static bool record(const cgl::MapDrawItem& item, const cgl::component::MapCamera& camera,
-                        cgl::graphics::ICommandBuffer* command, const cgl::Viewport& viewport) {
-        auto position = cgl::MapToScreen(item.cell, camera, viewport);
-        position.x += item.offsetX * camera.scale;
-        position.y += item.offsetY * camera.scale;
-        if (!item.renderer || !cgl::MapImageVisible(position, item.source.width, item.source.height, camera.scale, viewport)) return false;
-        item.renderer->drawRegion(command, viewport, item.frame, item.source,
-            float(position.x), float(position.y), float(camera.scale));
-        return true;
+    void updateHover(cgl::ECSCore* world,const cgl::Viewport& viewport) noexcept {
+        world->getSingleton<cgl::component::MapHover>()->cell=cgl::ResolveMapHover(pointerInput(world),
+            *world->getSingleton<cgl::component::MapCamera>(),viewport,map_->layout);
     }
     cgl::MapLibrary& maps_;
     cgl::AnimationLibrary& animations_;
@@ -207,7 +155,7 @@ private:
     cgl::Entity character_ = 0;
     std::unique_ptr<cgl::CrowdScenario> crowdScenario_;
     std::unique_ptr<cgl::ServerDemoScenario> serverDemo_;
-    std::vector<cgl::MapDrawItem> drawItems_;
+    cgl::MapWorldRenderer renderer_;
 };
 }
 cgl::IScene::Ptr cgl::CreateMapScene(MapLibrary& maps, AnimationLibrary& animations) {
