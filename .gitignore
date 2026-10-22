@@ -34,3 +34,6 @@
 .vscode/
 build/
 .vs
+# Local preset overrides and Python environments
+CMakeUserPresets.json
+.venv/

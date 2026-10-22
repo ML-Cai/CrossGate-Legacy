@@ -7,6 +7,7 @@
 // =============================================================================
 
 #include <gtest/gtest.h>
+#include <cstdlib>
 #include "cgl/common/env.h"
 
 
@@ -24,28 +25,26 @@
 
 #endif  // _MSC_VER
 
+// LogLevel caches its first value. Each assertion needs a fresh process, including
+// when this executable runs all cases together. The current fallback is Trace (4).
 // -----------------------------------------------------------------------------
 TEST(common_env_test, DefaultIfEnvVarNotSet) {
-    UNSET_ENV_VAR(cgl::ENV_VAR_CGL_LOG_LEVEL.data());
-    EXPECT_EQ(cgl::env::LogLevel(), 2);
+    ASSERT_EXIT({ UNSET_ENV_VAR(cgl::ENV_VAR_CGL_LOG_LEVEL.data()); std::exit(cgl::env::LogLevel()==4 ? 0 : 1); }, ::testing::ExitedWithCode(0), "");
 }
 
 // -----------------------------------------------------------------------------
 TEST(common_env_test, CorrectlyReadsValidValue) {
-    SET_ENV_VAR(cgl::ENV_VAR_CGL_LOG_LEVEL.data(), "3");
-    EXPECT_EQ(cgl::env::LogLevel(), 3);
+    ASSERT_EXIT({ SET_ENV_VAR(cgl::ENV_VAR_CGL_LOG_LEVEL.data(), "3"); std::exit(cgl::env::LogLevel()==3 ? 0 : 1); }, ::testing::ExitedWithCode(0), "");
 }
 
 // -----------------------------------------------------------------------------
 TEST(common_env_test, HandlesInvalidString) {
-    SET_ENV_VAR(cgl::ENV_VAR_CGL_LOG_LEVEL.data(), "invalid");
-    EXPECT_EQ(cgl::env::LogLevel(), 2);
+    ASSERT_EXIT({ SET_ENV_VAR(cgl::ENV_VAR_CGL_LOG_LEVEL.data(), "invalid"); std::exit(cgl::env::LogLevel()==4 ? 0 : 1); }, ::testing::ExitedWithCode(0), "");
 }
 
 // -----------------------------------------------------------------------------
 TEST(common_env_test, HandlesOutOfRangeValue) {
-    SET_ENV_VAR(cgl::ENV_VAR_CGL_LOG_LEVEL.data(), "10");
-    EXPECT_EQ(cgl::env::LogLevel(), 4);
+    ASSERT_EXIT({ SET_ENV_VAR(cgl::ENV_VAR_CGL_LOG_LEVEL.data(), "10"); std::exit(cgl::env::LogLevel()==4 ? 0 : 1); }, ::testing::ExitedWithCode(0), "");
 }
 
 // -----------------------------------------------------------------------------

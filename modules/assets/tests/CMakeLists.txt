@@ -16,6 +16,11 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
     set_target_properties(${EXE_NAME} PROPERTIES FOLDER "tests")
     set_target_properties(${EXE_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 
-    gtest_discover_tests(${EXE_NAME} WORKING_DIRECTORY ${CGL_BIN_PATH})
+    set(TEST_LABELS "assets")
+    if(EXE_NAME STREQUAL "test_reader_lifecycle" OR EXE_NAME STREQUAL "test_map_layout_reader")
+        set(TEST_LABELS "unit\;memory")
+    endif()
+    gtest_discover_tests(${EXE_NAME} WORKING_DIRECTORY ${CGL_BIN_PATH}
+        PROPERTIES LABELS "${TEST_LABELS}" TIMEOUT 60)
     message(STATUS "Add test ${EXE_NAME}")
 endforeach()
