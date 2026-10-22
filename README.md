@@ -19,6 +19,9 @@ This project is not a private server or an attempt to infringe upon the rights o
 
 ## Build
 
+For reproducible build presets, test groups and AddressSanitizer commands, see
+[Build and test](docs/build-and-test.md).
+
 ### 1. Clone the repository
 
 ```bash

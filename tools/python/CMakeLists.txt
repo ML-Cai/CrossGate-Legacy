@@ -52,4 +52,6 @@ if (CGL_WITH_TEST)
     add_test(NAME python_session_cache
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_session_cache.py
                 --module-dir $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+    set_tests_properties(python_session_cache PROPERTIES
+        LABELS "unit;memory;python" TIMEOUT 60)
 endif()

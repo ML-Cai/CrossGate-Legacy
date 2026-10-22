@@ -76,6 +76,7 @@ TEST(trace_logger_test, DebugLogingTest) {
 
 // -----------------------------------------------------------------------------
 int main(int argc, char **argv) {
+    SET_ENV_VAR(cgl::ENV_VAR_CGL_LOG_LEVEL.data(), "2");
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

@@ -22,21 +22,21 @@ if(CGL_WITH_TEST)
             COMMAND ${CMAKE_COMMAND} -DCLIENT=$<TARGET_FILE:cgl-client> -DCASE=${CASE}
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/map_startup.cmake)
         set_tests_properties(cgl_client_map_${CASE} PROPERTIES
-            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;integration")
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;assets;integration" RESOURCE_LOCK cgl_desktop)
     endforeach()
     add_test(NAME cgl_client_startup
         COMMAND ${CMAKE_COMMAND}
             -DCLIENT=$<TARGET_FILE:cgl-client>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/startup.cmake)
     set_tests_properties(cgl_client_startup PROPERTIES
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;integration")
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;assets;integration" RESOURCE_LOCK cgl_desktop)
     add_test(NAME cgl_client_invalid_resources
         COMMAND ${CMAKE_COMMAND}
             -DCLIENT=$<TARGET_FILE:cgl-client>
             -DINVALID_RESOURCES=ON
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/startup.cmake)
     set_tests_properties(cgl_client_invalid_resources PROPERTIES
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;integration")
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;assets;integration" RESOURCE_LOCK cgl_desktop)
     foreach(CASE direction serial scale)
         add_test(NAME cgl_client_invalid_animation_${CASE}
             COMMAND ${CMAKE_COMMAND}
@@ -44,7 +44,7 @@ if(CGL_WITH_TEST)
                 -DINVALID_ANIMATION=${CASE}
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/startup.cmake)
         set_tests_properties(cgl_client_invalid_animation_${CASE} PROPERTIES
-            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;integration")
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;assets;integration" RESOURCE_LOCK cgl_desktop)
     endforeach()
 endif()
 

@@ -16,6 +16,7 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
     set_target_properties(${EXE_NAME} PROPERTIES FOLDER "tests")
     set_target_properties(${EXE_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 
-    gtest_discover_tests(${EXE_NAME} WORKING_DIRECTORY ${CGL_BIN_PATH})
+    gtest_discover_tests(${EXE_NAME} WORKING_DIRECTORY ${CGL_BIN_PATH}
+        PROPERTIES LABELS "unit" TIMEOUT 60)
     message(STATUS "Add test ${EXE_NAME}")
 endforeach()

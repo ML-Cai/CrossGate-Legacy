@@ -1,0 +1,175 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "dev",
+      "displayName": "Desktop development and tests",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CGL_WITH_TEST": true,
+        "CGL_WITH_BINARIES": true,
+        "CGL_WITH_TOOLS": true,
+        "CGL_ENABLE_ASAN": false
+      }
+    },
+    {
+      "name": "asan",
+      "inherits": "dev",
+      "displayName": "AddressSanitizer tests",
+      "binaryDir": "${sourceDir}/build/asan",
+      "cacheVariables": {
+        "CGL_ENABLE_ASAN": true,
+        "CGL_WITH_TOOLS": false
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "jobs": 4
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "jobs": 4
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dev-unit",
+      "configurePreset": "dev",
+      "filter": {
+        "include": {
+          "label": "^unit$"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "jobs": 1
+      }
+    },
+    {
+      "name": "dev-desktop",
+      "configurePreset": "dev",
+      "filter": {
+        "include": {
+          "label": "^desktop$"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "jobs": 1
+      }
+    },
+    {
+      "name": "dev-assets",
+      "configurePreset": "dev",
+      "filter": {
+        "include": {
+          "label": "^assets$"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "jobs": 1
+      }
+    },
+    {
+      "name": "dev-memory",
+      "configurePreset": "dev",
+      "filter": {
+        "include": {
+          "label": "^memory$"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "jobs": 1
+      }
+    },
+    {
+      "name": "asan-unit",
+      "configurePreset": "asan",
+      "filter": {
+        "include": {
+          "label": "^unit$"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "jobs": 1
+      }
+    },
+    {
+      "name": "asan-desktop",
+      "configurePreset": "asan",
+      "filter": {
+        "include": {
+          "label": "^desktop$"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "jobs": 1
+      }
+    },
+    {
+      "name": "asan-assets",
+      "configurePreset": "asan",
+      "filter": {
+        "include": {
+          "label": "^assets$"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "jobs": 1
+      }
+    },
+    {
+      "name": "asan-memory",
+      "configurePreset": "asan",
+      "filter": {
+        "include": {
+          "label": "^memory$"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "jobs": 1
+      }
+    }
+  ]
+}
