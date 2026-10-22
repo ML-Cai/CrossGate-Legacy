@@ -148,3 +148,77 @@ leak detection; explicit ownership/weak-reference tests complement it.
 
 Synchronization and copy-region rules follow [Vulkan fences](https://docs.vulkan.org/spec/latest/chapters/synchronization.html)
 and [VkBufferImageCopy](https://docs.vulkan.org/refpages/latest/refpages/source/VkBufferImageCopy.html).
+
+## Background decode comparison
+
+Add `--background-decode` to `--load-during-playback --progressive-uploads`.
+For example, use `--unique 1024 --samples 6000 --repeats 1`. Without the new flag,
+this diagnostic explicitly selects the main-thread decoder as a same-binary control.
+The C++ progressive API defaults to background decoding; normal preload behavior
+and benchmark defaults are unchanged. `background_decode` is recorded in JSON.
+The background job, its completed result and the pending upload share one 32 MiB
+reservation. This means readiness takes additional polling frames; incomplete
+coverage remains a failure, and placeholders do not count as loaded resources.
+`cold_load_*` measures owner-thread request/poll/publication CPU work only; background
+CPU work is excluded. `cold_ready_*` measures elapsed user-visible readiness latency,
+and cold-phase frame samples include time while the worker is running. GPU allocation
+and driver work still happen on the owner and may cause long frames. Scene-entry
+metadata enumeration is still outside sampled frames, and the camera is stationary.
+
+### Background decode results (2026-10-21)
+
+Radeon 880M integrated GPU, map2100, 1280x720, 6050 actors, IMMEDIATE, validation
+off, same-binary progressive uploads in both cases. Three interleaved fresh-process
+repeats, 512 identities, 120 warmup + 3000 samples; all 511 cold appearances finished
+with matching manifests and submitted actor counts.
+
+| Metric | Main-thread decode | Background decode |
+| --- | ---: | ---: |
+| Median overall FPS | 213.49 | 212.08 |
+| Worst-run cold-phase p99 ms | 12.14 | 9.44 |
+| Largest sampled frame ms | 25.03 | 25.74 |
+| Worst-run ready p99 ms | 22.88 | 22.06 |
+| Worst-run owner work p99 ms | 16.21 | 7.72 |
+
+FPS and worst-frame timing did not consistently improve; placeholder/artwork timing
+and the longer cold phase also affect the comparison. Background mode uses an
+additional decode-completion polling frame and can delay appearance readiness.
+
+Matched 1024-identity coverage (one run per mode, 120 warmup + 6000 samples) completed
+all 1023 cold appearances, including the 24 MiB clip. Main vs background: cold p99
+11.91 vs 8.72 ms, max frame 34.67 vs 22.33 ms, ready p99 25.13 vs 26.54 ms, max ready
+86.42 vs 79.46 ms. Overall FPS was 212.31 vs 215.62. There were 2 vs 0 frames above
+33.33 ms. These are coverage observations, not a repeated worst-case guarantee or
+a 4/8 GB dedicated-card capacity test. Raw reports/hashes: ignored build/decode-results.
+
+Verification before the final retained-capacity guard: full build and 165 regression
+tests passed excluding existing env/logger suites; 20 targeted MSVC ASan tests passed. The three CPU worker tests each passed
+20 additional ASan repetitions (60 runs, including 160 gated active cancellations),
+covering slot saturation, persistent-thread reuse, cancellation/reference release,
+stop/restart, exceptions and result bounds. The strengthened scene-exit and library
+clear/reader-identity tests passed in normal and ASan builds after a warm cache was
+expanded to force new uncached work. CPU-only builder cancellation is also covered.
+
+Native ASan + Vulkan validation map100 background idle/walk playback completed all
+10 resources. Forced budget exhaustion transferred a worker error after 108 ready
+resources / 107 cold appearances, exited with scene_error and closed normally.
+Closing after the first background request produced incomplete and normal shutdown.
+No new validation/ASan errors occurred; missing Steam layer JSON messages remain.
+MSVC ASan is not a race detector or exhaustive leak detector. The gated concurrency,
+reader locking and explicit lifetime assertions complement it; ThreadSanitizer was
+not run on this Windows host.
+
+After adding the final guard against an oversized retained vector capacity (not just
+its size), the normal build succeeded and 155 tests passed, including all three
+worker tests and the new capacity-only overrun case. Windows Application Control
+blocked the final normal and ASan cgl-client executables and the ASan worker test
+(WinError 4551). The 10 native client startup cases therefore could not run on that
+final build; ASan worker discovery/reruns were also unavailable. No security policy
+was changed. Performance/native observations above are from the earlier passing
+checkpoint; the final guard does not change valid builder pixel contents, but that
+does not substitute for a final executable startup run on this host.
+
+The final available ASan scene/builder subset passed 17/17, including strengthened
+uncached-scene cancellation and the background library path. The final guard's
+oversized-capacity rejection was verified by the normal CPU worker tests; no final
+ASan worker result is claimed.

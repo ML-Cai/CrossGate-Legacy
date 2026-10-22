@@ -1,6 +1,7 @@
 #pragma once
 
 #include <compare>
+#include <atomic>
 #include <optional>
 #include "cgl/common/assets.h"
 
@@ -23,7 +24,7 @@ struct AnimationPixels {
 class AnimationBuilder {
 public:
     AnimationPixels build(const AnimationRequest& request, component::AssetsReaderState& readers,
-                          uint64_t availableBytes = 256ull * 1024 * 1024);
+                          uint64_t availableBytes = 256ull * 1024 * 1024, const std::atomic_bool* cancelled = nullptr);
     void clear() noexcept {
         description_.reset();
         infoReader_ = nullptr;

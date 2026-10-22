@@ -10,7 +10,12 @@ void require(bool condition, const char* message) {
 }
 }
 AnimationPixels AnimationBuilder::build(const AnimationRequest& request,
-    component::AssetsReaderState& readers, uint64_t availableBytes) {
+    component::AssetsReaderState& readers, uint64_t availableBytes, const std::atomic_bool* cancelled) {
+    std::lock_guard readerLock(*readers.queryMutex);
+    auto checkCancellation=[&] {
+        if(cancelled && cancelled->load()) throw std::runtime_error("Animation decode cancelled");
+    };
+    checkCancellation();
     const auto version = request.version;
     require(version < CrossGateVersion::COUNT, "Invalid animation resource version");
     constexpr uint64_t maxBytes = 256ull * 1024 * 1024;
@@ -58,6 +63,7 @@ AnimationPixels AnimationBuilder::build(const AnimationRequest& request,
     frames.reserve(clip.motionGraphicsSerialNums.size());
     int64_t left = 0, top = 0, right = 0, bottom = 0;
     for (auto serial : clip.motionGraphicsSerialNums) {
+        checkCancellation();
         GraphicsResourceInfo info{};
         require(readers.pGfxInfoReader[version]->query(
             {GraphicsResourceSerialNumTypes::GraphicsSerialNum, version, serial}, &info) == Results::Success,
@@ -75,6 +81,7 @@ AnimationPixels AnimationBuilder::build(const AnimationRequest& request,
     require(width > 0 && height > 0 && width <= 4096 && height <= 4096 &&
             frames.size() <= budget / (uint64_t(width) * height * 4),
             "Animation preview exceeds remaining texture memory budget");
+    checkCancellation();
     PaletteData256 palette{};
     require(readers.pPaletteReader->read(EnvironmentPaletteTypes::Daytime, &palette) == Results::Success,
             "Could not read daytime palette");
@@ -82,6 +89,7 @@ AnimationPixels AnimationBuilder::build(const AnimationRequest& request,
     AnimationPixels result{uint32_t(width), uint32_t(height), uint32_t(frames.size()), clip.duration,
                            int32_t(left), int32_t(top), std::vector<uint8_t>(frameBytes * frames.size(), 0)};
     for (size_t f = 0; f < frames.size(); ++f) {
+        checkCancellation();
         // The indexed pixels for this frame die before the next decode begins.
         GraphicsResourceData data{};
         const auto& info = frames[f];
@@ -92,6 +100,7 @@ AnimationPixels AnimationBuilder::build(const AnimationRequest& request,
         const auto* colors = data.pPaletteData ? data.pPaletteData :
             reinterpret_cast<const uint8_t*>(palette.data());
         for (int y = 0; y < data.height; ++y) {
+            checkCancellation();
             for (int x = 0; x < data.width; ++x) {
                 const auto index = data.pData[(data.height - 1 - y) * size_t(data.width) + x];
                 const size_t dstX = size_t(int64_t(info.offsetX) - left + x);

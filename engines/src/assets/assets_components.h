@@ -9,6 +9,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include "cgl/common/states.h"
 #include "cgl/common/version.h"
@@ -39,6 +40,11 @@ struct AssetsReaderState {
                    cgl::IGraphicsInfoReader::Ptr> pGfxInfoReader;
 
     cgl::IPaletteReader::Ptr pPaletteReader;
+    // Engine CPU queries share this lock. Stop/join decode work before replacing
+    // or destroying readers; the reader implementations themselves are not safe
+    // for concurrent access. Initialization finishes before any worker submission.
+    std::shared_ptr<std::mutex> queryMutex = std::make_shared<std::mutex>();
+
 };
 
 }   // namespace component

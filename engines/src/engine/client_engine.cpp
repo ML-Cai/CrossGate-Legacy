@@ -113,7 +113,7 @@ void ClientEngine::initSingletonStage(cgl::ECSCore* pEcs) {
     const auto& bench = pEngineState_->settings->benchmark;
     const bool pressure = bench.ActorCount || bench.ActorsPerCell;
     if (pressure) {
-        if (bench.AnimationBudgetMiB<16 || bench.AnimationBudgetMiB>1024 || pEngineState_->settings->map.FilePath.empty() || !bench.SampleFrames || bench.SampleFrames > 100000 || bench.WarmupFrames > 100000 ||
+        if ((bench.BackgroundDecode && (!bench.LoadDuringPlayback || !bench.ProgressiveUploads)) || bench.AnimationBudgetMiB<16 || bench.AnimationBudgetMiB>1024 || pEngineState_->settings->map.FilePath.empty() || !bench.SampleFrames || bench.SampleFrames > 100000 || bench.WarmupFrames > 100000 ||
             bench.ReportPath.empty() || bench.Width < 320 || bench.Width > 3840 || bench.Height < 240 || bench.Height > 2160)
             cgl::RaiseError(pEngineState_, "Invalid benchmark limits/report/viewport");
         else {
