@@ -6,8 +6,8 @@
 #include "map/map_render_data.h"
 #include "map/map_hover.h"
 #include "map/character_movement.h"
-#include "map/remote_characters.h"
-#include "assets/character_catalog.h"
+#include "map/server_demo_scenario.h"
+#include "benchmark/crowd_scenario.h"
 #include "engine/ecs.h"
 #include "engine/engine_components.h"
 #include "engine/error_system.h"
@@ -16,7 +16,6 @@
 #include "cgl/trace/logger.h"
 #include <stdexcept>
 #include <chrono>
-#include <random>
 #include "benchmark/crowd_benchmark.h"
 
 namespace {
@@ -42,7 +41,8 @@ public:
             world->addSingleton<cgl::component::MapHover>();
             outline_ = maps_.acquireHoverOutline(scale, render.pDevice.get(), pass);
             if (auto* benchmark = world->getSingleton<cgl::component::CrowdBenchmark>()) {
-                enterCrowd(world, settings, readers, render.pDevice.get(), pass, *benchmark);
+                crowdScenario_=std::make_unique<cgl::CrowdScenario>(animations_);
+                crowdScenario_->enter(world,map_->layout,*benchmark);
                 benchmark->loadMs = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-loadStart).count();
                 benchmark->ready = true;
                 cgl::UpdateAnimations(*world,0);
@@ -66,12 +66,8 @@ public:
             world->addComponent<cgl::component::AnimationPlayer>(character_);
             world->addComponent<cgl::component::CharacterMovement>(character_, std::move(movement));
             if(settings.serverdemo.Enabled) {
-                auto catalog=cgl::ReadCharacterCatalog(readers);
-                feed_=std::make_unique<cgl::LocalCharacterFeed>(catalog.size());
-                remote_=std::make_unique<cgl::RemoteCharacters>(std::move(catalog));
-                batchClock_=std::chrono::steady_clock::now();
-                const auto& window=*world->getSingleton<cgl::component::WindowHandle>();
-                sendSnapshot(world,{0,0,window.width,window.height},true);
+                serverDemo_=std::make_unique<cgl::ServerDemoScenario>(animations_);
+                serverDemo_->enter(world,map_->layout,character_);
             }
             cgl::UpdateAnimations(*world, 0);
             LOGI("Map scene entered");
@@ -83,14 +79,10 @@ public:
     }
     void onExit(cgl::ECSCore* world) noexcept override {
         if (auto* b=world->getSingleton<cgl::component::CrowdBenchmark>()) b->ready=false;
-        for (auto entity : crowd_) world->destroyEntity(entity);
-        if(remote_) remote_->clear(*world);
-        remote_.reset();feed_.reset();
+        if(crowdScenario_) crowdScenario_->clear(world);
+        if(serverDemo_) serverDemo_->clear(world);
+        crowdScenario_.reset();serverDemo_.reset();
         animations_.cancelPending();
-        crowd_.clear();
-        crowdClips_.clear(); crowdWalks_.clear(); coldRequests_.clear();
-        coldWorkMs_=0; coldStart_={};
-        crowdFrames_=0; crowdSeconds_=0; crowdWalking_=false;
         if (character_) world->destroyEntity(character_);
         character_ = 0;
         world->removeSingleton<cgl::component::MapCamera>();
@@ -103,19 +95,10 @@ public:
     void update(cgl::ECSCore* world) noexcept override {
         const auto seconds = world->getSingleton<cgl::component::FrameTime>()->deltaSeconds;
         if (auto* benchmark=world->getSingleton<cgl::component::CrowdBenchmark>()) {
-            try { loadColdCharacter(world,*benchmark); }
+            try { crowdScenario_->update(world,*benchmark); }
             catch (const std::exception& error) {
                 cgl::RaiseError(world->getSingleton<cgl::component::SceneState>(), "Cold character load failed: ",error.what());
-                return;
             }
-            crowdSeconds_ += seconds;
-            const bool walking=(uint64_t(crowdSeconds_)%2)!=0;
-            if (world->getSingleton<cgl::component::EngineState>()->settings->benchmark.SwitchMotions && walking!=crowdWalking_) {
-                world->forEach<cgl::component::CrowdActor,cgl::component::Sprite,cgl::component::AnimationPlayer>(
-                    [&](auto,auto* actor,auto* sprite,auto* player){ sprite->clip=walking?actor->walk:actor->idle;player->timeMs=0;player->frame=0; });
-                crowdWalking_=walking; ++benchmark->switches;
-            }
-            cgl::UpdateAnimations(*world,seconds);
             return;
         }
         auto* input = world->getSingleton<cgl::component::KeyboardInputState>();
@@ -128,32 +111,9 @@ public:
         cgl::UpdateAnimations(*world, seconds);
         const auto& window = *world->getSingleton<cgl::component::WindowHandle>();
         const cgl::Viewport viewport(0,0,window.width,window.height);
-        if(remote_ && window.width && window.height) {
-            try {
-                const auto now=std::chrono::steady_clock::now();
-                const auto& camera=*world->getSingleton<cgl::component::MapCamera>();
-                const auto shift=cgl::MapToScreen(lastBatchCenter_,camera,viewport);
-                const bool moved=std::abs(shift.x-viewport.width*.5)>viewport.width*.125 ||
-                    std::abs(shift.y-viewport.height*.5)>viewport.height*.125;
-                ++batchFrames_;
-                if(input->newBatchRequested || moved || now-batchClock_>=std::chrono::seconds(2)) {
-                    const auto fps=batchFrames_/std::chrono::duration<double>(now-batchClock_).count();
-                    world->getSingleton<cgl::component::WindowHandle>()->pendingTitle=
-                        "CGL | FPS " + std::to_string(int(fps)) + " | visible " + std::to_string(remote_->readyVisible) + "/" +
-                        std::to_string(remote_->visible) + " | prefetch " + std::to_string(remote_->readyOuter) + "/" +
-                        std::to_string(remote_->outer) + " | WASD move, N randomize, R restart";
-                    LOGI("Server demo: FPS=" << fps
-                        << ", visible=" << remote_->readyVisible << "/" << remote_->visible
-                        << ", outer=" << remote_->readyOuter << "/" << remote_->outer);
-                    sendSnapshot(world,viewport,input->newBatchRequested);
-                    batchClock_=now;batchFrames_=0;
-                }
-                input->newBatchRequested=false;
-                auto& readers=*world->getSingleton<cgl::component::AssetsReaderState>();
-                auto* device=world->getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
-                auto* pass=world->getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
-                remote_->update(*world,animations_,readers,device,pass,camera,viewport);
-            } catch(const std::exception& error) {
+        if(serverDemo_) {
+            try {serverDemo_->update(world,viewport);}
+            catch(const std::exception& error) {
                 cgl::RaiseError(world->getSingleton<cgl::component::SceneState>(), "Server demo failed: ",error.what());
             }
         }
@@ -218,148 +178,6 @@ public:
         }
     }
 private:
-    void sendSnapshot(cgl::ECSCore* world,const cgl::Viewport& viewport,bool replace) {
-        const auto& camera=*world->getSingleton<cgl::component::MapCamera>();
-        const auto& snapshot=feed_->next(camera,viewport,map_->layout.width,map_->layout.height,replace);
-        remote_->apply(*world,snapshot,world->getComponent<cgl::component::Sprite>(character_)->clip);
-        lastBatchCenter_=camera.center;
-    }
-    std::unique_ptr<cgl::LocalCharacterFeed> feed_;
-    std::unique_ptr<cgl::RemoteCharacters> remote_;
-    cgl::MapPoint lastBatchCenter_;
-    std::chrono::steady_clock::time_point batchClock_{};
-    uint64_t batchFrames_=0;
-    void enterCrowd(cgl::ECSCore* world, const cgl::Settings& settings,
-                    cgl::component::AssetsReaderState& readers, cgl::graphics::IDevice* device,
-                    cgl::graphics::IRenderPass* pass, cgl::component::CrowdBenchmark& state) {
-        const auto& b=settings.benchmark;
-        if (b.ActorCount>20000 || b.ActorsPerCell>10 || !b.UniqueCharacters || b.UniqueCharacters>20000)
-            throw std::runtime_error("Invalid crowd density/count/unique limit");
-        const auto& window=*world->getSingleton<cgl::component::WindowHandle>();
-        state.width=window.width;state.height=window.height;
-        const cgl::Viewport viewport(0,0,window.width,window.height);
-        const auto& camera=*world->getSingleton<cgl::component::MapCamera>();
-        const auto bounds=cgl::VisibleMapBounds(camera,viewport,map_->layout.width,map_->layout.height,0,0);
-        std::vector<cgl::MapPoint> cells;
-        for(int y=bounds.top;y<=bounds.bottom;++y) for(int x=bounds.left;x<=bounds.right;++x) {
-            const cgl::MapPoint cell{double(x),double(y)};
-            const auto p=cgl::MapToScreen(cell,camera,viewport);
-            if(p.x>0 && p.y>0 && p.x<viewport.width && p.y<viewport.height) cells.push_back(cell);
-        }
-        state.visibleCells=uint32_t(cells.size());
-        const size_t perCell=b.ActorsPerCell ? b.ActorsPerCell : 1;
-        const size_t count=b.ActorCount ? b.ActorCount : cells.size()*perCell;
-        if(cells.empty() || count>20000 || count>cells.size()*10 || b.UniqueCharacters>count)
-            throw std::runtime_error("Crowd count exceeds visible cell capacity or unique count exceeds actors");
-        std::vector<cgl::AnimationRequest> requests;
-        auto& clips=crowdClips_; auto& walks=crowdWalks_;
-        {
-            std::lock_guard readerLock(*readers.queryMutex);
-            for(unsigned v=0;v<unsigned(cgl::CrossGateVersion::COUNT) && requests.size()<b.UniqueCharacters;++v) {
-                const auto version=cgl::CrossGateVersion(v);
-                auto* infoReader=readers.pAnimeInfoReader[version].get();
-                auto* dataReader=readers.pAnimeDataReader[version].get();
-                if(!infoReader || !dataReader) continue;
-                std::vector<cgl::AnimeResourceSerialNum> serials;
-                if(infoReader->queryAvailableSerialNums(&serials)!=cgl::Results::Success) continue;
-                std::sort(serials.begin(),serials.end(),[](const auto& a,const auto& b){return a.value<b.value;});
-                for(const auto& serial:serials) {
-                    cgl::AnimeResourceInfo info{}; cgl::AnimeResourceData data{};
-                    if(infoReader->query(serial,&info)!=cgl::Results::Success ||
-                       dataReader->query(info,&data)!=cgl::Results::Success) continue;
-                    if (!cgl::IsCrowdCharacterDescription(data)) { ++state.filtered; continue; }
-                    const auto key=cgl::AnimeDataMapKey{cgl::DirectionTypes(0),cgl::MotionTypes(0)};
-                    auto motion=data.motionMap.find(key);
-                    if(motion==data.motionMap.end() || motion->second.motionGraphicsSerialNums.empty() || !motion->second.duration) continue;
-                    bool validMetadata = true;
-                    for (unsigned m=0;m<2;++m) {
-                        const auto& frameIds=data.motionMap.at({cgl::DirectionTypes(0),cgl::MotionTypes(m)}).motionGraphicsSerialNums;
-                        for (auto graphic:frameIds) {
-                            cgl::GraphicsResourceInfo frame{};
-                            if (!readers.pGfxInfoReader[version] || readers.pGfxInfoReader[version]->query(
-                                {cgl::GraphicsResourceSerialNumTypes::GraphicsSerialNum,version,graphic},&frame)!=cgl::Results::Success ||
-                                frame.width<=0 || frame.height<=0 || frame.width>4096 || frame.height>4096) {
-                                validMetadata=false; break;
-                            }
-                        }
-                        if(!validMetadata) break;
-                    }
-                    if(!validMetadata) { ++state.filtered; continue; }
-                    requests.push_back({serial.value,0,0,version});
-                    if(requests.size()==b.UniqueCharacters) break;
-                }
-            }
-        }
-        if(requests.size()!=b.UniqueCharacters) throw std::runtime_error("Insufficient distinct animation resources in installed corpus");
-        // Metadata is selected at entry; pixel decoding/upload for cold resources
-        // starts inside the measured loop, either synchronously or via the CPU worker.
-        if(b.LoadDuringPlayback) {
-            std::mt19937 random(0xC61);
-            std::shuffle(requests.begin(),requests.end(),random);
-        }
-        for(const auto& r:requests) state.resources.emplace_back(unsigned(r.version),r.serial);
-        const size_t initial=b.LoadDuringPlayback ? 1 : requests.size();
-        for(size_t i=0;i<initial;++i) loadCrowdClip(requests[i],readers,device,pass,b.SwitchMotions,state);
-        coldRequests_=std::move(requests);
-        for(size_t i=0;i<count;++i) {
-            const auto cellIndex=i%cells.size();
-            const auto entity=world->createEntity(); crowd_.push_back(entity);
-            world->addComponent<cgl::component::MapPosition>(entity,cells[cellIndex]);
-            const auto resource=cgl::CrowdResourceIndex(i,cells.size(),coldRequests_.size());
-            world->addComponent<cgl::component::Sprite>(entity,clips[resource<clips.size()?resource:0]);
-            const auto ready=resource<clips.size()?resource:0;
-            world->addComponent<cgl::component::CrowdActor>(entity,clips[ready],b.SwitchMotions?walks[ready]:nullptr,resource);
-            world->addComponent<cgl::component::AnimationPlayer>(entity,double((i*73)%1000));
-            ++state.actors;
-        }
-        LOGI("Crowd ready: cells=" << cells.size() << ", actors=" << count << ", resources=" << clips.size());
-    }
-    void loadCrowdClip(const cgl::AnimationRequest& request,cgl::component::AssetsReaderState& readers,
-        cgl::graphics::IDevice* device,cgl::graphics::IRenderPass* pass,bool switchMotions,
-        cgl::component::CrowdBenchmark& state) {
-        auto idle=animations_.acquire(request,readers,device,pass);
-        auto walk=switchMotions ? animations_.acquire({request.serial,request.direction,1,request.version},readers,device,pass) : nullptr;
-        storeCrowdClip(std::move(idle),std::move(walk),state);
-    }
-    void storeCrowdClip(std::shared_ptr<const cgl::AnimationClip> idle,std::shared_ptr<const cgl::AnimationClip> walk,
-                        cgl::component::CrowdBenchmark& state) {
-        state.animationBytes+=uint64_t(idle->width)*idle->height*idle->frameCount*4;
-        if(walk) state.animationBytes+=uint64_t(walk->width)*walk->height*walk->frameCount*4;
-        crowdClips_.push_back(std::move(idle)); crowdWalks_.push_back(std::move(walk));
-        state.unique=uint32_t(crowdClips_.size());
-    }
-    void loadColdCharacter(cgl::ECSCore* world,cgl::component::CrowdBenchmark& state) {
-        const auto& b=world->getSingleton<cgl::component::EngineState>()->settings->benchmark;
-        // Scene entry also updates once, before benchmark sampling begins.
-        if(!b.LoadDuringPlayback || crowdFrames_++<=b.WarmupFrames || state.unique>=coldRequests_.size()) return;
-        const auto start=std::chrono::steady_clock::now();
-        const size_t resource=state.unique;
-        auto& readers=*world->getSingleton<cgl::component::AssetsReaderState>();
-        auto* device=world->getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
-        auto* pass=world->getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
-        if(coldStart_==std::chrono::steady_clock::time_point{}) coldStart_=start;
-        if(b.ProgressiveUploads) {
-            const auto& request=coldRequests_[resource];
-            auto idle=animations_.acquireProgressive(request,readers,device,pass,b.BackgroundDecode);
-            auto walk=idle && b.SwitchMotions ? animations_.acquireProgressive({request.serial,request.direction,1,request.version},readers,device,pass,b.BackgroundDecode) : nullptr;
-            if(!idle || (b.SwitchMotions && !walk)) {
-                coldWorkMs_+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
-                return;
-            }
-            storeCrowdClip(std::move(idle),std::move(walk),state);
-        } else loadCrowdClip(coldRequests_[resource],readers,device,pass,b.SwitchMotions,state);
-        world->forEach<cgl::component::CrowdActor,cgl::component::Sprite,cgl::component::AnimationPlayer>(
-            [&](auto,auto* actor,auto* sprite,auto* player) {
-                if(actor->resource!=resource) return;
-                actor->idle=crowdClips_[resource]; actor->walk=crowdWalks_[resource];
-                sprite->clip=crowdWalking_?actor->walk:actor->idle;
-                player->timeMs=0;player->frame=0;
-            });
-        const auto end=std::chrono::steady_clock::now();
-        state.coldLoadMs.push_back(coldWorkMs_+std::chrono::duration<double,std::milli>(end-start).count());
-        state.coldReadyMs.push_back(std::chrono::duration<double,std::milli>(end-coldStart_).count());
-        coldWorkMs_=0;coldStart_={};
-    }
     void updateHover(cgl::ECSCore* world, const cgl::Viewport& viewport) noexcept {
         auto& hover = world->getSingleton<cgl::component::MapHover>()->cell;
         hover.reset();
@@ -387,14 +205,8 @@ private:
     std::shared_ptr<const cgl::MapResources> map_;
     std::shared_ptr<const cgl::MapHoverOutline> outline_;
     cgl::Entity character_ = 0;
-    std::vector<cgl::Entity> crowd_;
-    std::vector<std::shared_ptr<const cgl::AnimationClip>> crowdClips_,crowdWalks_;
-    std::vector<cgl::AnimationRequest> coldRequests_;
-    double coldWorkMs_=0;
-    std::chrono::steady_clock::time_point coldStart_{};
-    uint32_t crowdFrames_=0;
-    double crowdSeconds_=0;
-    bool crowdWalking_=false;
+    std::unique_ptr<cgl::CrowdScenario> crowdScenario_;
+    std::unique_ptr<cgl::ServerDemoScenario> serverDemo_;
     std::vector<cgl::MapDrawItem> drawItems_;
 };
 }

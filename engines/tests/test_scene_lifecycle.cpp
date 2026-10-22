@@ -659,3 +659,40 @@ TEST(RemoteCharacters, RejectsMalformedSnapshotBeforeMutatingWorld) {
     });
     remote.clear(world);EXPECT_EQ(count(),0);
 }
+
+TEST_F(DesktopSceneTest, SwitchBetweenServerDemoAndCrowdReleasesPreviousModeEntities) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.map.FilePath="map/0/100.dat";settings.animation.SerialNum=100000;
+    settings.serverdemo.Enabled=true;library_.setTextureBudget(512ull*1024*1024);
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
+    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::MapScene) && std::chrono::steady_clock::now()<deadline) {
+        manager_.update(&world_);
+        ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(scene->scene,nullptr);ASSERT_EQ(scene->scene->sceneType(),cgl::SceneTypes::MapScene);
+    auto remoteCount=[&]{size_t n=0;world_.forEach<cgl::component::RemoteCharacter>([&](auto,auto*){++n;});return n;};
+    auto crowdCount=[&]{size_t n=0;world_.forEach<cgl::component::CrowdActor>([&](auto,auto*){++n;});return n;};
+    EXPECT_EQ(remoteCount(),288);EXPECT_EQ(crowdCount(),0);
+    // Start a cold appearance, then leave while work may still be pending.
+    manager_.update(&world_);
+    settings.serverdemo.Enabled=false;settings.benchmark.ActorCount=16;settings.benchmark.UniqueCharacters=2;
+    world_.addSingleton<cgl::component::CrowdBenchmark>();
+    scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);
+    ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+    EXPECT_EQ(remoteCount(),0);EXPECT_EQ(crowdCount(),16);EXPECT_EQ(library_.pendingBytes(),0);
+    draw_.update(&world_);
+    world_.removeSingleton<cgl::component::CrowdBenchmark>();
+    settings.serverdemo.Enabled=true;settings.benchmark.ActorCount=0;
+    scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);
+    ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+    EXPECT_EQ(remoteCount(),288);EXPECT_EQ(crowdCount(),0);
+    draw_.update(&world_);
+    world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice->waitIdle();
+    std::vector<std::weak_ptr<const cgl::AnimationClip>> clips;
+    world_.forEach<cgl::component::Sprite>([&](auto,auto* sprite){clips.push_back(sprite->clip);});
+    cgl::SceneManagerDestroySystem{}.update(&world_);
+    EXPECT_EQ(remoteCount(),0);EXPECT_EQ(crowdCount(),0);EXPECT_EQ(library_.pendingBytes(),0);
+    library_.clear();for(const auto& clip:clips) EXPECT_TRUE(clip.expired());
+}

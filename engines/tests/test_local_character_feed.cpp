@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "map/local_character_feed.h"
+#include "map/server_demo_refresh.h"
 #include <set>
 TEST(LocalCharacterFeed, CompleteSnapshotAndExpandedInterest) {
     cgl::LocalCharacterFeed feed(512);
@@ -57,4 +58,25 @@ TEST(LocalCharacterFeed, EdgesAndTinyMapStayBounded) {
     EXPECT_EQ(tiny.next({{0,0},1},viewport,1,1).actors.size(),10);
     EXPECT_TRUE(tiny.next({{0,0},1},viewport,0,0).actors.empty());
     EXPECT_THROW(cgl::LocalCharacterFeed(0),std::invalid_argument);
+}
+
+TEST(ServerDemoRefresh, TimeAndExplicitReplacement) {
+    const cgl::component::MapCamera camera{{420,305},1};
+    const cgl::Viewport viewport(0,0,1280,720);
+    EXPECT_FALSE(cgl::ServerDemoRefreshDue(camera,camera.center,viewport,1.999,false));
+    EXPECT_TRUE(cgl::ServerDemoRefreshDue(camera,camera.center,viewport,2,false));
+    EXPECT_TRUE(cgl::ServerDemoRefreshDue(camera,camera.center,viewport,0,true));
+    EXPECT_FALSE(cgl::ServerDemoRefreshDue(camera,camera.center,{0,0,0,720},3,true));
+}
+TEST(ServerDemoRefresh, MovementThresholdUsesScreenDistanceAndZoom) {
+    const cgl::Viewport viewport(0,0,1280,720);
+    const cgl::MapPoint previous{420,305};
+    // Both map axes together move horizontally: 64 screen pixels per step.
+    EXPECT_FALSE(cgl::ServerDemoRefreshDue({{422.5,307.5},1},previous,viewport,0,false));
+    EXPECT_TRUE(cgl::ServerDemoRefreshDue({{422.51,307.51},1},previous,viewport,0,false));
+    EXPECT_TRUE(cgl::ServerDemoRefreshDue({{421.3,306.3},2},previous,viewport,0,false));
+    EXPECT_FALSE(cgl::ServerDemoRefreshDue({{422.51,307.51},.5},previous,viewport,0,false));
+    // Opposite map axes move vertically, where the half-margin is 90 pixels.
+    EXPECT_FALSE(cgl::ServerDemoRefreshDue({{421,304},1},previous,viewport,0,false));
+    EXPECT_TRUE(cgl::ServerDemoRefreshDue({{422,303},1},previous,viewport,0,false));
 }
