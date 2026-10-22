@@ -47,3 +47,7 @@ if(CGL_WITH_TEST)
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;integration")
     endforeach()
 endif()
+
+# Runnable local snapshot demo; external game assets remain user-provided.
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/configs/server-demo100.ini
+    ${CGL_BIN_PATH}/server-demo100.ini COPYONLY)
