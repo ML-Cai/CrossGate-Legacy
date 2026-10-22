@@ -359,3 +359,27 @@ Follow-ups remain important: a bounded priority queue for simultaneous appearanc
 visibility cancellation and measured time-to-appearance targets, GPU suballocation /
 descriptor pooling, live allocation telemetry and fence-safe resident eviction.
 Do not add a large thread pool or decoded-result queue to hide this backpressure.
+
+## Map scenario ownership
+
+MapScene creates and clears the optional CrowdScenario (benchmark) or
+ServerDemoScenario (local server simulation). They are concrete scene-owned
+helpers, not a replacement scene/state framework. Ordinary player movement,
+camera follow, hover and world rendering remain in MapScene for the next refactor.
+The benchmark's draw counters still observe the same shared rendering path.
+
+CrowdScenario owns benchmark entity IDs, motion switching and cold-load sampling.
+ServerDemoScenario owns the local feed, remote-character bridge, snapshot cadence
+and status updates. The two-second/half-prefetch-margin decision is a CPU-only
+function with boundary/zoom/minimized-viewport tests. The real clock is read only
+by the demo adapter. Existing 128 visible + 160 outer actors and N/R controls stay
+the same. The remote-character bridge still uses the local feed's region helper;
+a production network snapshot API is a later step.
+
+On scene exit both helpers clear their owned entities and clip references first;
+MapScene then cancels the library's pending decode/upload before removing the
+player and map references. This ordering also applies to partially failed entries.
+Ready clips remain engine-cache-owned until GPU-safe shutdown. Helpers do not
+clear engine caches or destroy the device, and must not outlive their ECS world.
+Tests exercise demo-to-benchmark-to-demo transitions with pending appearance work,
+plus repeated restart, cold-load publication and final weak-reference expiration.
