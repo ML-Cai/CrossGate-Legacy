@@ -20,8 +20,8 @@ next update. Failed entries remain owned so shutdown still calls their cleanup.
 
 ClientEngine owns AnimationLibrary and supplies it to scene creation. The cache
 is keyed by Classic/daytime serial, direction and motion, and bound to one live
-device/render pass. Scene exit deletes its entities; the cache retains clips for
-pending GPU work and later scene entries. Final shutdown waits for GPU completion,
+device/render pass. Scene exit deletes its entities; the cache retains clips until synchronized
+idle maintenance or final shutdown. Final shutdown waits for GPU completion,
 exits the scene, clears the cache, then destroys frame resources, device and window.
 Do not evict cached GPU resources while submitted draws can still use them.
 
@@ -409,3 +409,15 @@ CPU-only recording doubles test ground/object/actor/overlay ordering, playback
 and hover immutability, absence of upload polling, exception recovery and clip
 reference release. The existing real Vulkan scene suite also verifies the draw
 boundary while preserving map depth, movement, restart and mode transitions.
+
+## Ready-cache maintenance boundary
+
+SceneManagerSystem accepts an optional maintenance callback. It runs only after a
+validated transition has exited/destroyed the old scene and before the new scene
+enters. Callback failure raises a scene error and prevents entry; final shutdown
+uses its existing wait/clear path instead of invoking transition maintenance.
+ClientEngine wires the callback to the configurable animation/map soft targets.
+The scene manager itself has no device/cache dependency. GPU-safe ready-cache
+trimming is blocking and restricted to this boundary; in-frame deferred retirement
+remains future work. Cache-only shared ownership identifies a candidate, while a
+successful device idle wait supplies the required GPU lifetime proof.

@@ -143,5 +143,55 @@ when their caches are cleared.
 The benchmark retains its existing bounded-by-config whole-run vectors, cold-load
 latency reports and warmup behavior. Its full-run FPS/percentiles can differ from
 the runtime collector's last-512-frame values. Basic runtime telemetry does not
-yet provide per-request latency, hit/miss counts, GPU timers or eviction metrics;
+yet provide per-request latency, hit/miss counts or GPU timers;
 those can be added at the responsible resource layers with later cache work.
+
+## Idle cache maintenance at scene transitions
+
+```ini
+[CacheMaintenance]
+Enabled=true
+AnimationTargetMiB=64
+MapTargetMiB=64
+```
+
+These are the defaults, in the range 0..1024 MiB. They are soft **total cached
+payload** targets, not replacements for the animation hard loading budget or a
+physical VRAM limit. A zero target drops every eligible ready entry at a transition.
+An additional fixed 1 MiB warm budget applies to hover outlines. Soft count limits
+of two maps and sixteen outlines also bound CPU-only/zero-texture cache entries.
+A zero byte target also sets that cache count target to zero. Live references
+can keep usage above any target; they are never forcibly invalidated.
+
+Ready animation, map and outline caches track successful acquisition/readiness
+lookups and publication in least-recently-used order. After the old scene has
+exited and been destroyed, before the next scene loads, the engine trims entries
+that have no shared owners outside the cache until the target is met or no more
+eligible entries remain. Recency metadata is stored with the cache entry and is
+removed with it. There is no age-in-seconds/TTL policy in this step.
+
+Reference count alone is **not** evidence of GPU completion: recorded draws borrow
+raw renderer pointers. The library selects idle candidates first, then explicitly
+waits for its live device to become idle before destroying them. No victims means
+no wait. A failed GPU barrier leaves that cache's entries intact and stops scene
+entry via the normal error path. Pending decode/upload work is not a ready-cache
+victim. Normal scene exit still cancels/drains that work before maintenance.
+Library trimUnused is a blocking maintenance API, never a per-frame eviction API.
+
+Telemetry JSON adds animation_evictions, animation_evicted_bytes and
+map_outline_evictions. Counters reset when the cache is cleared; they count removed
+cache entries/payload, not measured driver residency or guaranteed OS memory return.
+Warm cache entries below target remain intentionally retained.
+
+This makes repeated scene/map changes bounded by the soft targets plus externally
+held resources. It does not solve unlimited new appearances during one continuous
+scene: the existing hard budget can still refuse a load there. Nonblocking GPU
+retirement and in-scene pressure handling belong to the next PR. No new automatic
+waitIdle is added to walking, N-batch refresh, animation polling or drawing.
+
+Tests cover LRU selection, pinned resources, failed barriers, new pins before
+release, repeated reload, byte accounting and transition-hook failure/order.
+Real Vulkan tests submit draws, drop CPU references, trim/reload three times,
+retain a pending decode, and restart map100 twice with zero warm targets. ASan,
+weak-reference expiry and validation checks supplement each other; none alone
+proves absence of all leaks.

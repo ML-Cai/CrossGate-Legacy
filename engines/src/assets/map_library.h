@@ -1,7 +1,7 @@
 #pragma once
 
 #include <filesystem>
-#include <map>
+#include "assets/idle_resource_cache.h"
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -31,24 +31,24 @@ struct MapHoverOutline {
 };
 
 // Engine-owned static map cache. Clear after GPU completion and scene exit,
-// before destroying the render pass/device. Scene changes never evict uploads.
+// before destroying the render pass/device. trimUnused waits before releasing idle uploads.
 class MapLibrary {
 public:
     std::shared_ptr<const MapResources> acquire(const std::filesystem::path& path,
         component::AssetsReaderState& readers, graphics::IDevice* device, graphics::IRenderPass* pass);
     std::shared_ptr<const MapHoverOutline> acquireHoverOutline(double scale,
         graphics::IDevice* device, graphics::IRenderPass* pass);
-    struct Usage {size_t maps=0,pages=0,outlines=0;uint64_t rgbaBytes=0,outlineBytes=0;};
+    struct Usage {size_t maps=0,pages=0,outlines=0;uint64_t rgbaBytes=0,outlineBytes=0,evictions=0;};
     Usage usage() const noexcept {
-        Usage result{maps_.size(),0,outlines_.size(),0,0};
-        for(const auto& [key,map]:maps_) {result.pages+=map->renderers.size();result.rgbaBytes+=map->rgbaBytes;}
-        for(const auto& [key,outline]:outlines_) result.outlineBytes+=uint64_t(outline->width)*outline->height*4;
+        Usage result{maps_.size(),0,outlines_.size(),maps_.bytes(),outlines_.bytes(),maps_.evictions()+outlines_.evictions()};
+        maps_.forEach([&](const MapResources& map){result.pages+=map.renderers.size();});
         return result;
     }
+    uint64_t trimUnused(uint64_t mapTargetBytes,uint64_t outlineTargetBytes=1024*1024);
     void clear() { maps_.clear(); outlines_.clear(); device_ = nullptr; pass_ = nullptr; }
 private:
-    std::map<std::filesystem::path, std::shared_ptr<const MapResources>> maps_;
-    std::map<double, std::shared_ptr<const MapHoverOutline>> outlines_;
+    IdleResourceCache<std::filesystem::path,MapResources> maps_;
+    IdleResourceCache<double,MapHoverOutline> outlines_;
     graphics::IDevice* device_ = nullptr;
     graphics::IRenderPass* pass_ = nullptr;
 };

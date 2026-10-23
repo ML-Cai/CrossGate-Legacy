@@ -27,7 +27,9 @@ class SceneManagerSystem {
  public:
     using SceneFactory = std::function<IScene::Ptr(SceneTypes)>;
     explicit SceneManagerSystem(AnimationLibrary& library);
-    explicit SceneManagerSystem(SceneFactory factory);
+    // Maintenance runs after old-scene exit/destruction and before next entry.
+    // It may block at this explicit transition boundary; failures stop entry.
+    explicit SceneManagerSystem(SceneFactory factory,std::function<void()> maintenance={});
 
     ~SceneManagerSystem() = default;
 
@@ -44,6 +46,7 @@ class SceneManagerSystem {
 
     cgl::component::SceneState* pSceneState_;
     SceneFactory factory_;
+    std::function<void()> maintenance_;
 
 };
 
