@@ -53,6 +53,17 @@ inline std::optional<MapCellCoord> PickMapCell(MapPoint screen, const component:
     return MapCellCoord{int32_t(x), int32_t(y)};
 }
 
+struct MapPointerInput {
+    MapPoint cursor,windowSize,renderSize;
+    bool inside=false;
+};
+inline std::optional<MapCellCoord> ResolveMapHover(const MapPointerInput& input,
+    const component::MapCamera& camera,const Viewport& viewport,const MapLayout& layout) noexcept {
+    if(!input.inside) return std::nullopt;
+    const auto point=WindowToViewport(input.cursor,input.windowSize,input.renderSize,viewport);
+    return point ? PickMapCell(*point,camera,viewport,layout) : std::nullopt;
+}
+
 struct MapHoverBitmap {
     uint32_t width, height;
     std::vector<uint8_t> rgba;

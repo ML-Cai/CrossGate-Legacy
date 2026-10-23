@@ -126,3 +126,14 @@ TEST(MapHoverTest, InvalidOutlineScaleIsRejectedBeforeAllocation) {
         EXPECT_THROW(cgl::BuildMapHoverBitmap(scale),std::invalid_argument);
 }
 }
+
+TEST(MapHoverInput, ResolvesHiDpiViewportWithoutChangingInputOrCamera) {
+    const auto layout=Ground(3,2);
+    const cgl::component::MapCamera camera{{1,1},1};
+    const cgl::Viewport viewport{17,23,400,300};
+    cgl::MapPointerInput input{{108.5,86.5},{400,300},{800,600},true};
+    EXPECT_EQ(cgl::ResolveMapHover(input,camera,viewport,layout),(cgl::MapCellCoord{1,1}));
+    EXPECT_DOUBLE_EQ(input.cursor.x,108.5);EXPECT_DOUBLE_EQ(camera.center.x,1);
+    input.inside=false;EXPECT_FALSE(cgl::ResolveMapHover(input,camera,viewport,layout));
+    input.inside=true;input.cursor={0,0};EXPECT_FALSE(cgl::ResolveMapHover(input,camera,viewport,layout));
+}
