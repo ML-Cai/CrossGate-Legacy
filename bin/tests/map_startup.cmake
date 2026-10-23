@@ -1,3 +1,10 @@
+# Defaults also support invoking this script outside CTest.
+if(NOT DEFINED STARTUP_FRAMES)
+    set(STARTUP_FRAMES 240)
+endif()
+if(NOT DEFINED STARTUP_TIMEOUT)
+    set(STARTUP_TIMEOUT 50)
+endif()
 # Requires a Vulkan desktop and the original Classic resources / map 2100.
 get_filename_component(clientDirectory "${CLIENT}" DIRECTORY)
 file(READ "${clientDirectory}/settings.ini" content)
@@ -14,8 +21,8 @@ else()
 endif()
 set(config "${clientDirectory}/client-map-${CASE}.ini")
 file(WRITE "${config}" "${content}")
-execute_process(COMMAND "${CLIENT}" --settings "${config}" --frames 240
-    RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 50)
+execute_process(COMMAND "${CLIENT}" --settings "${config}" --frames ${STARTUP_FRAMES}
+    RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT ${STARTUP_TIMEOUT})
 file(REMOVE "${config}")
 set(log "${output}\n${errors}")
 if(CASE STREQUAL "success" OR CASE STREQUAL "large100")

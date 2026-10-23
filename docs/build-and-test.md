@@ -60,6 +60,11 @@ ctest --preset asan-unit
 ctest --preset asan-memory
 ```
 
+Client startup integration tests allow 1200 frames / 100 seconds under ASan,
+compared with 240 frames / 50 seconds normally. Instrumented asynchronous asset
+initialization can outlast the ordinary frame limit; scene readiness, expected
+errors, clean shutdown and Vulkan validation checks remain required.
+
 Configure the ASan build's own `bin/settings.ini` before corpus tests. Tools are
 disabled in this preset, so ASan does not need to load an instrumented Python module.
 `CGL_ENABLE_ASAN=ON` also works with a custom build directory. MSVC uses

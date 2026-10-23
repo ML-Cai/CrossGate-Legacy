@@ -1,5 +1,12 @@
+# Defaults also support invoking this script outside CTest.
+if(NOT DEFINED STARTUP_FRAMES)
+    set(STARTUP_FRAMES 240)
+endif()
+if(NOT DEFINED STARTUP_TIMEOUT)
+    set(STARTUP_TIMEOUT 50)
+endif()
 # Requires a Vulkan-capable desktop; the success case also needs the game files.
-set(arguments --frames 240)
+set(arguments --frames ${STARTUP_FRAMES})
 get_filename_component(clientDirectory "${CLIENT}" DIRECTORY)
 if(INVALID_RESOURCES)
     set(config "${clientDirectory}/client-invalid-resources.ini")
@@ -19,7 +26,7 @@ elseif(INVALID_ANIMATION)
     list(APPEND arguments --settings "${config}")
 endif()
 execute_process(COMMAND "${CLIENT}" ${arguments}
-    RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 50)
+    RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT ${STARTUP_TIMEOUT})
 if(config)
     file(REMOVE "${config}")
 endif()
