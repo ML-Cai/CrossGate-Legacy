@@ -93,3 +93,55 @@ Set the demo INI's asset root separately. WASD moves, N randomizes remote actors
 and R restarts. VSync is off in the demo configuration. This is an interactive
 simulation, not an automated FPS regression gate. Python tools are built by the
 `dev` preset; install tool requirements in the chosen Python environment as needed.
+
+## Bounded runtime telemetry
+
+General gameplay can use the same CPU frame-time mean/nearest-rank percentile
+calculation as the crowd benchmark. In a custom INI:
+
+```ini
+[Telemetry]
+Enabled=true
+ReportPath=runtime-summary.json
+```
+
+Telemetry is off by default; the supplied server-demo100.ini enables it. Empty
+ReportPath keeps the periodic console/title diagnostics without writing a file.
+Report paths are relative to the process working directory; the parent must exist.
+Use a different path from Benchmark.ReportPath. A failed report write is reported
+as a client error and still goes through normal engine cleanup.
+
+The runtime collector keeps exactly 512 sample slots. Its summary describes the
+last up to 512 completed gameplay frames, not a fixed number of seconds or the
+whole session; total_samples is a separate lifetime count. Initial loading is
+excluded. Restart/transition stalls after gameplay starts remain observable.
+Zero drawn actors can be correct for non-map scenes. Drawing only updates render
+counters; sampling happens after the frame has been recorded/presented. Console
+summary output is limited to every two seconds and its cost is included in that
+frame's duration. Sample insertion and rolling summaries do not allocate heap
+storage. World rendering still has its existing allocations; telemetry does not
+claim to remove those.
+
+FPS is 1000 divided by mean CPU frame duration. Update, render-loop and map-sort
+CPU times are separate; render-loop time includes presentation/fence waits, not
+GPU timestamp-query execution time. The title shows the previous completed frame
+window when the local snapshot refreshes. When telemetry is disabled it says so.
+
+Report status describes clean/error exit, not appearance-loading completion. A
+frame-limited run can exit during initial loading with zero gameplay samples;
+check total_samples before interpreting a report.
+
+JSON reports include frame p50/p95/p99/max, counts above 1000/30 ms, draw counts and
+resource snapshots taken before teardown. Animation and map RGBA fields count
+cache-owned texture payload, with hover-outline bytes separate. Animation pending
+bytes are the current CPU/decode or upload reservation, not an exact GPU resident
+allocation; do not add them to other fields as a process/VRAM total. Driver,
+pipeline, descriptor, staging, allocator overhead and reader scratch/cache bytes
+are not covered. Usage snapshots borrow no resource ownership and clear to zero
+when their caches are cleared.
+
+The benchmark retains its existing bounded-by-config whole-run vectors, cold-load
+latency reports and warmup behavior. Its full-run FPS/percentiles can differ from
+the runtime collector's last-512-frame values. Basic runtime telemetry does not
+yet provide per-request latency, hit/miss counts, GPU timers or eviction metrics;
+those can be added at the responsible resource layers with later cache work.

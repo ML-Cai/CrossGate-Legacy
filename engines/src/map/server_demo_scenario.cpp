@@ -5,6 +5,7 @@
 #include "render/frame_render_systems.h"
 #include "window/window_components.h"
 #include "cgl/trace/logger.h"
+#include "telemetry/frame_telemetry.h"
 
 namespace cgl {
 void ServerDemoScenario::enter(ECSCore* world,const MapLayout& layout,Entity character) {
@@ -22,19 +23,17 @@ void ServerDemoScenario::update(ECSCore* world,const Viewport& viewport) {
     auto* input=world->getSingleton<component::KeyboardInputState>();
     const auto now=std::chrono::steady_clock::now();
     const auto& camera=*world->getSingleton<cgl::component::MapCamera>();
-    ++batchFrames_;
     if(ServerDemoRefreshDue(camera,lastBatchCenter_,viewport,
         std::chrono::duration<double>(now-batchClock_).count(),input->newBatchRequested)) {
-        const auto fps=batchFrames_/std::chrono::duration<double>(now-batchClock_).count();
-        world->getSingleton<cgl::component::WindowHandle>()->pendingTitle=
-            "CGL | FPS " + std::to_string(int(fps)) + " | visible " + std::to_string(remote_->readyVisible) + "/" +
-            std::to_string(remote_->visible) + " | prefetch " + std::to_string(remote_->readyOuter) + "/" +
-            std::to_string(remote_->outer) + " | WASD move, N randomize, R restart";
-        LOGI("Server demo: FPS=" << fps
-            << ", visible=" << remote_->readyVisible << "/" << remote_->visible
-            << ", outer=" << remote_->readyOuter << "/" << remote_->outer);
+        const auto* telemetry=world->getSingleton<component::RuntimeTelemetry>();
+        const auto summary=telemetry ? telemetry->frames.summary() : FrameSummary{};
+        world->getSingleton<component::WindowHandle>()->pendingTitle=
+            "CGL | " + (telemetry ? "FPS " + std::to_string(int(summary.fps)) + " | p99 " +
+            std::to_string(summary.p99Ms) + " ms" : std::string("telemetry off")) + " | visible " + std::to_string(remote_->readyVisible) + "/" + std::to_string(remote_->visible) +
+            " | prefetch " + std::to_string(remote_->readyOuter) + "/" + std::to_string(remote_->outer) +
+            " | WASD move, N randomize, R restart";
         sendSnapshot(world,viewport,input->newBatchRequested);
-        batchClock_=now;batchFrames_=0;
+        batchClock_=now;
     }
     input->newBatchRequested=false;
     auto& readers=*world->getSingleton<cgl::component::AssetsReaderState>();
@@ -50,7 +49,7 @@ void ServerDemoScenario::sendSnapshot(cgl::ECSCore* world,const cgl::Viewport& v
 }
 void ServerDemoScenario::clear(ECSCore* world) {
     if(remote_) remote_->clear(*world);
-    remote_.reset();feed_.reset();batchFrames_=0;batchClock_={};
+    remote_.reset();feed_.reset();batchClock_={};
     character_=0;width_=height_=0;
 }
 }

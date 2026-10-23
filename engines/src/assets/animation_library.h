@@ -37,6 +37,12 @@ public:
         if(!pending_) return decoder_.reservedBytes();
         const auto& c=pending_->second;return uint64_t(c->width)*c->height*c->frameCount*4;
     }
+    struct Usage {size_t clips=0;uint64_t rgbaBytes=0,pendingBytes=0,budgetBytes=0;};
+    Usage usage() const noexcept {
+        Usage result{clips_.size(),0,pendingBytes(),textureBudget_};
+        for(const auto& [key,clip]:clips_) result.rgbaBytes+=uint64_t(clip->width)*clip->height*clip->frameCount*4;
+        return result;
+    }
     // Cancellation/scene exit can wait for the one already-submitted chunk.
     void cancelPending() noexcept { decoder_.cancel(); decodeRequest_.reset(); decodeReaders_=nullptr; pending_.reset(); builder_.clear(); }
     void setTextureBudget(uint64_t bytes) {

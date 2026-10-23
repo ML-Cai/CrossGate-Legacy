@@ -90,6 +90,7 @@ std::shared_ptr<const MapResources> MapLibrary::acquire(const std::filesystem::p
         if (!renderer) throw std::runtime_error("Could not upload map atlas page (check device texture limits)");
         result->renderers.push_back(std::move(renderer));
     }
+    result->rgbaBytes=textureBytes;
     maps_.emplace(key, result);
     device_ = device; pass_ = pass;
     LOGI("Map ready: " << result->layout.width << "x" << result->layout.height

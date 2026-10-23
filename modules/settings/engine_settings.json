@@ -157,6 +157,10 @@
                 "Description": "Preload idle+walk, then switch the entire crowd every second without frame-loop uploads."
             }
         ],
-        "ServerDemo": [{"Name":"Enabled","Type":"bool","Default":"false","ExportToINI":true,"Description":"Local server snapshot simulator: 128 visible actors and a 1.5x interest region."}]
+        "ServerDemo": [{"Name":"Enabled","Type":"bool","Default":"false","ExportToINI":true,"Description":"Local server snapshot simulator: 128 visible actors and a 1.5x interest region."}],
+        "Telemetry": [
+            {"Name":"Enabled","Type":"bool","Default":"false","ExportToINI":true,"Description":"Enable bounded rolling CPU frame/resource diagnostics."},
+            {"Name":"ReportPath","Type":"std::string","Default":"","ExportToINI":true,"Description":"Optional JSON summary written on exit when telemetry is enabled."}
+        ]
     }
 }
