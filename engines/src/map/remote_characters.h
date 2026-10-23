@@ -10,7 +10,7 @@
 namespace cgl {
 namespace component { struct RemoteCharacter { uint64_t serverId; size_t appearance; }; }
 // Scene-owned bridge from complete snapshots to ECS. It owns entity identities,
-// never GPU resources; the engine library retains ready clips until safe teardown.
+// never GPU resources; engine ready/retired ownership covers submitted GPU work.
 class RemoteCharacters {
 public:
     explicit RemoteCharacters(std::vector<AnimationRequest> catalog):catalog_(std::move(catalog)) {}
@@ -75,6 +75,11 @@ public:
         }
         // Finish an in-flight clip even if its actor left. Cancelling a submitted
         // chunk on every snapshot could stall the frame. No unbounded FIFO exists.
+        // A budget wait owns no submitted upload. If its actor disappeared or a
+        // nearer visible candidate supersedes it, switch without a GPU cancel wait.
+        if(active_ && library.waitingForBudget() && candidate!=active_) {
+            library.cancelPending();active_=candidate;
+        }
         if(!active_) active_=candidate;
         if(!active_) return;
         try {

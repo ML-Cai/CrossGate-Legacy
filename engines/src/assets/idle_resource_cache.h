@@ -42,14 +42,14 @@ public:
     // Transfer each selected owner before erasing it. Receiver may allocate/throw;
     // that entry stays cached on failure (earlier transfers remain committed).
     template<class Barrier,class Receiver> uint64_t retire(uint64_t targetBytes,Barrier&& barrier,Receiver&& receiver,
-            size_t maxEntries=std::numeric_limits<size_t>::max()) {
+            size_t maxEntries=std::numeric_limits<size_t>::max(),size_t maxVictims=std::numeric_limits<size_t>::max()) {
         if(bytes_<=targetBytes && entries_.size()<=maxEntries) return 0;
         std::vector<typename Entries::iterator> candidates;
         for(auto it=entries_.begin();it!=entries_.end();++it)
             if(it->second.value.use_count()==1) candidates.push_back(it);
         std::sort(candidates.begin(),candidates.end(),[](auto a,auto b){return a->second.touched<b->second.touched;});
         uint64_t projected=bytes_;size_t count=0;
-        while(count<candidates.size() && (projected>targetBytes || entries_.size()-count>maxEntries)) projected-=candidates[count++]->second.bytes;
+        while(count<maxVictims && count<candidates.size() && (projected>targetBytes || entries_.size()-count>maxEntries)) projected-=candidates[count++]->second.bytes;
         if(!count) return 0;
         barrier();
         uint64_t released=0;

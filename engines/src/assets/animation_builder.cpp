@@ -77,10 +77,11 @@ AnimationPixels AnimationBuilder::build(const AnimationRequest& request,
         frames.push_back(info);
     }
     const auto width = right - left, height = bottom - top;
-    const auto budget = std::min(availableBytes, maxBytes);
-    require(width > 0 && height > 0 && width <= 4096 && height <= 4096 &&
-            frames.size() <= budget / (uint64_t(width) * height * 4),
-            "Animation preview exceeds remaining texture memory budget");
+    require(width > 0 && height > 0 && width <= 4096 && height <= 4096,
+            "Invalid animation canvas dimensions");
+    const uint64_t requiredBytes=uint64_t(width)*height*4*frames.size();
+    require(requiredBytes<=maxBytes,"Animation exceeds per-clip texture memory limit");
+    if(requiredBytes>availableBytes) throw AnimationBudgetExceeded(requiredBytes);
     checkCancellation();
     PaletteData256 palette{};
     require(readers.pPaletteReader->read(EnvironmentPaletteTypes::Daytime, &palette) == Results::Success,

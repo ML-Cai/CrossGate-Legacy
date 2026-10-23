@@ -1,4 +1,5 @@
 #include "assets/map_library.h"
+#include "assets/character_catalog.h"
 #include "benchmark/crowd_benchmark.h"
 #include "map/map_camera.h"
 #include "map/map_render_data.h"
@@ -858,4 +859,159 @@ TEST_F(DesktopSceneTest, DeferredRetirementFollowsActualFrameFencesAndRetainsBud
         EXPECT_NE(library_.findReady({100000,7,0}),nullptr);
         scene->state=cgl::StateTypes::RUNNING;
     }
+}
+
+TEST_F(DesktopSceneTest, BudgetPressureWaitsForPinsAndFenceCompletionThenRetries) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.animation.SerialNum=101406;settings.animation.Direction=0;settings.animation.Motion=5;
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
+    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::AnimationScene) && std::chrono::steady_clock::now()<deadline) {
+        manager_.update(&world_);ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(scene->scene,nullptr);ASSERT_EQ(scene->scene->sceneType(),cgl::SceneTypes::AnimationScene);
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    auto* sync=world_.getSingleton<cgl::component::PrimaryRenderSyncObjects>();
+    const auto baseline=library_.usage().rgbaBytes;
+    auto pin=library_.acquire({100000,0,0},readers,device,pass);
+    const auto aBytes=library_.usage().rgbaBytes-baseline;
+    cgl::AnimationBuilder plan;
+    const cgl::AnimationRequest request{100000,1,0};
+    const auto bBytes=plan.build(request,readers).rgba.size();
+    library_.setTextureBudget(baseline+std::max<uint64_t>(aBytes,bBytes)+1);
+    const auto entity=world_.createEntity();
+    world_.addComponent<cgl::component::Transform2D>(entity);
+    world_.addComponent<cgl::component::Sprite>(entity,pin);
+    world_.addComponent<cgl::component::AnimationPlayer>(entity);
+    draw_.update(&world_);draw_.update(&world_);
+    while(!library_.waitingForBudget() && std::chrono::steady_clock::now()<deadline) {
+        EXPECT_EQ(library_.acquireProgressive(request,readers,device,pass),nullptr);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(library_.waitingForBudget());EXPECT_EQ(library_.pendingBytes(),0);
+    const auto reads=readers.pGfxDataReader[cgl::CrossGateVersion::CG_VERSION_Classic]->cacheStatistics().fileReadCalls;
+    for(int i=0;i<32;++i) {
+        library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
+        EXPECT_EQ(library_.acquireProgressive(request,readers,device,pass),nullptr);
+    }
+    EXPECT_EQ(library_.usage().evictions,0);EXPECT_EQ(library_.usage().retiredClips,0);
+    EXPECT_EQ(readers.pGfxDataReader[cgl::CrossGateVersion::CG_VERSION_Classic]->cacheStatistics().fileReadCalls,reads);
+    // A cancelled/replaced wait must not reset the scan cooldown under churn.
+    library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
+    library_.cancelPending();
+    EXPECT_EQ(library_.acquireProgressive(request,readers,device,pass,false),nullptr);
+    ASSERT_TRUE(library_.waitingForBudget());
+    std::weak_ptr<const cgl::AnimationClip> weak=pin;
+    world_.destroyEntity(entity);pin.reset();
+    library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
+    EXPECT_EQ(library_.usage().retiredClips,0);
+    library_.maintainStreaming(sync->progress.submitted,sync->progress.completed,false);
+    EXPECT_EQ(library_.usage().retiredClips,0);
+    for(int i=0;i<17 && !library_.usage().retiredClips;++i)
+        library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
+    ASSERT_EQ(library_.usage().retiredClips,1);EXPECT_FALSE(weak.expired());
+    EXPECT_EQ(library_.acquireProgressive(request,readers,device,pass),nullptr);
+    EXPECT_EQ(library_.pendingBytes(),0); // Retirement has not freed budget yet.
+    for(size_t i=0;i<sync->objs.size()+1;++i) draw_.update(&world_);
+    library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
+    EXPECT_TRUE(weak.expired());EXPECT_EQ(library_.usage().retiredBytes,0);
+    std::shared_ptr<const cgl::AnimationClip> ready;
+    while(!ready && std::chrono::steady_clock::now()<deadline) {
+        ready=library_.acquireProgressive(request,readers,device,pass);
+        const auto usage=library_.usage();
+        EXPECT_LE(usage.rgbaBytes+usage.retiredBytes+usage.pendingBytes,usage.budgetBytes);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(ready,nullptr);EXPECT_FALSE(library_.waitingForBudget());EXPECT_GT(library_.usage().budgetDeferrals,0);
+}
+TEST_F(DesktopSceneTest, RemoteBudgetWaitCanChangeCandidateAndRetryWithoutPermanentFailure) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.animation.SerialNum=101406;settings.animation.Direction=0;settings.animation.Motion=5;
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
+    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::AnimationScene) && std::chrono::steady_clock::now()<deadline) {
+        manager_.update(&world_);ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(scene->scene,nullptr);ASSERT_EQ(scene->scene->sceneType(),cgl::SceneTypes::AnimationScene);
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    const auto baseline=library_.usage().rgbaBytes;
+    library_.setTextureBudget(baseline);
+    const cgl::AnimationRequest request{100000,0,0};
+    EXPECT_EQ(library_.acquireProgressive(request,readers,device,pass,false),nullptr);
+    ASSERT_TRUE(library_.waitingForBudget());EXPECT_EQ(library_.pendingBytes(),0);
+    auto placeholder=library_.findReady({101406,0,5});ASSERT_NE(placeholder,nullptr);
+    cgl::RemoteCharacters remote({request});
+    cgl::component::MapCamera camera;camera.center={10,10};const cgl::Viewport viewport{0,0,800,600};
+    remote.apply(world_,{1,{{1,{10,10},0}}},placeholder);
+    remote.update(world_,library_,readers,device,pass,camera,viewport);
+    EXPECT_EQ(remote.visible,1);EXPECT_EQ(remote.readyVisible,0);
+    remote.apply(world_,{2,{}},placeholder);
+    remote.update(world_,library_,readers,device,pass,camera,viewport);
+    EXPECT_FALSE(library_.waitingForBudget());EXPECT_EQ(library_.pendingBytes(),0);
+    // This exact appearance must be retried when it returns with available budget.
+    library_.setTextureBudget(baseline+32ull*1024*1024);
+    remote.apply(world_,{3,{{2,{10,10},0}}},placeholder);
+    while(!remote.readyVisible && std::chrono::steady_clock::now()<deadline) {
+        remote.update(world_,library_,readers,device,pass,camera,viewport);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    EXPECT_EQ(remote.readyVisible,1);EXPECT_NE(library_.findReady(request),nullptr);
+    remote.clear(world_);
+    // A clip too large for the TOTAL configured budget remains an actual error.
+    cgl::AnimationLibrary tooSmall;tooSmall.setTextureBudget(1);
+    EXPECT_THROW(tooSmall.acquireProgressive(request,readers,device,pass,false),std::runtime_error);
+    EXPECT_FALSE(tooSmall.waitingForBudget());EXPECT_EQ(tooSmall.pendingBytes(),0);
+    EXPECT_THROW(library_.acquireProgressive({0,0,0},readers,device,pass,false),std::runtime_error);
+    EXPECT_FALSE(library_.waitingForBudget());
+}
+
+TEST_F(DesktopSceneTest, RepeatedDistinctAppearanceBatchesRecoverUnderSmallWorkingSetBudget) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.animation.SerialNum=101406;settings.animation.Direction=0;settings.animation.Motion=5;
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(40);
+    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::AnimationScene) && std::chrono::steady_clock::now()<deadline) {
+        manager_.update(&world_);ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(scene->scene,nullptr);ASSERT_EQ(scene->scene->sceneType(),cgl::SceneTypes::AnimationScene);
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    auto* sync=world_.getSingleton<cgl::component::PrimaryRenderSyncObjects>();
+    auto catalog=cgl::ReadCharacterCatalog(readers,8);ASSERT_EQ(catalog.size(),8);
+    cgl::AnimationBuilder plan;uint64_t largest=0;
+    for(const auto& request:catalog) largest=std::max<uint64_t>(largest,plan.build(request,readers).rgba.size());
+    const auto baseline=library_.usage().rgbaBytes;
+    library_.setTextureBudget(baseline+largest);
+    auto placeholder=library_.findReady({101406,0,5});ASSERT_NE(placeholder,nullptr);
+    cgl::RemoteCharacters remote(catalog);cgl::component::MapCamera camera;camera.center={10,10};
+    const cgl::Viewport viewport{0,0,800,600};
+    for(uint64_t batch=1;batch<=16;++batch) {
+        remote.apply(world_,{batch,{{batch,{10,10},size_t(batch-1)%catalog.size()}}},placeholder);
+        world_.forEach<cgl::component::RemoteCharacter>([&](auto entity,auto*) {
+            world_.addComponent<cgl::component::Transform2D>(entity);
+        });
+        remote.readyVisible=0;
+        while(!remote.readyVisible && std::chrono::steady_clock::now()<deadline) {
+            library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
+            remote.update(world_,library_,readers,device,pass,camera,viewport);draw_.update(&world_);
+            const auto usage=library_.usage();
+            ASSERT_LE(usage.rgbaBytes+usage.retiredBytes+usage.pendingBytes,usage.budgetBytes);
+            ASSERT_NE(world_.getSingleton<cgl::component::FrameRenderState>()->state,cgl::StateTypes::ERROR);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        ASSERT_EQ(remote.readyVisible,1)<<"Appearance batch "<<batch;
+    }
+    EXPECT_GT(library_.usage().budgetDeferrals,0);EXPECT_GT(library_.usage().evictions,0);
+    remote.clear(world_);library_.cancelPending();
+    for(size_t i=0;i<sync->objs.size()+1;++i) draw_.update(&world_);
+    for(int i=0;i<8;++i) library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
+    EXPECT_EQ(library_.usage().retiredBytes,0);EXPECT_EQ(library_.pendingBytes(),0);
 }

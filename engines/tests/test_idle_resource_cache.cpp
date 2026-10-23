@@ -103,3 +103,27 @@ TEST(SubmissionProgress, CompletionCannotAdvanceBeforeSuccessfulSubmissions) {
     progress.didComplete(second);progress.didComplete(first);EXPECT_EQ(progress.completed,2);
     EXPECT_EQ(progress.didSubmit(),3);EXPECT_EQ(progress.completed,2);
 }
+
+TEST(DeferredResourceQueue, BoundedCollectionCountsZeroByteEntriesAndPreservesBacklog) {
+    cgl::DeferredResourceQueue<Resource> queue;
+    std::vector<std::weak_ptr<const Resource>> weak;
+    for(int i=0;i<10;++i) {
+        auto p=std::make_shared<Resource>(i);weak.push_back(p);queue.retain(5,p,i?4:0);
+    }
+    EXPECT_EQ(queue.collect(5,0),0);EXPECT_EQ(queue.size(),10);
+    EXPECT_EQ(queue.collect(4,8),0);EXPECT_EQ(queue.size(),10);
+    EXPECT_EQ(queue.collect(5,8),28);EXPECT_EQ(queue.size(),2);EXPECT_EQ(queue.bytes(),8);
+    for(size_t i=0;i<weak.size();++i) EXPECT_EQ(weak[i].expired(),i<8);
+    EXPECT_EQ(queue.collect(5,8),8);EXPECT_EQ(queue.size(),0);
+}
+TEST(IdleResourceCache, BoundedVictimsKeepRemainingOwnersAndPayloadForNextScan) {
+    Cache cache;cgl::DeferredResourceQueue<Resource> queue;
+    for(int i=0;i<12;++i) cache.insert(i,std::make_shared<Resource>(i),4);
+    auto pin=cache.find(0);
+    auto transfer=[&](const auto& p,uint64_t bytes){queue.retain(1,p,bytes);};
+    EXPECT_EQ(cache.retire(0,[]{},transfer,0,8),32);
+    EXPECT_EQ(cache.size(),4);EXPECT_EQ(queue.size(),8);EXPECT_EQ(cache.bytes()+queue.bytes(),48);
+    EXPECT_NE(cache.find(0),nullptr);
+    EXPECT_EQ(cache.retire(0,[]{},transfer,0,8),12);
+    EXPECT_EQ(cache.size(),1);EXPECT_EQ(queue.size(),11);EXPECT_EQ(pin->id,0);
+}
