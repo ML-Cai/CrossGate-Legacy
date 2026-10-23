@@ -216,8 +216,12 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
         const auto summary=telemetry->frames.summary();
         const auto animations=animationLibrary_.usage();const auto maps=mapLibrary_.usage();
         const auto* swap=pRenderDevState_->pSwapchain.get();
+        const auto* loading=pEcs->getSingleton<cgl::component::SceneLoadProgress>();
         out << "{\n\"status\":\"" << (anyStateError()?"scene_error":"complete") << "\","
             << "\"present_mode\":\"" << (swap?swap->presentModeName():"unavailable") << "\","
+            << "\"scene_loading\":" << (loading && !loading->ready?"true":"false")
+            << ",\"scene_load_completed\":" << (loading?loading->completed:0)
+            << ",\"scene_load_total\":" << (loading?loading->total:0) << ","
             << "\"window_capacity\":" << cgl::FrameTelemetry::Capacity << ",\"window_samples\":" << summary.count
             << ",\"total_samples\":" << summary.total << ",\"fps\":" << summary.fps
             << ",\"frame_mean_ms\":" << summary.meanMs << ",\"frame_p50_ms\":" << summary.p50Ms
@@ -256,7 +260,8 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
         const bool wasReady = benchmark && benchmark->ready;
         const bool wasCold = wasReady && settings.benchmark.LoadDuringPlayback &&
             benchmark->unique < settings.benchmark.UniqueCharacters;
-        const bool wasRunning=pSceneState_->scene && pSceneState_->scene->sceneType()!=cgl::SceneTypes::InitScene;
+        const auto* loading=pEcs->getSingleton<cgl::component::SceneLoadProgress>();
+        const bool wasRunning=pSceneState_->scene && pSceneState_->scene->sceneType()!=cgl::SceneTypes::InitScene && (!loading || loading->ready);
         if(auto* sync=pEcs->getSingleton<cgl::component::PrimaryRenderSyncObjects>()) {
             animationLibrary_.maintainStreaming(sync->progress.submitted,sync->progress.completed,settings.cachemaintenance.Enabled);
             mapLibrary_.collectRetired(sync->progress.completed,1,2);

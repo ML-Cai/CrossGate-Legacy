@@ -17,6 +17,20 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquire(
     clips_.insert(request,clip,uint64_t(clip->width)*clip->height*clip->frameCount*4);
     return clip;
 }
+std::shared_ptr<const AnimationClip> AnimationLibrary::acquireForScene(
+    const AnimationRequest& request,component::AssetsReaderState& readers,
+    graphics::IDevice* device,graphics::IRenderPass* pass) {
+    if(!device || !pass || (device_ && device_!=device) || (pass_ && pass_!=pass))
+        throw std::invalid_argument("Animation library requires one live device/render pass");
+    if(auto found=findOrRestore(request)) return found;
+    if(pending_ || decodeRequest_) throw std::logic_error("Scene admission requires pending streaming work to be cancelled");
+    if(budgetWait_ && budgetWait_->request==request && remainingBytes()<budgetWait_->requiredBytes) {
+        ++budgetDeferrals_;return nullptr;
+    }
+    budgetWait_.reset();
+    try {return acquire(request,readers,device,pass);}
+    catch(const AnimationBudgetExceeded& error) {deferBudget(request,error.requiredBytes,AnimationBuilder::MaxBytes);return nullptr;}
+}
 std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
     const AnimationRequest& request,component::AssetsReaderState& readers,
     graphics::IDevice* device,graphics::IRenderPass* pass,bool backgroundDecode) {
@@ -83,9 +97,9 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::findOrRestore(const Anima
     if(restored && budgetWait_ && budgetWait_->request==request) budgetWait_.reset();
     return restored;
 }
-void AnimationLibrary::deferBudget(const AnimationRequest& request,uint64_t requiredBytes) {
-    if(requiredBytes>std::min<uint64_t>(textureBudget_,AnimationDecodeWorker::MaxBytes))
-        throw std::runtime_error("Animation exceeds progressive clip/total texture budget");
+void AnimationLibrary::deferBudget(const AnimationRequest& request,uint64_t requiredBytes,uint64_t clipLimit) {
+    if(requiredBytes>std::min(textureBudget_,clipLimit))
+        throw std::runtime_error("Animation exceeds clip/total texture budget");
     budgetWait_=BudgetWait{request,requiredBytes};++budgetDeferrals_;
 }
 void AnimationLibrary::maintainStreaming(uint64_t submitted,uint64_t completed,bool allowEviction) {

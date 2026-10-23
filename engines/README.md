@@ -440,6 +440,9 @@ without duplicate uploads. Restoration and retirement-index insertion preserve
 source ownership on failure. Subsequent retirement uses the latest graphics
 submission serial. Ready-only findReady does not restore ownership.
 
-Asynchronous scene-entry retry for a different working set and a fuller streaming
-scheduler remain follow-up work. See docs/build-and-test.md and
+Map/preview entry validates the full animation working set from metadata, then
+waits across frames when old allocations temporarily consume capacity. Characters
+are published only when all required clips are ready; exit releases partial pins.
+Successful decode/upload and map loading remain synchronous. A fuller streaming
+scheduler remains follow-up work. See docs/build-and-test.md and
 docs/resource-streaming-plan.md for diagnostics and limits.

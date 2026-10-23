@@ -85,3 +85,10 @@ target_link_libraries(test_idle_resource_cache PRIVATE GTest::gtest_main)
 set_target_properties(test_idle_resource_cache PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 gtest_discover_tests(test_idle_resource_cache WORKING_DIRECTORY ${CGL_BIN_PATH}
     PROPERTIES LABELS "unit\;memory" TIMEOUT 60)
+
+add_executable(test_scene_animation_load test_scene_animation_load.cpp)
+target_include_directories(test_scene_animation_load PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_scene_animation_load PRIVATE GTest::gtest_main cgl::graphics cgl::assets cgl::common)
+set_target_properties(test_scene_animation_load PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
+gtest_discover_tests(test_scene_animation_load WORKING_DIRECTORY ${CGL_BIN_PATH}
+    PROPERTIES LABELS "unit\;memory" TIMEOUT 60)

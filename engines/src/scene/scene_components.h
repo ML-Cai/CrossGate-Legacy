@@ -53,6 +53,11 @@ cgl::IScene::Ptr CreateMapScene(MapLibrary& maps, AnimationLibrary& animations);
 namespace component {
 
 // -----------------------------------------------------------------------------
+struct SceneLoadProgress {
+    uint32_t completed=0,total=0;
+    uint64_t requiredBytes=0;
+    bool ready=false;
+};
 struct SceneState {
     cgl::StateTypes state;
     cgl::SceneTypes nextScene;

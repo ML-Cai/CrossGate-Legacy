@@ -32,6 +32,9 @@ struct AnimationPixels {
 // Clear when reloading resources in place; reader identity alone cannot detect it.
 class AnimationBuilder {
 public:
+    static constexpr uint64_t MaxBytes=256ull*1024*1024;
+    // Metadata only: validates the canvas and returns exact RGBA payload.
+    uint64_t requiredBytes(const AnimationRequest& request,component::AssetsReaderState& readers);
     AnimationPixels build(const AnimationRequest& request, component::AssetsReaderState& readers,
                           uint64_t availableBytes = 256ull * 1024 * 1024, const std::atomic_bool* cancelled = nullptr);
     void clear() noexcept {
@@ -40,6 +43,8 @@ public:
         dataReader_ = nullptr;
     }
 private:
+    struct Plan {AnimationPixels canvas;std::vector<GraphicsResourceInfo> frames;uint64_t bytes;};
+    Plan prepare(const AnimationRequest&,component::AssetsReaderState&,const std::atomic_bool*);
     std::optional<AnimeResourceData> description_;
     const IAnimeInfoReader* infoReader_ = nullptr;
     const IAnimeDataReader* dataReader_ = nullptr;

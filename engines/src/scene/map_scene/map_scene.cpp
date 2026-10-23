@@ -1,4 +1,5 @@
 #include "scene/scene_components.h"
+#include "scene/scene_animation_load.h"
 #include "assets/map_library.h"
 #include "assets/assets_components.h"
 #include "animation/animation_components.h"
@@ -33,6 +34,20 @@ public:
             const auto scale = settings.display.ViewportScale;
             if (!std::isfinite(scale) || scale > 16 || scale < 0.125)
                 throw std::runtime_error("Map ViewportScale must be between 0.125 and 16");
+            if(!world->getSingleton<cgl::component::CrowdBenchmark>()) {
+                if(settings.animation.Direction>=8) throw std::runtime_error("Invalid initial character direction");
+                facing_=settings.animation.Direction;serverDemoEnabled_=settings.serverdemo.Enabled;
+                std::vector<cgl::AnimationRequest> requests;
+                for(uint32_t direction=0;direction<8;++direction) {
+                    requests.push_back({settings.animation.SerialNum,direction,0});
+                    requests.push_back({settings.animation.SerialNum,direction,1});
+                }
+                cgl::AnimationBuilder planner;
+                load_.begin(std::move(requests),animations_.usage().budgetBytes,[&](const auto& request) {
+                    return planner.requiredBytes(request,*world->getSingleton<cgl::component::AssetsReaderState>());
+                });
+                world->addSingleton<cgl::component::SceneLoadProgress>(0,uint32_t(load_.total()),load_.requiredBytes(),false);
+            }
             auto& render = *world->getSingleton<cgl::component::RenderDeviceState>();
             auto* pass = world->getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
             auto& readers = *world->getSingleton<cgl::component::AssetsReaderState>();
@@ -46,33 +61,11 @@ public:
                 crowdScenario_=std::make_unique<cgl::CrowdScenario>(animations_);
                 crowdScenario_->enter(world,map_->layout,*benchmark);
                 benchmark->loadMs = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-loadStart).count();
-                benchmark->ready = true;
+                benchmark->ready = true;ready_=true;
                 cgl::UpdateAnimations(*world,0);
                 return;
             }
-            if (settings.animation.Direction >= 8)
-                throw std::runtime_error("Invalid initial character direction");
-            cgl::component::CharacterMovement movement;
-            movement.facing = settings.animation.Direction;
-            // Load before entering the frame loop: turning never uploads GPU resources.
-            for (uint32_t direction = 0; direction < 8; ++direction) {
-                movement.idle[direction] = animations_.acquire({settings.animation.SerialNum, direction, 0},
-                    readers, render.pDevice.get(), pass);
-                movement.walk[direction] = animations_.acquire({settings.animation.SerialNum, direction, 1},
-                    readers, render.pDevice.get(), pass);
-            }
-            auto clip = movement.idle[movement.facing];
-            character_ = world->createEntity();
-            world->addComponent<cgl::component::MapPosition>(character_, center);
-            world->addComponent<cgl::component::Sprite>(character_, std::move(clip));
-            world->addComponent<cgl::component::AnimationPlayer>(character_);
-            world->addComponent<cgl::component::CharacterMovement>(character_, std::move(movement));
-            if(settings.serverdemo.Enabled) {
-                serverDemo_=std::make_unique<cgl::ServerDemoScenario>(animations_);
-                serverDemo_->enter(world,map_->layout,character_);
-            }
-            cgl::UpdateAnimations(*world, 0);
-            LOGI("Map scene entered");
+            advanceEntry(world);
         } catch (const std::exception& error) {
             if (auto* b=world->getSingleton<cgl::component::CrowdBenchmark>())
                 b->loadMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-loadStart).count();
@@ -86,7 +79,8 @@ public:
         crowdScenario_.reset();serverDemo_.reset();
         animations_.cancelPending();
         if (character_) world->destroyEntity(character_);
-        character_ = 0;
+        character_ = 0;ready_=false;load_.reset();
+        world->removeSingleton<cgl::component::SceneLoadProgress>();
         world->removeSingleton<cgl::component::MapCamera>();
         world->removeSingleton<cgl::component::MapHover>();
         outline_.reset();
@@ -95,6 +89,18 @@ public:
         LOGI("Map scene exited");
     }
     void update(cgl::ECSCore* world) noexcept override {
+        if(world->getSingleton<cgl::component::SceneState>()->state==cgl::StateTypes::ERROR) return;
+        if(!ready_) {
+            auto* input=world->getSingleton<cgl::component::KeyboardInputState>();
+            if(input->restartSceneRequested) {
+                input->restartSceneRequested=false;
+                world->getSingleton<cgl::component::SceneState>()->nextScene=cgl::SceneTypes::MapScene;return;
+            }
+            try {advanceEntry(world);} catch(const std::exception& error) {
+                cgl::RaiseError(world->getSingleton<cgl::component::SceneState>(),"Map scene failed: ",error.what());
+            }
+            return;
+        }
         const auto seconds = world->getSingleton<cgl::component::FrameTime>()->deltaSeconds;
         if (auto* benchmark=world->getSingleton<cgl::component::CrowdBenchmark>()) {
             world->getSingleton<cgl::component::MapHover>()->cell.reset();
@@ -122,6 +128,7 @@ public:
         }
     }
     void draw(cgl::ECSCore* world, cgl::graphics::ICommandBuffer* command, const cgl::Viewport& viewport) noexcept override {
+        if(!ready_) return;
         try {
             auto* benchmark=world->getSingleton<cgl::component::CrowdBenchmark>();
             const auto& camera=*world->getSingleton<cgl::component::MapCamera>();
@@ -140,6 +147,36 @@ public:
         }
     }
 private:
+    void advanceEntry(cgl::ECSCore* world) {
+        auto& render=*world->getSingleton<cgl::component::RenderDeviceState>();
+        auto* pass=world->getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+        const bool acquired=load_.advance([&](const auto& request) {
+            return animations_.acquireForScene(request,*world->getSingleton<cgl::component::AssetsReaderState>(),render.pDevice.get(),pass);
+        });
+        if(acquired) {
+            cgl::component::CharacterMovement movement;movement.facing=facing_;
+            for(size_t direction=0;direction<8;++direction) {
+                movement.idle[direction]=load_.clip(direction*2);movement.walk[direction]=load_.clip(direction*2+1);
+            }
+            const auto center=world->getSingleton<cgl::component::MapCamera>()->center;
+            character_=world->createEntity();
+            world->addComponent<cgl::component::MapPosition>(character_,center);
+            world->addComponent<cgl::component::Sprite>(character_,movement.idle[facing_]);
+            world->addComponent<cgl::component::AnimationPlayer>(character_);
+            world->addComponent<cgl::component::CharacterMovement>(character_,std::move(movement));
+            if(serverDemoEnabled_) {
+                serverDemo_=std::make_unique<cgl::ServerDemoScenario>(animations_);serverDemo_->enter(world,map_->layout,character_);
+            }
+            cgl::UpdateAnimations(*world,0);ready_=true;
+            world->getSingleton<cgl::component::WindowHandle>()->pendingTitle="CGL";
+            LOGI("Map scene entered");
+        } else if(lastProgress_!=load_.completed()) {
+            world->getSingleton<cgl::component::WindowHandle>()->pendingTitle="CGL | Loading "+
+                std::to_string(load_.completed())+"/"+std::to_string(load_.total());
+            lastProgress_=load_.completed();
+        }
+        *world->getSingleton<cgl::component::SceneLoadProgress>()={uint32_t(load_.completed()),uint32_t(load_.total()),load_.requiredBytes(),ready_};
+    }
     static cgl::MapPointerInput pointerInput(cgl::ECSCore* world) noexcept {
         const auto* cursor=world->getSingleton<cgl::component::CursorPositionState>();
         if(!cursor) return {};
@@ -155,6 +192,10 @@ private:
     cgl::AnimationLibrary& animations_;
     std::shared_ptr<const cgl::MapResources> map_;
     std::shared_ptr<const cgl::MapHoverOutline> outline_;
+    cgl::SceneAnimationLoad load_;
+    size_t lastProgress_=std::numeric_limits<size_t>::max();
+    uint32_t facing_=0;
+    bool ready_=false,serverDemoEnabled_=false;
     cgl::Entity character_ = 0;
     std::unique_ptr<cgl::CrowdScenario> crowdScenario_;
     std::unique_ptr<cgl::ServerDemoScenario> serverDemo_;

@@ -30,6 +30,10 @@ public:
     // Reader storage must outlive clear()/destruction. All GPU work stays here.
     std::shared_ptr<const AnimationClip> acquireProgressive(const AnimationRequest& request,
         component::AssetsReaderState& readers, graphics::IDevice* device, graphics::IRenderPass* pass, bool backgroundDecode=true);
+    // Scene entry may defer synchronous acquisition while older ownership occupies
+    // capacity. It supports the normal 256 MiB clip limit, without a worker job.
+    std::shared_ptr<const AnimationClip> acquireForScene(const AnimationRequest& request,
+        component::AssetsReaderState& readers,graphics::IDevice* device,graphics::IRenderPass* pass);
     std::shared_ptr<const AnimationClip> findReady(const AnimationRequest& request) const {
         return clips_.find(request);
     }
@@ -78,7 +82,7 @@ private:
     uint64_t budgetDeferrals_=0;
     uint32_t pressureCooldown_=0;
     std::shared_ptr<const AnimationClip> findOrRestore(const AnimationRequest& request);
-    void deferBudget(const AnimationRequest& request,uint64_t requiredBytes);
+    void deferBudget(const AnimationRequest& request,uint64_t requiredBytes,uint64_t clipLimit=AnimationDecodeWorker::MaxBytes);
     uint64_t remainingBytes() const;
     std::shared_ptr<const AnimationClip> uploadClip(const AnimationRequest& request,AnimationPixels pixels,
         graphics::IDevice* device,graphics::IRenderPass* pass,bool progressive);

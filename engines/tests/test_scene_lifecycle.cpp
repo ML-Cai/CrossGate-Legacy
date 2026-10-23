@@ -158,6 +158,18 @@ protected:
             glfwDestroyWindow(static_cast<GLFWwindow*>(window->nativeHandle));
         glfwTerminate();
     }
+    bool enterReadyScene(cgl::SceneTypes type) {
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
+        auto* scene=world_.getSingleton<cgl::component::SceneState>();
+        while(std::chrono::steady_clock::now()<deadline) {
+            manager_.update(&world_);
+            if(scene->state==cgl::StateTypes::ERROR) return false;
+            auto* progress=world_.getSingleton<cgl::component::SceneLoadProgress>();
+            if(scene->scene && scene->scene->sceneType()==type && progress && progress->ready) return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return false;
+    }
     cgl::ECSCore world_;
     cgl::AnimationLibrary library_;
     cgl::MapLibrary maps_;
@@ -1106,4 +1118,122 @@ TEST_F(DesktopSceneTest, ProgressiveReuseAtFullBudgetPreservesOtherPendingDecode
     EXPECT_EQ(library_.usage().reusedClips,2);EXPECT_EQ(library_.usage().retiredBytes,0);
     const auto usage=library_.usage();EXPECT_LE(usage.rgbaBytes+usage.retiredBytes+usage.pendingBytes,usage.budgetBytes);
     library_.cancelPending();EXPECT_EQ(library_.pendingBytes(),0);
+}
+
+TEST_F(DesktopSceneTest, NewCharacterSceneWaitsForOldFramesWithoutPublishingPartialWorld) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.map.FilePath="map/0/100.dat";settings.animation.SerialNum=100000;
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::MapScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    const auto catalog=cgl::ReadCharacterCatalog(readers,2);ASSERT_EQ(catalog.size(),2);
+    const auto serial=catalog[1].serial;ASSERT_NE(serial,100000);
+    cgl::AnimationBuilder planner;uint64_t required=0;
+    for(uint32_t d=0;d<8;++d) for(uint32_t m=0;m<2;++m) required+=planner.requiredBytes({serial,d,m},readers);
+    const auto oldBytes=library_.usage().rgbaBytes;library_.setTextureBudget(std::max(oldBytes,required));
+    std::weak_ptr<const cgl::AnimationClip> old=library_.findReady({100000,0,0});
+    auto* sync=world_.getSingleton<cgl::component::PrimaryRenderSyncObjects>();
+    draw_.update(&world_);draw_.update(&world_);
+    maintenance_=[&]{library_.retireUnused(0,sync->progress.submitted);maps_.retireUnused(0,sync->progress.submitted,0);};
+    settings.animation.SerialNum=serial;
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);
+    ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+    auto* progress=world_.getSingleton<cgl::component::SceneLoadProgress>();ASSERT_NE(progress,nullptr);
+    EXPECT_FALSE(progress->ready);EXPECT_EQ(progress->total,16);EXPECT_EQ(progress->requiredBytes,required);
+    auto count=[&]{size_t n=0;world_.forEach<cgl::component::Sprite>([&](auto,auto*){++n;});return n;};
+    EXPECT_EQ(count(),0);EXPECT_FALSE(old.expired());EXPECT_EQ(library_.pendingBytes(),0);
+    const auto center=world_.getSingleton<cgl::component::MapCamera>()->center;
+    auto* input=world_.getSingleton<cgl::component::KeyboardInputState>();input->moveX=1;
+    world_.getSingleton<cgl::component::FrameTime>()->deltaSeconds=1;
+    auto* gfx=readers.pGfxDataReader[cgl::CrossGateVersion::CG_VERSION_Classic].get();gfx->resetCacheStatistics();
+    for(int i=0;i<10;++i) manager_.update(&world_);
+    EXPECT_EQ(gfx->cacheStatistics().fileReadCalls,0);EXPECT_EQ(count(),0);EXPECT_FALSE(progress->ready);
+    EXPECT_EQ(library_.collectRetired(sync->progress.completed),0);
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while(!progress->ready && std::chrono::steady_clock::now()<deadline) {
+        library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);maps_.collectRetired(sync->progress.completed,1,2);
+        manager_.update(&world_);draw_.update(&world_);
+        ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        const auto usage=library_.usage();EXPECT_LE(usage.rgbaBytes+usage.retiredBytes+usage.pendingBytes,usage.budgetBytes);
+    }
+    ASSERT_TRUE(progress->ready);EXPECT_EQ(progress->completed,16);EXPECT_EQ(count(),1);EXPECT_TRUE(old.expired());
+    EXPECT_DOUBLE_EQ(world_.getSingleton<cgl::component::MapCamera>()->center.x,center.x);
+    EXPECT_DOUBLE_EQ(world_.getSingleton<cgl::component::MapCamera>()->center.y,center.y);
+    input->moveX=0;maintenance_={};
+}
+TEST_F(DesktopSceneTest, PartialSceneAdmissionCanRestartAndCancelWithoutLeakingPins) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.animation.SerialNum=101406;settings.animation.Direction=0;settings.animation.Motion=5;
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto pin=library_.findReady({101406,0,5});ASSERT_NE(pin,nullptr);
+    cgl::AnimationBuilder planner;uint64_t required=0,smallest=std::numeric_limits<uint64_t>::max();
+    for(uint32_t d=0;d<8;++d) for(uint32_t m=0;m<2;++m) {
+        const auto bytes=planner.requiredBytes({100000,d,m},readers);required+=bytes;smallest=std::min(smallest,bytes);
+    }
+    const auto oldBytes=library_.usage().rgbaBytes;
+    library_.setTextureBudget(oldBytes+required-std::min(oldBytes,smallest)/2);
+    auto* sync=world_.getSingleton<cgl::component::PrimaryRenderSyncObjects>();draw_.update(&world_);draw_.update(&world_);
+    maintenance_=[&]{library_.retireUnused(0,sync->progress.submitted);maps_.retireUnused(0,sync->progress.submitted,0);};
+    settings.map.FilePath="map/0/100.dat";settings.animation.SerialNum=100000;
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);
+    ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+    auto* progress=world_.getSingleton<cgl::component::SceneLoadProgress>();ASSERT_NE(progress,nullptr);
+    ASSERT_FALSE(progress->ready);EXPECT_EQ(progress->completed,15);ASSERT_TRUE(library_.waitingForBudget());
+    std::weak_ptr<const cgl::AnimationClip> partial=library_.findReady({100000,0,0});ASSERT_FALSE(partial.expired());
+    const auto bytesBefore=library_.usage().rgbaBytes+library_.usage().retiredBytes;
+    world_.getSingleton<cgl::component::KeyboardInputState>()->restartSceneRequested=true;
+    manager_.update(&world_);manager_.update(&world_);
+    ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+    progress=world_.getSingleton<cgl::component::SceneLoadProgress>();EXPECT_FALSE(progress->ready);EXPECT_EQ(progress->completed,15);
+    EXPECT_EQ(library_.usage().rgbaBytes+library_.usage().retiredBytes,bytesBefore);EXPECT_GE(library_.usage().reusedClips,15);
+    settings.animation.SerialNum=101406;settings.animation.Motion=5;
+    scene->nextScene=cgl::SceneTypes::AnimationScene;manager_.update(&world_);
+    ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+    progress=world_.getSingleton<cgl::component::SceneLoadProgress>();ASSERT_NE(progress,nullptr);EXPECT_TRUE(progress->ready);
+    EXPECT_EQ(progress->total,1);EXPECT_FALSE(library_.waitingForBudget());EXPECT_EQ(library_.pendingBytes(),0);
+    EXPECT_EQ(world_.getSingleton<cgl::component::MapCamera>(),nullptr);EXPECT_EQ(world_.getSingleton<cgl::component::MapHover>(),nullptr);
+    size_t sprites=0;world_.forEach<cgl::component::Sprite>([&](auto,auto*){++sprites;});EXPECT_EQ(sprites,2);
+    for(size_t i=0;i<sync->objs.size()+1;++i) draw_.update(&world_);
+    library_.collectRetired(sync->progress.completed);maps_.collectRetired(sync->progress.completed);
+    EXPECT_TRUE(partial.expired());EXPECT_NE(pin,nullptr);maintenance_={};
+}
+TEST_F(DesktopSceneTest, ImpossibleSceneWorkingSetFailsBeforeMapOrPixelAllocation) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.map.FilePath="map/0/100.dat";settings.animation.SerialNum=100000;
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while(readers.state!=cgl::StateTypes::RUNNING && std::chrono::steady_clock::now()<deadline) {
+        manager_.update(&world_);std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_EQ(readers.state,cgl::StateTypes::RUNNING);ASSERT_EQ(library_.usage().clips,0);
+    library_.setTextureBudget(1);
+    auto* gfx=readers.pGfxDataReader[cgl::CrossGateVersion::CG_VERSION_Classic].get();gfx->resetCacheStatistics();
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);
+    EXPECT_EQ(scene->state,cgl::StateTypes::ERROR);EXPECT_NE(scene->lastError.find("working set"),std::string::npos);
+    EXPECT_EQ(maps_.usage().maps,0);EXPECT_EQ(library_.usage().clips,0);EXPECT_EQ(library_.pendingBytes(),0);
+    EXPECT_EQ(gfx->cacheStatistics().fileReadCalls,0);EXPECT_EQ(world_.getSingleton<cgl::component::MapCamera>(),nullptr);
+    size_t sprites=0;world_.forEach<cgl::component::Sprite>([&](auto,auto*){++sprites;});EXPECT_EQ(sprites,0);
+}
+TEST_F(DesktopSceneTest, PreviewSceneWaitsForRetiredCapacityThenPublishesBothSprites) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.animation.SerialNum=101406;settings.animation.Direction=0;settings.animation.Motion=5;
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();cgl::AnimationBuilder planner;
+    const auto nextBytes=planner.requiredBytes({100000,0,0},readers);const auto oldBytes=library_.usage().rgbaBytes;
+    library_.setTextureBudget(std::max(oldBytes,nextBytes));
+    auto* sync=world_.getSingleton<cgl::component::PrimaryRenderSyncObjects>();draw_.update(&world_);draw_.update(&world_);
+    maintenance_=[&]{library_.retireUnused(0,sync->progress.submitted);};
+    settings.animation.SerialNum=100000;settings.animation.Motion=0;
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();scene->nextScene=cgl::SceneTypes::AnimationScene;manager_.update(&world_);
+    ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+    auto* progress=world_.getSingleton<cgl::component::SceneLoadProgress>();ASSERT_NE(progress,nullptr);
+    EXPECT_FALSE(progress->ready);EXPECT_EQ(progress->completed,0);EXPECT_EQ(progress->total,1);
+    size_t sprites=0;world_.forEach<cgl::component::Sprite>([&](auto,auto*){++sprites;});EXPECT_EQ(sprites,0);
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while(!progress->ready && std::chrono::steady_clock::now()<deadline) {
+        library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);manager_.update(&world_);draw_.update(&world_);
+        ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+    }
+    ASSERT_TRUE(progress->ready);sprites=0;world_.forEach<cgl::component::Sprite>([&](auto,auto*){++sprites;});EXPECT_EQ(sprites,2);
+    EXPECT_EQ(library_.pendingBytes(),0);maintenance_={};
 }
