@@ -49,8 +49,9 @@ public:
     // Internal owner-thread API: serials must come from this device's single
     // graphics submission tracker. Retired resources still own their allocations.
     uint64_t retireUnused(uint64_t mapTargetBytes,uint64_t lastSubmitted,uint64_t outlineTargetBytes=1024*1024);
-    uint64_t collectRetired(uint64_t completed) noexcept {
-        return retiredMaps_.collect(completed)+retiredOutlines_.collect(completed);
+    uint64_t collectRetired(uint64_t completed,size_t maxMaps=std::numeric_limits<size_t>::max(),
+            size_t maxOutlines=std::numeric_limits<size_t>::max()) noexcept {
+        return retiredMaps_.collect(completed,maxMaps)+retiredOutlines_.collect(completed,maxOutlines);
     }
     void clear() { retiredMaps_.clear();retiredOutlines_.clear(); maps_.clear(); outlines_.clear(); device_ = nullptr; pass_ = nullptr; }
 private:

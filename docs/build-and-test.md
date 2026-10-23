@@ -207,11 +207,10 @@ against the hard animation budget; retiring an entry does not create free budget
 These are not physical VRAM or total process RAM measurements.
 
 Warm resources below targets and externally held resources remain retained.
-Automatic in-scene eviction, backpressure/retry when a new scene or appearance
-cannot fit alongside queued allocations, and retired-cache resurrection remain
-separate work. Collection currently drains all completed entries; limiting CPU
-destruction work per frame is also follow-up work before automatic in-scene
-eviction is enabled. The existing hard budget may still refuse such a load. Re-entering
+Progressive appearance loading now defers on temporary budget pressure and can
+evict cache-only ready clips during gameplay. Synchronous scene/map loading still
+fails if the new scene cannot fit alongside queued allocations. Reusing retired
+assets and asynchronous scene-entry backpressure remain follow-up work. Re-entering
 a just-retired asset can temporarily require two copies; do not interpret a soft
 cache target as a strict peak-memory limit. This PR removes the retirement wait,
 not synchronous map loading, upload cancellation waits or shutdown synchronization.
@@ -223,3 +222,56 @@ verify weak references survive before fence acknowledgement and expire after it,
 keep a pinned clip alive, and ensure retired bytes remain charged to the budget.
 The existing blocking-maintenance tests remain. ASan, weak-reference expiry and
 validation checks supplement each other; none alone proves absence of all leaks.
+
+## Progressive animation budget pressure
+
+AnimationBuilder distinguishes metadata admission failure from corrupt/missing
+assets. AnimationBudgetExceeded includes required RGBA bytes and is raised before
+palette/pixel reads. A progressive request that can fit the configured total and
+32 MiB per-progressive-clip limits returns nullptr while free budget is too small,
+retains one bounded request/required-byte record, and retries after collection.
+It does not repeatedly decode pixels or permanently blacklist that appearance.
+The background and owner-thread decode paths use the same admission behavior.
+At zero free bytes, the background path initially records a one-byte admission
+minimum; metadata planning determines the exact size once capacity becomes
+available. This may require another pressure cycle before pixels can be decoded.
+Missing/corrupt resources, invalid directions and clips exceeding a total/per-clip
+limit remain real errors. Synchronous acquire keeps its existing throwing contract.
+
+ClientEngine calls maintainStreaming once per update. It collects at most eight
+completed clips, one map and two outlines; zero-byte entries count toward these
+limits. When a progressive request is waiting, pressure retirement selects only
+cache-only LRU clips, at most eight per scan, no more than once per sixteen update
+calls. Cancelling/replacing a wait does not reset the scan cooldown.
+Already-retired bytes are credited as future capacity before selecting
+more victims, but cannot be used for an upload until acknowledged completion and
+collection. No new waitIdle/fence wait is added. CacheMaintenance.Enabled=false
+disables automatic pressure eviction as well as transition eviction; bounded
+collection continues because pending GPU ownership must eventually be released.
+
+These are work-count bounds, not hard CPU-millisecond bounds. Candidate LRU scans
+still visit/sort the current cache. GPU object destruction and freeing a large map
+can take driver/allocator time. If all clips remain pinned, the request keeps its
+placeholder and waits without evicting live assets; it is not guaranteed to become
+ready under an insufficient working-set budget. Increasing budget or releasing
+owners can unblock it. Cancel/scene exit clears the wait record; shrinking budget
+below an already-known waiting clip minimum is rejected until that wait is cancelled.
+
+The server demo may switch a waiting (no upload submitted) request to the current
+visible/prefetch candidate, or cancel it when no candidate remains. It still
+finishes submitted uploads rather than cancelling GPU work on every snapshot.
+Full scheduler preemption/fairness is not implemented here.
+
+Telemetry adds animation_budget_deferrals (number of admission-deferral returns,
+not elapsed frames) and animation_waiting_for_budget. Existing pending bytes stay
+zero during a pure budget wait. Ready + retired + pending accounting remains in
+force; these counters are not driver VRAM measurements.
+
+Tests cover required-byte metadata errors without pixel reads, pinned pressure,
+retired capacity remaining charged until frame-fence completion, eventual retry,
+disabled eviction, candidate cancellation/reappearance, real errors remaining
+errors, bounded destruction/retirement including zero-byte entries, and sixteen
+small-budget snapshot batches cycling through eight distinct character appearances.
+
+See [resource-streaming-plan.md](resource-streaming-plan.md) for the remaining
+resource and rendering work and the estimated PR boundaries.

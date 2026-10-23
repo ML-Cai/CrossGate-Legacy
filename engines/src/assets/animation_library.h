@@ -37,15 +37,15 @@ public:
         if(!pending_) return decoder_.reservedBytes();
         const auto& c=pending_->second;return uint64_t(c->width)*c->height*c->frameCount*4;
     }
-    struct Usage {size_t clips=0;uint64_t rgbaBytes=0,pendingBytes=0,budgetBytes=0,evictions=0,evictedBytes=0,retiredBytes=0;size_t retiredClips=0;};
+    struct Usage {size_t clips=0;uint64_t rgbaBytes=0,pendingBytes=0,budgetBytes=0,evictions=0,evictedBytes=0,retiredBytes=0;size_t retiredClips=0;uint64_t budgetDeferrals=0;bool waitingForBudget=false;};
     Usage usage() const noexcept {
-        return {clips_.size(),clips_.bytes(),pendingBytes(),textureBudget_,clips_.evictions(),clips_.evictedBytes(),retired_.bytes(),retired_.size()};
+        return {clips_.size(),clips_.bytes(),pendingBytes(),textureBudget_,clips_.evictions(),clips_.evictedBytes(),retired_.bytes(),retired_.size(),budgetDeferrals_,bool(budgetWait_)};
     }
     // Cancellation/scene exit can wait for the one already-submitted chunk.
-    void cancelPending() noexcept { decoder_.cancel(); decodeRequest_.reset(); decodeReaders_=nullptr; pending_.reset(); builder_.clear(); }
+    void cancelPending() noexcept { budgetWait_.reset(); decoder_.cancel(); decodeRequest_.reset(); decodeReaders_=nullptr; pending_.reset(); builder_.clear(); }
     void setTextureBudget(uint64_t bytes) {
         const uint64_t used=clips_.bytes()+retired_.bytes()+pendingBytes();
-        if (!bytes || used > bytes) throw std::invalid_argument("Texture budget below live cached payload");
+        if (!bytes || used > bytes || (budgetWait_ && budgetWait_->requiredBytes>bytes)) throw std::invalid_argument("Texture budget below live payload/reservation or waiting clip minimum");
         textureBudget_ = bytes;
     }
     // Blocking maintenance only: waits for this device if idle victims exist.
@@ -54,9 +54,16 @@ public:
     // Caller provides this renderer's last successful graphics submission.
     // Only ready/cache-only entries move; GPU lifetime continues in retired_.
     uint64_t retireUnused(uint64_t targetBytes,uint64_t lastSubmitted);
-    uint64_t collectRetired(uint64_t completed) noexcept {return retired_.collect(completed);}
+    uint64_t collectRetired(uint64_t completed,size_t maxEntries=std::numeric_limits<size_t>::max()) noexcept {
+        return retired_.collect(completed,maxEntries);
+    }
+    bool waitingForBudget() const noexcept {return bool(budgetWait_);}
+    // Render-thread maintenance: <=8 completed clip destructions, <=8 retirements
+    // per scan. Full LRU scans are throttled to once every 16 update calls.
+    void maintainStreaming(uint64_t submitted,uint64_t completed,bool allowEviction=true);
     // Release scene/entity references and wait for GPU work before clearing.
     void clear() noexcept {
+        budgetWait_.reset();budgetDeferrals_=0;pressureCooldown_=0;
         decoder_.stop(); decodeRequest_.reset(); decodeReaders_=nullptr;
         pending_.reset(); // Waits for only its own submitted chunk, if any.
         clips_.clear();
@@ -66,6 +73,11 @@ public:
         pass_ = nullptr;
     }
 private:
+    struct BudgetWait {AnimationRequest request;uint64_t requiredBytes;};
+    std::optional<BudgetWait> budgetWait_;
+    uint64_t budgetDeferrals_=0;
+    uint32_t pressureCooldown_=0;
+    void deferBudget(const AnimationRequest& request,uint64_t requiredBytes);
     uint64_t remainingBytes() const;
     std::shared_ptr<const AnimationClip> uploadClip(const AnimationRequest& request,AnimationPixels pixels,
         graphics::IDevice* device,graphics::IRenderPass* pass,bool progressive);

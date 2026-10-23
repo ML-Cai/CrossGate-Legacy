@@ -189,3 +189,10 @@ TEST_F(AnimationBuilderTest, PreCancelledWorkNeverTouchesUnavailableReaders) {
     try {builder.build({100000,0,0},readers,32*1024*1024,&cancelled);FAIL();}
     catch(const std::runtime_error& error) {EXPECT_STREQ(error.what(),"Animation decode cancelled");}
 }
+
+TEST_F(AnimationBuilderTest, ReportsRequiredPayloadWithoutReadingPixelsForTransientBudget) {
+    try {builder.build(request,readers,127);FAIL()<<"Expected budget admission failure";}
+    catch(const cgl::AnimationBudgetExceeded& error) {EXPECT_EQ(error.requiredBytes,128);}
+    EXPECT_EQ(readers.pGfxDataReader[version]->cacheStatistics().fileReadCalls,0);
+    EXPECT_EQ(builder.build(request,readers,128).rgba.size(),128);
+}

@@ -3,6 +3,7 @@
 #include <compare>
 #include <atomic>
 #include <optional>
+#include <stdexcept>
 #include "cgl/common/assets.h"
 
 namespace cgl {
@@ -13,6 +14,14 @@ struct AnimationRequest {
     uint32_t serial = 101406, direction = 0, motion = 5;
     CrossGateVersion version = CrossGateVersion::CG_VERSION_Classic;
     auto operator<=>(const AnimationRequest&) const = default;
+};
+// Metadata admission failure, before palette/pixel reads. The caller decides
+// whether this exceeds the permanent clip limit or only currently free budget.
+class AnimationBudgetExceeded : public std::runtime_error {
+public:
+    explicit AnimationBudgetExceeded(uint64_t bytes)
+        : std::runtime_error("Animation preview exceeds remaining texture memory budget"),requiredBytes(bytes) {}
+    const uint64_t requiredBytes;
 };
 struct AnimationPixels {
     uint32_t width = 0, height = 0, frameCount = 0, durationMs = 0;

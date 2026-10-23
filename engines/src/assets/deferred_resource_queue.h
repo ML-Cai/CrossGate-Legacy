@@ -20,11 +20,11 @@ public:
         // Copy before cache erasure: allocation failure preserves cache ownership.
         entries_.push_back({serial,bytes,resource});bytes_+=bytes;
     }
-    uint64_t collect(uint64_t completed) noexcept {
-        uint64_t released=0;
-        while(!entries_.empty() && entries_.front().serial<=completed) {
+    uint64_t collect(uint64_t completed,size_t maxEntries=std::numeric_limits<size_t>::max()) noexcept {
+        uint64_t released=0;size_t count=0;
+        while(count<maxEntries && !entries_.empty() && entries_.front().serial<=completed) {
             released+=entries_.front().bytes;bytes_-=entries_.front().bytes;
-            entries_.pop_front();
+            entries_.pop_front();++count;
         }
         return released;
     }

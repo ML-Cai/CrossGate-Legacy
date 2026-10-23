@@ -428,6 +428,12 @@ The renderer currently uses one graphics queue for draws; its serial is not a CP
 frame count or presentation-completion token. Shutdown must still wait before
 clearing retired queues and before destroying render passes/device. Explicit
 library trimUnused remains blocking; it is not called by transition maintenance.
-Automatic in-scene pressure eviction and retry when ready + retired allocations
-cannot fit remain follow-up work. See docs/build-and-test.md for diagnostics and
-limits, including temporary duplication on immediate re-entry.
+Progressive appearance loads defer under temporary pressure and trigger bounded
+LRU retirement of unheld clips. Per-update collection is limited to eight clips,
+one map and two outlines; pressure scans are throttled. Held clips and allocations
+awaiting GPU completion remain charged to the animation budget. A pure budget wait
+owns no decoded pixels/upload and can be cancelled without a GPU wait.
+
+Synchronous scene-entry retry, retired-asset reuse and a fuller streaming scheduler
+remain follow-up work. See docs/build-and-test.md and docs/resource-streaming-plan.md
+for diagnostics and limits, including temporary duplication on immediate re-entry.

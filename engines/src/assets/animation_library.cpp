@@ -28,7 +28,10 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
         auto result=decoder_.tryTake();
         if(!result) return nullptr;
         const auto completed=*decodeRequest_;decodeRequest_.reset();decodeReaders_=nullptr;
-        if(result->error) std::rethrow_exception(result->error);
+        if(result->error) {
+            try {std::rethrow_exception(result->error);}
+            catch(const AnimationBudgetExceeded& error) {deferBudget(completed,error.requiredBytes);return nullptr;}
+        }
         pending_=std::pair{completed,uploadClip(completed,std::move(result->pixels),device,pass,true)};
         return nullptr; // First upload chunk was just submitted. Never poll twice.
     }
@@ -44,17 +47,24 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
         }
         return nullptr; // Do not start another submission in this same call.
     }
+    if(budgetWait_) {
+        if(budgetWait_->request!=request) budgetWait_.reset();
+        else if(remainingBytes()<budgetWait_->requiredBytes) {++budgetDeferrals_;return nullptr;}
+        else budgetWait_.reset();
+    }
     if(backgroundDecode) {
         const auto limit=std::min<uint64_t>(remainingBytes(),AnimationDecodeWorker::MaxBytes);
-        if(!limit) throw std::runtime_error("Animation cache exceeds texture budget");
+        if(!limit) {deferBudget(request,1);return nullptr;}
         if(!decoder_.submit([this,&readers,request,limit](const std::atomic_bool& cancelled) {
             return builder_.build(request,readers,limit,&cancelled);
         },limit)) throw std::logic_error("Decoder slot unexpectedly occupied");
         decodeRequest_=request;decodeReaders_=&readers;device_=device;pass_=pass;
         return nullptr;
     }
-    auto clip=buildClip(request,readers,device,pass,true);
-    pending_=std::pair{request,std::move(clip)};
+    try {
+        auto clip=buildClip(request,readers,device,pass,true);
+        pending_=std::pair{request,std::move(clip)};
+    } catch(const AnimationBudgetExceeded& error) {deferBudget(request,error.requiredBytes);}
     return nullptr;
 }
 std::shared_ptr<const AnimationClip> AnimationLibrary::buildClip(
@@ -63,6 +73,27 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::buildClip(
     const auto available=remainingBytes();
     auto pixels=builder_.build(request,readers,progressive ? std::min<uint64_t>(available,AnimationDecodeWorker::MaxBytes) : available);
     return uploadClip(request,std::move(pixels),device,pass,progressive);
+}
+void AnimationLibrary::deferBudget(const AnimationRequest& request,uint64_t requiredBytes) {
+    if(requiredBytes>std::min<uint64_t>(textureBudget_,AnimationDecodeWorker::MaxBytes))
+        throw std::runtime_error("Animation exceeds progressive clip/total texture budget");
+    budgetWait_=BudgetWait{request,requiredBytes};++budgetDeferrals_;
+}
+void AnimationLibrary::maintainStreaming(uint64_t submitted,uint64_t completed,bool allowEviction) {
+    retired_.collect(completed,8);
+    if(pressureCooldown_) {--pressureCooldown_;return;}
+    if(!allowEviction || !budgetWait_) return;
+    const auto available=remainingBytes();
+    if(available>=budgetWait_->requiredBytes) return;
+    const auto needed=budgetWait_->requiredBytes-available;
+    // Already-retired payload will become available; do not evict more for it.
+    if(retired_.bytes()>=needed) return;
+    const auto fromReady=needed-retired_.bytes();
+    const auto target=clips_.bytes()-std::min(fromReady,clips_.bytes());
+    clips_.retire(target,[]{},[&](const auto& clip,uint64_t bytes) {
+        retired_.retain(submitted,clip,bytes);
+    },std::numeric_limits<size_t>::max(),8);
+    pressureCooldown_=15;
 }
 uint64_t AnimationLibrary::remainingBytes() const {
     const auto cachedBytes=clips_.bytes()+retired_.bytes();

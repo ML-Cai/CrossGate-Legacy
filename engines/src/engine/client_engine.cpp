@@ -229,6 +229,8 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             << ",\"animation_clips\":" << animations.clips << ",\"animation_rgba_bytes\":" << animations.rgbaBytes
             << ",\"animation_retired_bytes\":" << animations.retiredBytes
             << ",\"animation_retired_clips\":" << animations.retiredClips
+            << ",\"animation_budget_deferrals\":" << animations.budgetDeferrals
+            << ",\"animation_waiting_for_budget\":" << (animations.waitingForBudget?"true":"false")
             << ",\"animation_evictions\":" << animations.evictions << ",\"animation_evicted_bytes\":" << animations.evictedBytes
             << ",\"map_retired_bytes\":" << maps.retiredMapBytes
             << ",\"outline_retired_bytes\":" << maps.retiredOutlineBytes
@@ -254,8 +256,8 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             benchmark->unique < settings.benchmark.UniqueCharacters;
         const bool wasRunning=pSceneState_->scene && pSceneState_->scene->sceneType()!=cgl::SceneTypes::InitScene;
         if(auto* sync=pEcs->getSingleton<cgl::component::PrimaryRenderSyncObjects>()) {
-            animationLibrary_.collectRetired(sync->progress.completed);
-            mapLibrary_.collectRetired(sync->progress.completed);
+            animationLibrary_.maintainStreaming(sync->progress.submitted,sync->progress.completed,settings.cachemaintenance.Enabled);
+            mapLibrary_.collectRetired(sync->progress.completed,1,2);
         }
         sceneMgrSys_.update(pEcs);
         const auto updateEnd = std::chrono::steady_clock::now();
