@@ -9,6 +9,7 @@
 #pragma once
 
 #include <string>
+#include "render/submission_progress.h"
 #include <vector>
 #include <unordered_map>
 #include "cgl/common/states.h"
@@ -47,6 +48,7 @@ struct RenderSyncObjects {
     uint32_t index;
     cgl::graphics::ISemaphore::Ptr pImageAvailableSemaphore;
     cgl::graphics::IFence::Ptr pFence;
+    uint64_t submissionSerial = 0;
 };
 
 // -----------------------------------------------------------------------------
@@ -54,6 +56,7 @@ struct PrimaryRenderSyncObjects {
     std::vector<RenderSyncObjects> objs;
     // Presentation can outlive a frame fence. Reuse after reacquiring the image.
     std::vector<cgl::graphics::ISemaphore::Ptr> presentSemaphores;
+    cgl::SubmissionProgress progress;
 };
 
 

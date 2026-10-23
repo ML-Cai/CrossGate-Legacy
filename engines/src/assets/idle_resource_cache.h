@@ -6,6 +6,7 @@
 #include <memory>
 #include <stdexcept>
 #include <vector>
+#include <utility>
 namespace cgl {
 // Owner-thread cache policy only. GPU completion belongs to the release barrier,
 // never to shared_ptr::use_count(). Entries hold no secondary strong references.
@@ -36,6 +37,12 @@ public:
     // Select before waiting. A failing barrier leaves cache ownership unchanged.
     // The caller must serialize cache access; no callback may change cache membership.
     template<class Barrier> uint64_t trim(uint64_t targetBytes,Barrier&& barrier,size_t maxEntries=std::numeric_limits<size_t>::max()) {
+        return retire(targetBytes,std::forward<Barrier>(barrier),[](const auto&,uint64_t){},maxEntries);
+    }
+    // Transfer each selected owner before erasing it. Receiver may allocate/throw;
+    // that entry stays cached on failure (earlier transfers remain committed).
+    template<class Barrier,class Receiver> uint64_t retire(uint64_t targetBytes,Barrier&& barrier,Receiver&& receiver,
+            size_t maxEntries=std::numeric_limits<size_t>::max()) {
         if(bytes_<=targetBytes && entries_.size()<=maxEntries) return 0;
         std::vector<typename Entries::iterator> candidates;
         for(auto it=entries_.begin();it!=entries_.end();++it)
@@ -49,6 +56,7 @@ public:
         for(size_t i=0;i<count;++i) {
             const auto it=candidates[i];
             if(it->second.value.use_count()!=1) continue;
+            receiver(it->second.value,it->second.bytes);
             released+=it->second.bytes;bytes_-=it->second.bytes;
             ++evictions_;evictedBytes_+=it->second.bytes;entries_.erase(it);
         }

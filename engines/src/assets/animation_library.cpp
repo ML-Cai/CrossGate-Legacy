@@ -65,9 +65,14 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::buildClip(
     return uploadClip(request,std::move(pixels),device,pass,progressive);
 }
 uint64_t AnimationLibrary::remainingBytes() const {
-    const auto cachedBytes=clips_.bytes();
+    const auto cachedBytes=clips_.bytes()+retired_.bytes();
     if(cachedBytes>textureBudget_) throw std::runtime_error("Animation cache exceeds texture budget");
     return textureBudget_-cachedBytes;
+}
+uint64_t AnimationLibrary::retireUnused(uint64_t targetBytes,uint64_t lastSubmitted) {
+    return clips_.retire(targetBytes,[]{},[&](const auto& clip,uint64_t bytes) {
+        retired_.retain(lastSubmitted,clip,bytes);
+    });
 }
 uint64_t AnimationLibrary::trimUnused(uint64_t targetBytes) {
     return clips_.trim(targetBytes,[this] {

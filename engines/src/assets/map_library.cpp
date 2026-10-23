@@ -99,6 +99,14 @@ std::shared_ptr<const MapResources> MapLibrary::acquire(const std::filesystem::p
         << ", texture bytes=" << textureBytes);
     return result;
 }
+uint64_t MapLibrary::retireUnused(uint64_t mapTargetBytes,uint64_t lastSubmitted,uint64_t outlineTargetBytes) {
+    const auto maps=maps_.retire(mapTargetBytes,[]{},[&](const auto& map,uint64_t bytes) {
+        retiredMaps_.retain(lastSubmitted,map,bytes);
+    },mapTargetBytes?2:0);
+    return maps+outlines_.retire(outlineTargetBytes,[]{},[&](const auto& outline,uint64_t bytes) {
+        retiredOutlines_.retain(lastSubmitted,outline,bytes);
+    },outlineTargetBytes?16:0);
+}
 uint64_t MapLibrary::trimUnused(uint64_t mapTargetBytes,uint64_t outlineTargetBytes) {
     bool synchronized=false;
     auto barrier=[&] {

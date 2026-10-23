@@ -417,7 +417,17 @@ validated transition has exited/destroyed the old scene and before the new scene
 enters. Callback failure raises a scene error and prevents entry; final shutdown
 uses its existing wait/clear path instead of invoking transition maintenance.
 ClientEngine wires the callback to the configurable animation/map soft targets.
-The scene manager itself has no device/cache dependency. GPU-safe ready-cache
-trimming is blocking and restricted to this boundary; in-frame deferred retirement
-remains future work. Cache-only shared ownership identifies a candidate, while a
-successful device idle wait supplies the required GPU lifetime proof.
+The scene manager itself has no device/cache dependency. ClientEngine moves idle
+ready entries to a deferred ownership queue at this
+boundary. Each is tagged with the last successful graphics submission serial;
+normal frame-slot fence waits acknowledge completion, and subsequent updates
+collect completed ownership. Pending decode/uploads and externally held resources
+are excluded. Retired animation payload remains charged to the hard budget.
+
+The renderer currently uses one graphics queue for draws; its serial is not a CPU
+frame count or presentation-completion token. Shutdown must still wait before
+clearing retired queues and before destroying render passes/device. Explicit
+library trimUnused remains blocking; it is not called by transition maintenance.
+Automatic in-scene pressure eviction and retry when ready + retired allocations
+cannot fit remain follow-up work. See docs/build-and-test.md for diagnostics and
+limits, including temporary duplication on immediate re-entry.

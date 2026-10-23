@@ -3,6 +3,7 @@
 #include "assets/animation_builder.h"
 #include "assets/animation_decode_worker.h"
 #include "assets/idle_resource_cache.h"
+#include "assets/deferred_resource_queue.h"
 #include <memory>
 #include <stdexcept>
 #include "cgl/graphics/sprite_renderer.h"
@@ -36,25 +37,30 @@ public:
         if(!pending_) return decoder_.reservedBytes();
         const auto& c=pending_->second;return uint64_t(c->width)*c->height*c->frameCount*4;
     }
-    struct Usage {size_t clips=0;uint64_t rgbaBytes=0,pendingBytes=0,budgetBytes=0,evictions=0,evictedBytes=0;};
+    struct Usage {size_t clips=0;uint64_t rgbaBytes=0,pendingBytes=0,budgetBytes=0,evictions=0,evictedBytes=0,retiredBytes=0;size_t retiredClips=0;};
     Usage usage() const noexcept {
-        return {clips_.size(),clips_.bytes(),pendingBytes(),textureBudget_,clips_.evictions(),clips_.evictedBytes()};
+        return {clips_.size(),clips_.bytes(),pendingBytes(),textureBudget_,clips_.evictions(),clips_.evictedBytes(),retired_.bytes(),retired_.size()};
     }
     // Cancellation/scene exit can wait for the one already-submitted chunk.
     void cancelPending() noexcept { decoder_.cancel(); decodeRequest_.reset(); decodeReaders_=nullptr; pending_.reset(); builder_.clear(); }
     void setTextureBudget(uint64_t bytes) {
-        const uint64_t used=clips_.bytes()+pendingBytes();
+        const uint64_t used=clips_.bytes()+retired_.bytes()+pendingBytes();
         if (!bytes || used > bytes) throw std::invalid_argument("Texture budget below live cached payload");
         textureBudget_ = bytes;
     }
     // Blocking maintenance only: waits for this device if idle victims exist.
     // Held clips and in-flight decode/upload slots are never eviction candidates.
     uint64_t trimUnused(uint64_t targetBytes);
+    // Caller provides this renderer's last successful graphics submission.
+    // Only ready/cache-only entries move; GPU lifetime continues in retired_.
+    uint64_t retireUnused(uint64_t targetBytes,uint64_t lastSubmitted);
+    uint64_t collectRetired(uint64_t completed) noexcept {return retired_.collect(completed);}
     // Release scene/entity references and wait for GPU work before clearing.
     void clear() noexcept {
         decoder_.stop(); decodeRequest_.reset(); decodeReaders_=nullptr;
         pending_.reset(); // Waits for only its own submitted chunk, if any.
         clips_.clear();
+        retired_.clear();
         builder_.clear();
         device_ = nullptr;
         pass_ = nullptr;
@@ -72,6 +78,7 @@ private:
     uint64_t textureBudget_ = 256ull*1024*1024;
     AnimationBuilder builder_;
     IdleResourceCache<AnimationRequest,AnimationClip> clips_;
+    DeferredResourceQueue<AnimationClip> retired_;
     graphics::IDevice* device_ = nullptr;
     graphics::IRenderPass* pass_ = nullptr;
 };

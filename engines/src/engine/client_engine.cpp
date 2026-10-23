@@ -64,9 +64,11 @@ class ClientEngine : public cgl::IEngine {
     },[this] {
         const auto& policy=pEngineState_->settings->cachemaintenance;
         if(!policy.Enabled) return;
-        const auto animations=animationLibrary_.trimUnused(uint64_t(policy.AnimationTargetMiB)*1024*1024);
-        const auto maps=mapLibrary_.trimUnused(uint64_t(policy.MapTargetMiB)*1024*1024);
-        if(animations || maps) LOGI("Scene cache maintenance: animation bytes=" << animations << ", map/outline bytes=" << maps);
+        auto* sync=ecs_.getSingleton<cgl::component::PrimaryRenderSyncObjects>();
+        const auto submitted=sync?sync->progress.submitted:0;
+        const auto animations=animationLibrary_.retireUnused(uint64_t(policy.AnimationTargetMiB)*1024*1024,submitted);
+        const auto maps=mapLibrary_.retireUnused(uint64_t(policy.MapTargetMiB)*1024*1024,submitted);
+        if(animations || maps) LOGI("Scene cache retirement: animation bytes=" << animations << ", map/outline bytes=" << maps);
     }};
 
     // state objects
@@ -225,7 +227,12 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             << ",\"sort_mean_ms\":" << summary.sortMs << ",\"drawn_actors_last_frame\":" << telemetry->rendering.actors
             << ",\"draw_calls_last_frame\":" << telemetry->rendering.drawCalls
             << ",\"animation_clips\":" << animations.clips << ",\"animation_rgba_bytes\":" << animations.rgbaBytes
+            << ",\"animation_retired_bytes\":" << animations.retiredBytes
+            << ",\"animation_retired_clips\":" << animations.retiredClips
             << ",\"animation_evictions\":" << animations.evictions << ",\"animation_evicted_bytes\":" << animations.evictedBytes
+            << ",\"map_retired_bytes\":" << maps.retiredMapBytes
+            << ",\"outline_retired_bytes\":" << maps.retiredOutlineBytes
+            << ",\"retired_maps\":" << maps.retiredMaps << ",\"retired_outlines\":" << maps.retiredOutlines
             << ",\"map_outline_evictions\":" << maps.evictions
             << ",\"animation_pending_reserved_bytes\":" << animations.pendingBytes << ",\"animation_budget_bytes\":" << animations.budgetBytes
             << ",\"cached_maps\":" << maps.maps << ",\"map_pages\":" << maps.pages
@@ -246,6 +253,10 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
         const bool wasCold = wasReady && settings.benchmark.LoadDuringPlayback &&
             benchmark->unique < settings.benchmark.UniqueCharacters;
         const bool wasRunning=pSceneState_->scene && pSceneState_->scene->sceneType()!=cgl::SceneTypes::InitScene;
+        if(auto* sync=pEcs->getSingleton<cgl::component::PrimaryRenderSyncObjects>()) {
+            animationLibrary_.collectRetired(sync->progress.completed);
+            mapLibrary_.collectRetired(sync->progress.completed);
+        }
         sceneMgrSys_.update(pEcs);
         const auto updateEnd = std::chrono::steady_clock::now();
         if (anyStateError()) break;
