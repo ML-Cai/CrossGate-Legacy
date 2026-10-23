@@ -209,11 +209,12 @@ These are not physical VRAM or total process RAM measurements.
 Warm resources below targets and externally held resources remain retained.
 Progressive appearance loading now defers on temporary budget pressure and can
 evict cache-only ready clips during gameplay. Synchronous scene/map loading still
-fails if the new scene cannot fit alongside queued allocations. Reusing retired
-assets and asynchronous scene-entry backpressure remain follow-up work. Re-entering
-a just-retired asset can temporarily require two copies; do not interpret a soft
-cache target as a strict peak-memory limit. This PR removes the retirement wait,
-not synchronous map loading, upload cancellation waits or shutdown synchronization.
+fails if a different scene cannot fit alongside queued allocations; asynchronous
+scene-entry backpressure remains follow-up work. Reacquiring the same key before
+collection now restores the same ready resource without allocating another copy.
+Soft targets are not strict peak-memory limits. Retirement avoids a device-idle
+wait; synchronous map loading, upload cancellation waits and shutdown
+synchronization remain.
 
 CPU tests cover LRU/pins, transfer allocation failure, zero-byte entries, ordering,
 overflow, 1000 retirement/collection cycles and submission acknowledgement. Real
@@ -275,3 +276,46 @@ small-budget snapshot batches cycling through eight distinct character appearanc
 
 See [resource-streaming-plan.md](resource-streaming-plan.md) for the remaining
 resource and rendering work and the estimated PR boundaries.
+
+## Reusing retired assets before collection
+
+Animation, map and hover-outline retirement retains their existing ready-cache
+keys. A key index borrows stable list iterators, owning no secondary GPU resource
+references. It replaces the older unkeyed retirement queue; bounded collection,
+serial ordering and all previous lifetime tests remain in use.
+
+acquire and acquireProgressive check retired ownership after a ready-cache miss,
+before decoding, uploads or free-budget admission. A retired hit inserts into the
+ready cache before removing retired ownership/index metadata. If destination
+insertion fails, retired ownership remains intact. If retirement index insertion
+fails, the new list node is rolled back and the ready cache keeps its owner.
+All operations belong to one owner thread; callbacks cannot re-enter the library.
+
+Restoration does not free or reallocate a GPU object. The same allocation moves
+from retired accounting to ready accounting, so ready + retired + pending usage
+is unchanged even when the animation budget is exactly full. A subsequent
+retirement uses the renderer's latest submitted serial, including draws after
+restoration; an older completion token must not free it. An unrelated pending
+CPU decode/upload or budget-wait request is not cancelled or replaced by a hit.
+findReady remains a ready-only lookup; explicit acquisition performs restoration.
+
+Collection wins if it has already removed that key: a later acquire does a normal
+load and remains subject to the hard budget. Keys still assume one library's live
+device/render pass and unchanged resource corpus. Device/pass validation runs
+before restoration. Map keys keep absolute lexical normalization; outline scales
+must remain valid/finite. Clear after GPU completion when reloading files or
+changing device/pass. This does not add file-version detection, simultaneous-device
+sharing, asynchronous map loading or automatic scene-entry waits.
+
+Telemetry adds animation_reused_clips, map_reuses and outline_reuses. These count
+retired-to-ready restorations, not ordinary ready-cache hits, new uploads or GPU
+frees; clear resets them. Eviction counters still count removal from ready cache,
+even if that resource is subsequently reused rather than destroyed.
+
+CPU tests include duplicate/missing keys, failed restore and index insertion,
+middle-node restoration, zero-byte/bounded collection, exact payload accounting
+and 1000 restore/retire cycles with no stale key index. Real Vulkan tests re-enter
+map100 three times at an exactly full animation budget, assert clip/map/outline
+object identity and zero graphic-file reads, and require the latest fence before
+final release. Progressive reuse is also tested with zero free budget and with an
+unrelated decoder reservation still active.

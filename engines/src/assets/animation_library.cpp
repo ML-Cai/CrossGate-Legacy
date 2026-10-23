@@ -11,7 +11,7 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquire(
     graphics::IDevice* device, graphics::IRenderPass* pass) {
     if (!device || !pass || (device_ && device_ != device) || (pass_ && pass_ != pass))
         throw std::invalid_argument("Animation library requires one live device/render pass");
-    if (auto found=clips_.find(request)) return found;
+    if (auto found=findOrRestore(request)) return found;
     if(pending_ || decodeRequest_) throw std::runtime_error("Synchronous acquire cannot create another clip while an upload is pending");
     auto clip=buildClip(request,readers,device,pass,false);
     clips_.insert(request,clip,uint64_t(clip->width)*clip->height*clip->frameCount*4);
@@ -22,7 +22,7 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
     graphics::IDevice* device,graphics::IRenderPass* pass,bool backgroundDecode) {
     if(!device || !pass || (device_ && device_!=device) || (pass_ && pass_!=pass))
         throw std::invalid_argument("Animation library requires one live device/render pass");
-    if(auto found=clips_.find(request)) return found;
+    if(auto found=findOrRestore(request)) return found;
     if(decodeRequest_) {
         if(decodeReaders_!=&readers) throw std::invalid_argument("Cannot change readers during background decode");
         auto result=decoder_.tryTake();
@@ -43,7 +43,7 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
         if(status==graphics::SpriteUploadState::Ready) {
             const auto& c=pending_->second;
             clips_.insert(pending_->first,c,uint64_t(c->width)*c->height*c->frameCount*4);pending_.reset();
-            if(auto found=clips_.find(request)) return found;
+            if(auto found=findOrRestore(request)) return found;
         }
         return nullptr; // Do not start another submission in this same call.
     }
@@ -74,6 +74,15 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::buildClip(
     auto pixels=builder_.build(request,readers,progressive ? std::min<uint64_t>(available,AnimationDecodeWorker::MaxBytes) : available);
     return uploadClip(request,std::move(pixels),device,pass,progressive);
 }
+std::shared_ptr<const AnimationClip> AnimationLibrary::findOrRestore(const AnimationRequest& request) {
+    if(auto found=clips_.find(request)) return found;
+    std::shared_ptr<const AnimationClip> restored;
+    retired_.restore(request,[&](const auto& clip,uint64_t bytes) {
+        clips_.insert(request,clip,bytes);restored=clip;
+    });
+    if(restored && budgetWait_ && budgetWait_->request==request) budgetWait_.reset();
+    return restored;
+}
 void AnimationLibrary::deferBudget(const AnimationRequest& request,uint64_t requiredBytes) {
     if(requiredBytes>std::min<uint64_t>(textureBudget_,AnimationDecodeWorker::MaxBytes))
         throw std::runtime_error("Animation exceeds progressive clip/total texture budget");
@@ -90,8 +99,8 @@ void AnimationLibrary::maintainStreaming(uint64_t submitted,uint64_t completed,b
     if(retired_.bytes()>=needed) return;
     const auto fromReady=needed-retired_.bytes();
     const auto target=clips_.bytes()-std::min(fromReady,clips_.bytes());
-    clips_.retire(target,[]{},[&](const auto& clip,uint64_t bytes) {
-        retired_.retain(submitted,clip,bytes);
+    clips_.retireKeyed(target,[]{},[&](const auto& key,const auto& clip,uint64_t bytes) {
+        retired_.retain(key,submitted,clip,bytes);
     },std::numeric_limits<size_t>::max(),8);
     pressureCooldown_=15;
 }
@@ -101,8 +110,8 @@ uint64_t AnimationLibrary::remainingBytes() const {
     return textureBudget_-cachedBytes;
 }
 uint64_t AnimationLibrary::retireUnused(uint64_t targetBytes,uint64_t lastSubmitted) {
-    return clips_.retire(targetBytes,[]{},[&](const auto& clip,uint64_t bytes) {
-        retired_.retain(lastSubmitted,clip,bytes);
+    return clips_.retireKeyed(targetBytes,[]{},[&](const auto& key,const auto& clip,uint64_t bytes) {
+        retired_.retain(key,lastSubmitted,clip,bytes);
     });
 }
 uint64_t AnimationLibrary::trimUnused(uint64_t targetBytes) {

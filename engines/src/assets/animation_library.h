@@ -3,7 +3,7 @@
 #include "assets/animation_builder.h"
 #include "assets/animation_decode_worker.h"
 #include "assets/idle_resource_cache.h"
-#include "assets/deferred_resource_queue.h"
+#include "assets/keyed_retirement_cache.h"
 #include <memory>
 #include <stdexcept>
 #include "cgl/graphics/sprite_renderer.h"
@@ -37,9 +37,9 @@ public:
         if(!pending_) return decoder_.reservedBytes();
         const auto& c=pending_->second;return uint64_t(c->width)*c->height*c->frameCount*4;
     }
-    struct Usage {size_t clips=0;uint64_t rgbaBytes=0,pendingBytes=0,budgetBytes=0,evictions=0,evictedBytes=0,retiredBytes=0;size_t retiredClips=0;uint64_t budgetDeferrals=0;bool waitingForBudget=false;};
+    struct Usage {size_t clips=0;uint64_t rgbaBytes=0,pendingBytes=0,budgetBytes=0,evictions=0,evictedBytes=0,retiredBytes=0;size_t retiredClips=0;uint64_t budgetDeferrals=0;bool waitingForBudget=false;uint64_t reusedClips=0;};
     Usage usage() const noexcept {
-        return {clips_.size(),clips_.bytes(),pendingBytes(),textureBudget_,clips_.evictions(),clips_.evictedBytes(),retired_.bytes(),retired_.size(),budgetDeferrals_,bool(budgetWait_)};
+        return {clips_.size(),clips_.bytes(),pendingBytes(),textureBudget_,clips_.evictions(),clips_.evictedBytes(),retired_.bytes(),retired_.size(),budgetDeferrals_,bool(budgetWait_),retired_.restores()};
     }
     // Cancellation/scene exit can wait for the one already-submitted chunk.
     void cancelPending() noexcept { budgetWait_.reset(); decoder_.cancel(); decodeRequest_.reset(); decodeReaders_=nullptr; pending_.reset(); builder_.clear(); }
@@ -77,6 +77,7 @@ private:
     std::optional<BudgetWait> budgetWait_;
     uint64_t budgetDeferrals_=0;
     uint32_t pressureCooldown_=0;
+    std::shared_ptr<const AnimationClip> findOrRestore(const AnimationRequest& request);
     void deferBudget(const AnimationRequest& request,uint64_t requiredBytes);
     uint64_t remainingBytes() const;
     std::shared_ptr<const AnimationClip> uploadClip(const AnimationRequest& request,AnimationPixels pixels,
@@ -90,7 +91,7 @@ private:
     uint64_t textureBudget_ = 256ull*1024*1024;
     AnimationBuilder builder_;
     IdleResourceCache<AnimationRequest,AnimationClip> clips_;
-    DeferredResourceQueue<AnimationClip> retired_;
+    KeyedRetirementCache<AnimationRequest,AnimationClip> retired_;
     graphics::IDevice* device_ = nullptr;
     graphics::IRenderPass* pass_ = nullptr;
 };
