@@ -71,3 +71,10 @@ target_link_libraries(test_map_world PRIVATE GTest::gtest_main cgl::engine cgl::
 set_target_properties(test_map_world PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 gtest_discover_tests(test_map_world WORKING_DIRECTORY ${CGL_BIN_PATH}
     PROPERTIES LABELS "unit\;memory" TIMEOUT 60)
+
+add_executable(test_frame_telemetry test_frame_telemetry.cpp)
+target_include_directories(test_frame_telemetry PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_frame_telemetry PRIVATE GTest::gtest_main cgl::settings cgl::common)
+set_target_properties(test_frame_telemetry PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
+gtest_discover_tests(test_frame_telemetry WORKING_DIRECTORY ${CGL_BIN_PATH}
+    PROPERTIES LABELS "unit\;memory" TIMEOUT 60)

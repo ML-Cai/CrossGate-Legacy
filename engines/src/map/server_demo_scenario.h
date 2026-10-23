@@ -18,7 +18,6 @@ private:
     std::unique_ptr<RemoteCharacters> remote_;
     MapPoint lastBatchCenter_;
     std::chrono::steady_clock::time_point batchClock_{};
-    uint64_t batchFrames_=0;
     uint32_t width_=0,height_=0;
     Entity character_=0;
 };

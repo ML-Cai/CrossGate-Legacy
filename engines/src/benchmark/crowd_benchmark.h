@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include "telemetry/frame_telemetry.h"
 #include <cmath>
 #include <fstream>
 #include <numeric>
@@ -47,12 +48,11 @@ struct CrowdSamples {
         frame.push_back(frameMs); update.push_back(updateMs); render.push_back(renderMs); sort.push_back(sortMs);
     }
     static double mean(const std::vector<double>& v) {
-        return v.empty() ? 0 : std::accumulate(v.begin(),v.end(),0.0)/v.size();
+        return TimingMean(v);
     }
     static double percentile(std::vector<double> v, double p) {
-        if (v.empty()) return 0;
         std::sort(v.begin(),v.end());
-        return v[size_t(std::ceil(p*v.size()))-1];
+        return TimingPercentileSorted(v,p);
     }
     void write(const Settings& settings, const component::CrowdBenchmark& state,
                const char* mode, const char* status) const {

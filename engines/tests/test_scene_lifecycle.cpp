@@ -496,6 +496,9 @@ TEST_F(DesktopSceneTest, LargeMap100UsesMultipleAtlasesAndReusesThemOnRestart) {
     const auto path=std::filesystem::path(settings.general.EngineRootPath)/settings.map.FilePath;
     auto map=maps_.acquire(path,readers,device,pass);
     ASSERT_EQ(map->layout.width,840); ASSERT_EQ(map->layout.height,610);
+    EXPECT_EQ(map->rgbaBytes,40330752);
+    EXPECT_EQ(maps_.usage().maps,1);EXPECT_EQ(maps_.usage().rgbaBytes,map->rgbaBytes);
+    EXPECT_EQ(maps_.usage().pages,map->renderers.size());
     ASSERT_GT(map->renderers.size(),1); ASSERT_LE(map->renderers.size(),8);
     std::vector<bool> used(map->renderers.size(),false);
     for(const auto& [id,image] : map->images) {
@@ -538,6 +541,7 @@ TEST_F(DesktopSceneTest, LargeMap100UsesMultipleAtlasesAndReusesThemOnRestart) {
     cgl::SceneManagerDestroySystem{}.update(&world_);
     std::weak_ptr<const cgl::MapResources> weak=map;map.reset();
     EXPECT_FALSE(weak.expired());maps_.clear();EXPECT_TRUE(weak.expired());
+    EXPECT_EQ(maps_.usage().maps,0);EXPECT_EQ(maps_.usage().rgbaBytes,0);EXPECT_EQ(maps_.usage().outlineBytes,0);
 }
 
 TEST_F(DesktopSceneTest, ColdCrowdPublishesClipsAndCanExitWithPendingResources) {
@@ -590,12 +594,15 @@ TEST_F(DesktopSceneTest, ProgressiveLibraryDeduplicatesBoundsAndCancelsPendingUp
     cgl::component::AssetsReaderState otherReaders{};
     EXPECT_THROW(progressive.acquireProgressive(request,otherReaders,device,pass),std::invalid_argument);
     ASSERT_GT(progressive.pendingBytes(),0);EXPECT_LE(progressive.pendingBytes(),32*1024*1024);
+    EXPECT_EQ(progressive.usage().clips,0);EXPECT_EQ(progressive.usage().pendingBytes,progressive.pendingBytes());
     EXPECT_THROW(progressive.setTextureBudget(1),std::invalid_argument);
     std::shared_ptr<const cgl::AnimationClip> clip;
     while(!clip && std::chrono::steady_clock::now()<deadline) {
         clip=progressive.acquireProgressive(request,readers,device,pass);std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     ASSERT_NE(clip,nullptr);EXPECT_EQ(progressive.pendingBytes(),0);
+    EXPECT_EQ(progressive.usage().clips,1);
+    EXPECT_EQ(progressive.usage().rgbaBytes,uint64_t(clip->width)*clip->height*clip->frameCount*4);
     EXPECT_EQ(progressive.acquireProgressive(request,readers,device,pass),clip);
     const cgl::AnimationRequest next{100000,0,1};
     EXPECT_EQ(progressive.acquireProgressive(next,readers,device,pass),nullptr);
@@ -603,6 +610,7 @@ TEST_F(DesktopSceneTest, ProgressiveLibraryDeduplicatesBoundsAndCancelsPendingUp
     progressive.cancelPending();EXPECT_EQ(progressive.pendingBytes(),0);
     EXPECT_EQ(progressive.acquireProgressive(next,readers,device,pass),nullptr);
     progressive.clear();EXPECT_EQ(progressive.pendingBytes(),0);
+    EXPECT_EQ(progressive.usage().clips,0);EXPECT_EQ(progressive.usage().rgbaBytes,0);
     EXPECT_EQ(progressive.acquireProgressive(next,readers,device,pass),nullptr);
     progressive.cancelPending();
 }

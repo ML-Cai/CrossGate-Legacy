@@ -10,6 +10,8 @@
 #include <GLFW/glfw3.h>
 #include <filesystem>
 #include <chrono>
+#include <fstream>
+#include "telemetry/frame_telemetry.h"
 #include "benchmark/crowd_benchmark.h"
 #include "cgl/settings/settings.h"
 #include "cgl/engine/engine.h"
@@ -110,6 +112,10 @@ void ClientEngine::initSingletonStage(cgl::ECSCore* pEcs) {
     ecs().addSingleton<cgl::component::CursorPositionState>();
     ecs().addSingleton<cgl::component::FrameTime>();
 
+    if(pEngineState_->settings->telemetry.Enabled)
+        ecs().addSingleton<cgl::component::RuntimeTelemetry>();
+    else if(!pEngineState_->settings->telemetry.ReportPath.empty())
+        cgl::RaiseError(pEngineState_, "Telemetry ReportPath requires Enabled=true");
     const auto& bench = pEngineState_->settings->benchmark;
     const bool pressure = bench.ActorCount || bench.ActorsPerCell;
     const bool serverDemo=pEngineState_->settings->serverdemo.Enabled;
@@ -192,7 +198,28 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
     cgl::CrowdSamples samples;
     const auto& settings = *pEngineState_->settings;
     auto* benchmark = pEcs->getSingleton<cgl::component::CrowdBenchmark>();
+    auto* telemetry=pEcs->getSingleton<cgl::component::RuntimeTelemetry>();
     auto previous = std::chrono::steady_clock::now();
+    auto lastReport=previous;
+    auto emitTelemetry=[&](std::ostream& out) {
+        const auto summary=telemetry->frames.summary();
+        const auto animations=animationLibrary_.usage();const auto maps=mapLibrary_.usage();
+        const auto* swap=pRenderDevState_->pSwapchain.get();
+        out << "{\n\"status\":\"" << (anyStateError()?"scene_error":"complete") << "\","
+            << "\"present_mode\":\"" << (swap?swap->presentModeName():"unavailable") << "\","
+            << "\"window_capacity\":" << cgl::FrameTelemetry::Capacity << ",\"window_samples\":" << summary.count
+            << ",\"total_samples\":" << summary.total << ",\"fps\":" << summary.fps
+            << ",\"frame_mean_ms\":" << summary.meanMs << ",\"frame_p50_ms\":" << summary.p50Ms
+            << ",\"frame_p95_ms\":" << summary.p95Ms << ",\"frame_p99_ms\":" << summary.p99Ms
+            << ",\"frame_max_ms\":" << summary.maxMs << ",\"frames_over_33ms\":" << summary.over33ms
+            << ",\"update_mean_ms\":" << summary.updateMs << ",\"render_loop_mean_ms\":" << summary.renderMs
+            << ",\"sort_mean_ms\":" << summary.sortMs << ",\"drawn_actors_last_frame\":" << telemetry->rendering.actors
+            << ",\"draw_calls_last_frame\":" << telemetry->rendering.drawCalls
+            << ",\"animation_clips\":" << animations.clips << ",\"animation_rgba_bytes\":" << animations.rgbaBytes
+            << ",\"animation_pending_reserved_bytes\":" << animations.pendingBytes << ",\"animation_budget_bytes\":" << animations.budgetBytes
+            << ",\"cached_maps\":" << maps.maps << ",\"map_pages\":" << maps.pages
+            << ",\"map_rgba_bytes\":" << maps.rgbaBytes << ",\"outline_rgba_bytes\":" << maps.outlineBytes << "\n}\n";
+    };
     while (!pWinHandle->windowShouldClose && (!frameLimit || frames < frameLimit)) {
         const auto now = std::chrono::steady_clock::now();
         pEcs->getSingleton<cgl::component::FrameTime>()->deltaSeconds =
@@ -207,9 +234,11 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
         const bool wasReady = benchmark && benchmark->ready;
         const bool wasCold = wasReady && settings.benchmark.LoadDuringPlayback &&
             benchmark->unique < settings.benchmark.UniqueCharacters;
+        const bool wasRunning=pSceneState_->scene && pSceneState_->scene->sceneType()!=cgl::SceneTypes::InitScene;
         sceneMgrSys_.update(pEcs);
         const auto updateEnd = std::chrono::steady_clock::now();
         if (anyStateError()) break;
+        if(telemetry) telemetry->rendering={};
         renderDrawSys_.update(pEcs);
         auto* frame = pEcs->getSingleton<cgl::component::FrameRenderState>();
         if (frame->state == cgl::StateTypes::ERROR) {
@@ -217,13 +246,33 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             break;
         }
         const auto end = std::chrono::steady_clock::now();
+        if(telemetry && wasRunning) {
+            auto ms=[](auto duration){return std::chrono::duration<double,std::milli>(duration).count();};
+            if(end-lastReport>=std::chrono::seconds(2)) {
+                const auto summary=telemetry->frames.summary();
+                const auto usage=animationLibrary_.usage();const auto maps=mapLibrary_.usage();
+                LOGI("Telemetry: FPS=" << summary.fps << ", p99=" << summary.p99Ms << " ms, clips=" << usage.clips
+                    << ", animation RGBA=" << usage.rgbaBytes << ", pending reserved=" << usage.pendingBytes
+                    << ", map RGBA=" << maps.rgbaBytes);
+                lastReport=end;
+            }
+            auto sample=telemetry->rendering;
+            sample.frameMs=ms(std::chrono::steady_clock::now()-now);sample.updateMs=ms(updateEnd-updateStart);sample.renderMs=ms(end-updateEnd);
+            telemetry->frames.add(sample);
+        }
         if (benchmark && wasReady) {
             auto ms=[](auto span){ return std::chrono::duration<double,std::milli>(span).count(); };
-            samples.add(ms(end-now),ms(updateEnd-updateStart),ms(end-updateEnd),benchmark->sortMs,
+            samples.add(ms((telemetry?std::chrono::steady_clock::now():end)-now),ms(updateEnd-updateStart),ms(end-updateEnd),benchmark->sortMs,
                         settings.benchmark.WarmupFrames,wasCold);
             if (samples.frame.size() >= settings.benchmark.SampleFrames) break;
         }
         ++frames;
+    }
+    if(telemetry && !settings.telemetry.ReportPath.empty()) {
+        std::ofstream report(settings.telemetry.ReportPath);
+        if(!report) throw std::runtime_error("Cannot open telemetry report");
+        emitTelemetry(report);report.flush();
+        if(!report) throw std::runtime_error("Cannot write telemetry report");
     }
     if (benchmark) {
         const auto* swap = pRenderDevState_->pSwapchain.get();
