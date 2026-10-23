@@ -176,27 +176,50 @@ eligible entries remain. Recency metadata is stored with the cache entry and is
 removed with it. There is no age-in-seconds/TTL policy in this step.
 
 Reference count alone is **not** evidence of GPU completion: recorded draws borrow
-raw renderer pointers. The library selects idle candidates first, then explicitly
-waits for its live device to become idle before destroying them. No victims means
-no wait. A failed GPU barrier leaves that cache's entries intact and stops scene
-entry via the normal error path. Pending decode/upload work is not a ready-cache
-victim. Normal scene exit still cancels/drains that work before maintenance.
-Library trimUnused is a blocking maintenance API, never a per-frame eviction API.
+raw renderer pointers. ClientEngine now moves cache-only victims to a deferred
+ownership queue, tagged with the last successful graphics submission serial.
+Frame slots record their serial only after successful queue submission. A
+successful wait on a reused slot's fence advances completion; failed waits or
+submissions do not. This proof applies to the single graphics queue used by this
+renderer, not presentation or arbitrary future transfer/compute queues.
 
-Telemetry JSON adds animation_evictions, animation_evicted_bytes and
-map_outline_evictions. Counters reset when the cache is cleared; they count removed
-cache entries/payload, not measured driver residency or guaranteed OS memory return.
-Warm cache entries below target remain intentionally retained.
+Each update collects entries whose serial has completed. Collection can lag GPU
+completion by a frame/slot reuse; it never adds a fence poll, device waitIdle or
+queue wait to maintenance. Allocation failure preserves the current cache entry;
+earlier transfers stay queued. There are no raw owning callbacks or detached
+resources. Pending decode/upload slots are not retirement candidates. Scene exit
+still cancels/drains pending uploads, and shutdown still waits before clearing
+both ready and retired ownership, before render-pass/device destruction.
 
-This makes repeated scene/map changes bounded by the soft targets plus externally
-held resources. It does not solve unlimited new appearances during one continuous
-scene: the existing hard budget can still refuse a load there. Nonblocking GPU
-retirement and in-scene pressure handling belong to the next PR. No new automatic
-waitIdle is added to walking, N-batch refresh, animation polling or drawing.
+The explicit library trimUnused API remains blocking for offline maintenance and
+existing callers/tests. Do not use it for in-frame pressure eviction. retireUnused
+and collectRetired are internal owner-thread APIs: callers must supply this
+renderer/device lifetime's last submitted and acknowledged-complete serials.
+Never substitute a CPU frame number or clear a live retired queue.
 
-Tests cover LRU selection, pinned resources, failed barriers, new pins before
-release, repeated reload, byte accounting and transition-hook failure/order.
-Real Vulkan tests submit draws, drop CPU references, trim/reload three times,
-retain a pending decode, and restart map100 twice with zero warm targets. ASan,
-weak-reference expiry and validation checks supplement each other; none alone
-proves absence of all leaks.
+Telemetry keeps animation_rgba_bytes / map_rgba_bytes / outline_rgba_bytes as
+ready-cache payload. Separate animation_retired_bytes, animation_retired_clips,
+map_retired_bytes, outline_retired_bytes, retired_maps and retired_outlines show
+queued ownership. animation_evictions, animation_evicted_bytes and
+map_outline_evictions count cache removals, not completed GPU frees. Counters
+reset on clear. Ready + retired + pending animation payload/reservation counts
+against the hard animation budget; retiring an entry does not create free budget.
+These are not physical VRAM or total process RAM measurements.
+
+Warm resources below targets and externally held resources remain retained.
+Automatic in-scene eviction, backpressure/retry when a new scene or appearance
+cannot fit alongside queued allocations, and retired-cache resurrection remain
+separate work. Collection currently drains all completed entries; limiting CPU
+destruction work per frame is also follow-up work before automatic in-scene
+eviction is enabled. The existing hard budget may still refuse such a load. Re-entering
+a just-retired asset can temporarily require two copies; do not interpret a soft
+cache target as a strict peak-memory limit. This PR removes the retirement wait,
+not synchronous map loading, upload cancellation waits or shutdown synchronization.
+
+CPU tests cover LRU/pins, transfer allocation failure, zero-byte entries, ordering,
+overflow, 1000 retirement/collection cycles and submission acknowledgement. Real
+Vulkan tests submit map100 draws, drop scene owners, retire/reload three times,
+verify weak references survive before fence acknowledgement and expire after it,
+keep a pinned clip alive, and ensure retired bytes remain charged to the budget.
+The existing blocking-maintenance tests remain. ASan, weak-reference expiry and
+validation checks supplement each other; none alone proves absence of all leaks.

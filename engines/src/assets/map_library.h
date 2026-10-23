@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include "assets/idle_resource_cache.h"
+#include "assets/deferred_resource_queue.h"
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -38,17 +39,25 @@ public:
         component::AssetsReaderState& readers, graphics::IDevice* device, graphics::IRenderPass* pass);
     std::shared_ptr<const MapHoverOutline> acquireHoverOutline(double scale,
         graphics::IDevice* device, graphics::IRenderPass* pass);
-    struct Usage {size_t maps=0,pages=0,outlines=0;uint64_t rgbaBytes=0,outlineBytes=0,evictions=0;};
+    struct Usage {size_t maps=0,pages=0,outlines=0;uint64_t rgbaBytes=0,outlineBytes=0,evictions=0,retiredMapBytes=0,retiredOutlineBytes=0;size_t retiredMaps=0,retiredOutlines=0;};
     Usage usage() const noexcept {
-        Usage result{maps_.size(),0,outlines_.size(),maps_.bytes(),outlines_.bytes(),maps_.evictions()+outlines_.evictions()};
+        Usage result{maps_.size(),0,outlines_.size(),maps_.bytes(),outlines_.bytes(),maps_.evictions()+outlines_.evictions(),retiredMaps_.bytes(),retiredOutlines_.bytes(),retiredMaps_.size(),retiredOutlines_.size()};
         maps_.forEach([&](const MapResources& map){result.pages+=map.renderers.size();});
         return result;
     }
     uint64_t trimUnused(uint64_t mapTargetBytes,uint64_t outlineTargetBytes=1024*1024);
-    void clear() { maps_.clear(); outlines_.clear(); device_ = nullptr; pass_ = nullptr; }
+    // Internal owner-thread API: serials must come from this device's single
+    // graphics submission tracker. Retired resources still own their allocations.
+    uint64_t retireUnused(uint64_t mapTargetBytes,uint64_t lastSubmitted,uint64_t outlineTargetBytes=1024*1024);
+    uint64_t collectRetired(uint64_t completed) noexcept {
+        return retiredMaps_.collect(completed)+retiredOutlines_.collect(completed);
+    }
+    void clear() { retiredMaps_.clear();retiredOutlines_.clear(); maps_.clear(); outlines_.clear(); device_ = nullptr; pass_ = nullptr; }
 private:
     IdleResourceCache<std::filesystem::path,MapResources> maps_;
     IdleResourceCache<double,MapHoverOutline> outlines_;
+    DeferredResourceQueue<MapResources> retiredMaps_;
+    DeferredResourceQueue<MapHoverOutline> retiredOutlines_;
     graphics::IDevice* device_ = nullptr;
     graphics::IRenderPass* pass_ = nullptr;
 };

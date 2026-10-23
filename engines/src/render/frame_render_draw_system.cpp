@@ -99,6 +99,8 @@ void cgl::FrameRenderDrawSystem::render(cgl::ECSCore* pECS) {
         return;
     }
 
+    pSyncObjs_->progress.didComplete(pSyncObj->submissionSerial);
+
     // acquire image index from swapchain to choose the frame buffer.
     uint32_t imageIdx;
     if (pSwapchain->acquireNextImageIndex(
@@ -158,6 +160,8 @@ void cgl::FrameRenderDrawSystem::render(cgl::ECSCore* pECS) {
             "Failed to submit commands to the graphics queue");
         return;
     }
+
+    pSyncObj->submissionSerial=pSyncObjs_->progress.didSubmit();
 
     // present
     if (pDevice->presentQueue()->present(

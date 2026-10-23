@@ -805,3 +805,57 @@ TEST_F(DesktopSceneTest, TransitionMaintenanceEvictsAfterExitAndReloadsBeforeDra
     EXPECT_EQ(trims,2);EXPECT_GE(library_.usage().evictions,32);
     maintenance_={};
 }
+
+TEST_F(DesktopSceneTest, DeferredRetirementFollowsActualFrameFencesAndRetainsBudget) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.map.FilePath="map/0/100.dat";settings.animation.SerialNum=100000;
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
+    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::MapScene) && std::chrono::steady_clock::now()<deadline) {
+        manager_.update(&world_);ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(scene->scene,nullptr);ASSERT_EQ(scene->scene->sceneType(),cgl::SceneTypes::MapScene);
+    auto* sync=world_.getSingleton<cgl::component::PrimaryRenderSyncObjects>();
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    // Keep one unrelated owner pinned: it must never enter retirement.
+    auto pin=library_.acquire({100000,7,0},readers,device,pass);
+    for(int round=0;round<3;++round) {
+        if(round) {scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);}
+        ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        std::vector<std::weak_ptr<const cgl::AnimationClip>> clips;
+        world_.forEach<cgl::component::Sprite>([&](auto,auto* sprite){clips.push_back(sprite->clip);});
+        std::weak_ptr<const cgl::MapResources> map=maps_.acquire(
+            std::filesystem::path(settings.general.EngineRootPath)/settings.map.FilePath,readers,device,pass);
+        std::weak_ptr<const cgl::MapHoverOutline> outline=maps_.acquireHoverOutline(1,device,pass);
+        draw_.update(&world_);draw_.update(&world_);
+        ASSERT_GT(sync->progress.submitted,sync->progress.completed);
+        cgl::SceneManagerDestroySystem{}.update(&world_);
+        const auto submitted=sync->progress.submitted;
+        const auto oldBytes=library_.usage().rgbaBytes;
+        EXPECT_GT(library_.retireUnused(0,submitted),0);
+        EXPECT_GT(maps_.retireUnused(0,submitted,0),0);
+        EXPECT_EQ(library_.usage().clips,1);EXPECT_GT(library_.usage().retiredClips,0);
+        EXPECT_EQ(library_.usage().rgbaBytes+library_.usage().retiredBytes,oldBytes);
+        // Retired allocations cannot be silently removed from the hard budget.
+        EXPECT_THROW(library_.setTextureBudget(library_.usage().rgbaBytes),std::invalid_argument);
+        EXPECT_EQ(library_.collectRetired(sync->progress.completed),0);
+        EXPECT_EQ(maps_.collectRetired(sync->progress.completed),0);
+        EXPECT_FALSE(map.expired());EXPECT_FALSE(outline.expired());
+        for(const auto& clip:clips) EXPECT_FALSE(clip.expired());
+        // Submit blank scenes through the normal draw loop; only its successful
+        // fence waits may advance completion. No device waitIdle in this path.
+        for(size_t i=0;i<sync->objs.size()+1;++i) draw_.update(&world_);
+        ASSERT_GE(sync->progress.completed,submitted);
+        EXPECT_GT(library_.collectRetired(sync->progress.completed),0);
+        EXPECT_GT(maps_.collectRetired(sync->progress.completed),0);
+        EXPECT_TRUE(map.expired());EXPECT_TRUE(outline.expired());
+        for(const auto& clip:clips) EXPECT_TRUE(clip.expired());
+        EXPECT_EQ(library_.usage().retiredBytes,0);EXPECT_EQ(library_.usage().retiredClips,0);
+        EXPECT_EQ(maps_.usage().retiredMaps,0);EXPECT_EQ(maps_.usage().retiredOutlines,0);
+        EXPECT_NE(library_.findReady({100000,7,0}),nullptr);
+        scene->state=cgl::StateTypes::RUNNING;
+    }
+}
