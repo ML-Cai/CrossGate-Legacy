@@ -161,6 +161,11 @@
         "Telemetry": [
             {"Name":"Enabled","Type":"bool","Default":"false","ExportToINI":true,"Description":"Enable bounded rolling CPU frame/resource diagnostics."},
             {"Name":"ReportPath","Type":"std::string","Default":"","ExportToINI":true,"Description":"Optional JSON summary written on exit when telemetry is enabled."}
+        ],
+        "CacheMaintenance": [
+            {"Name":"Enabled","Type":"bool","Default":"true","ExportToINI":true,"Description":"Trim idle ready caches at scene transitions, waiting for GPU completion only if victims exist."},
+            {"Name":"AnimationTargetMiB","Type":"uint32_t","Default":"64","ExportToINI":true,"Description":"Soft total animation cache target at transitions; held clips are never evicted."},
+            {"Name":"MapTargetMiB","Type":"uint32_t","Default":"64","ExportToINI":true,"Description":"Soft total map cache target at transitions; held maps are never evicted."}
         ]
     }
 }

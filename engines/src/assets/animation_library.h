@@ -2,7 +2,7 @@
 
 #include "assets/animation_builder.h"
 #include "assets/animation_decode_worker.h"
-#include <map>
+#include "assets/idle_resource_cache.h"
 #include <memory>
 #include <stdexcept>
 #include "cgl/graphics/sprite_renderer.h"
@@ -30,28 +30,26 @@ public:
     std::shared_ptr<const AnimationClip> acquireProgressive(const AnimationRequest& request,
         component::AssetsReaderState& readers, graphics::IDevice* device, graphics::IRenderPass* pass, bool backgroundDecode=true);
     std::shared_ptr<const AnimationClip> findReady(const AnimationRequest& request) const {
-        const auto it=clips_.find(request);
-        return it==clips_.end() ? nullptr : it->second;
+        return clips_.find(request);
     }
     uint64_t pendingBytes() const noexcept {
         if(!pending_) return decoder_.reservedBytes();
         const auto& c=pending_->second;return uint64_t(c->width)*c->height*c->frameCount*4;
     }
-    struct Usage {size_t clips=0;uint64_t rgbaBytes=0,pendingBytes=0,budgetBytes=0;};
+    struct Usage {size_t clips=0;uint64_t rgbaBytes=0,pendingBytes=0,budgetBytes=0,evictions=0,evictedBytes=0;};
     Usage usage() const noexcept {
-        Usage result{clips_.size(),0,pendingBytes(),textureBudget_};
-        for(const auto& [key,clip]:clips_) result.rgbaBytes+=uint64_t(clip->width)*clip->height*clip->frameCount*4;
-        return result;
+        return {clips_.size(),clips_.bytes(),pendingBytes(),textureBudget_,clips_.evictions(),clips_.evictedBytes()};
     }
     // Cancellation/scene exit can wait for the one already-submitted chunk.
     void cancelPending() noexcept { decoder_.cancel(); decodeRequest_.reset(); decodeReaders_=nullptr; pending_.reset(); builder_.clear(); }
     void setTextureBudget(uint64_t bytes) {
-        uint64_t used = 0;
-        for (const auto& [key, clip] : clips_) used += uint64_t(clip->width)*clip->height*clip->frameCount*4;
-        used+=pendingBytes();
+        const uint64_t used=clips_.bytes()+pendingBytes();
         if (!bytes || used > bytes) throw std::invalid_argument("Texture budget below live cached payload");
         textureBudget_ = bytes;
     }
+    // Blocking maintenance only: waits for this device if idle victims exist.
+    // Held clips and in-flight decode/upload slots are never eviction candidates.
+    uint64_t trimUnused(uint64_t targetBytes);
     // Release scene/entity references and wait for GPU work before clearing.
     void clear() noexcept {
         decoder_.stop(); decodeRequest_.reset(); decodeReaders_=nullptr;
@@ -73,7 +71,7 @@ private:
     std::optional<std::pair<AnimationRequest,std::shared_ptr<const AnimationClip>>> pending_;
     uint64_t textureBudget_ = 256ull*1024*1024;
     AnimationBuilder builder_;
-    std::map<AnimationRequest, std::shared_ptr<const AnimationClip>> clips_;
+    IdleResourceCache<AnimationRequest,AnimationClip> clips_;
     graphics::IDevice* device_ = nullptr;
     graphics::IRenderPass* pass_ = nullptr;
 };

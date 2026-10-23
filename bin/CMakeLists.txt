@@ -17,34 +17,44 @@ foreach(SOURCE ${SOURCES})
 endforeach()
 
 if(CGL_WITH_TEST)
+    # Instrumented asset initialization can outlast the ordinary 240-frame run.
+    # Keep a bounded run, with enough frames to reach and validate scene entry.
+    set(startup_frames 240)
+    set(startup_timeout 50)
+    if(CGL_ENABLE_ASAN)
+        set(startup_frames 1200)
+        set(startup_timeout 100)
+    endif()
+    math(EXPR startup_test_timeout "${startup_timeout} + 10")
+    set(startup_options -DSTARTUP_FRAMES=${startup_frames} -DSTARTUP_TIMEOUT=${startup_timeout})
     foreach(CASE success large100 missing scale animation)
         add_test(NAME cgl_client_map_${CASE}
-            COMMAND ${CMAKE_COMMAND} -DCLIENT=$<TARGET_FILE:cgl-client> -DCASE=${CASE}
+            COMMAND ${CMAKE_COMMAND} -DCLIENT=$<TARGET_FILE:cgl-client> -DCASE=${CASE} ${startup_options}
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/map_startup.cmake)
         set_tests_properties(cgl_client_map_${CASE} PROPERTIES
-            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;assets;integration" RESOURCE_LOCK cgl_desktop)
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT ${startup_test_timeout} LABELS "desktop;assets;integration" RESOURCE_LOCK cgl_desktop)
     endforeach()
     add_test(NAME cgl_client_startup
         COMMAND ${CMAKE_COMMAND}
-            -DCLIENT=$<TARGET_FILE:cgl-client>
+            -DCLIENT=$<TARGET_FILE:cgl-client> ${startup_options}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/startup.cmake)
     set_tests_properties(cgl_client_startup PROPERTIES
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;assets;integration" RESOURCE_LOCK cgl_desktop)
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT ${startup_test_timeout} LABELS "desktop;assets;integration" RESOURCE_LOCK cgl_desktop)
     add_test(NAME cgl_client_invalid_resources
         COMMAND ${CMAKE_COMMAND}
-            -DCLIENT=$<TARGET_FILE:cgl-client>
+            -DCLIENT=$<TARGET_FILE:cgl-client> ${startup_options}
             -DINVALID_RESOURCES=ON
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/startup.cmake)
     set_tests_properties(cgl_client_invalid_resources PROPERTIES
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;assets;integration" RESOURCE_LOCK cgl_desktop)
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT ${startup_test_timeout} LABELS "desktop;assets;integration" RESOURCE_LOCK cgl_desktop)
     foreach(CASE direction serial scale)
         add_test(NAME cgl_client_invalid_animation_${CASE}
             COMMAND ${CMAKE_COMMAND}
-                -DCLIENT=$<TARGET_FILE:cgl-client>
+                -DCLIENT=$<TARGET_FILE:cgl-client> ${startup_options}
                 -DINVALID_ANIMATION=${CASE}
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/startup.cmake)
         set_tests_properties(cgl_client_invalid_animation_${CASE} PROPERTIES
-            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 60 LABELS "desktop;assets;integration" RESOURCE_LOCK cgl_desktop)
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT ${startup_test_timeout} LABELS "desktop;assets;integration" RESOURCE_LOCK cgl_desktop)
     endforeach()
 endif()
 

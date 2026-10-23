@@ -160,9 +160,10 @@ protected:
     cgl::ECSCore world_;
     cgl::AnimationLibrary library_;
     cgl::MapLibrary maps_;
+    std::function<void()> maintenance_;
     cgl::SceneManagerSystem manager_{[this](cgl::SceneTypes type) {
         return cgl::CreateScene(type, library_, &maps_);
-    }};
+    },[this]{if(maintenance_) maintenance_();}};
     cgl::FrameRenderDrawSystem draw_;
     cgl::WindowInputSystem input_;
     std::string initialDiagnostic_;
@@ -707,4 +708,100 @@ TEST_F(DesktopSceneTest, SwitchBetweenServerDemoAndCrowdReleasesPreviousModeEnti
     cgl::SceneManagerDestroySystem{}.update(&world_);
     EXPECT_EQ(remoteCount(),0);EXPECT_EQ(crowdCount(),0);EXPECT_EQ(library_.pendingBytes(),0);
     library_.clear();for(const auto& clip:clips) EXPECT_TRUE(clip.expired());
+}
+
+TEST(SceneMaintenance, RunsAfterOldDestructionAndBeforeNewEntry) {
+    cgl::ECSCore world;Events events;
+    world.addSingleton<cgl::component::SceneState>(cgl::StateTypes::RUNNING,cgl::SceneTypes::Unknown,nullptr,"");
+    auto* state=world.getSingleton<cgl::component::SceneState>();
+    cgl::SceneManagerSystem manager{[&](auto type){return std::make_unique<TrackedScene>(type,events);},[&]{
+        EXPECT_EQ(state->scene,nullptr);EXPECT_EQ(events.calls.back(),"destroy init");events.calls.push_back("maintenance");
+    }};
+    manager.update(&world);manager.update(&world);
+    state->nextScene=cgl::SceneTypes::AnimationScene;manager.update(&world);
+    EXPECT_EQ(events.calls,(std::vector<std::string>{"enter init","exit init","destroy init","maintenance","enter animation"}));
+    cgl::SceneManagerDestroySystem{}.update(&world);
+}
+TEST(SceneMaintenance, FailureStopsNewEntryWithoutDoubleExit) {
+    cgl::ECSCore world;Events events;
+    world.addSingleton<cgl::component::SceneState>(cgl::StateTypes::RUNNING,cgl::SceneTypes::Unknown,nullptr,"");
+    cgl::SceneManagerSystem manager{[&](auto type){return std::make_unique<TrackedScene>(type,events);},[]{throw std::runtime_error("maintenance failure");}};
+    manager.update(&world);manager.update(&world);
+    auto* state=world.getSingleton<cgl::component::SceneState>();state->nextScene=cgl::SceneTypes::AnimationScene;
+    manager.update(&world);
+    EXPECT_EQ(state->state,cgl::StateTypes::ERROR);EXPECT_EQ(state->scene,nullptr);
+    EXPECT_EQ(std::count(events.calls.begin(),events.calls.end(),"enter animation"),0);
+    cgl::SceneManagerDestroySystem{}.update(&world);
+    EXPECT_EQ(std::count(events.calls.begin(),events.calls.end(),"exit init"),1);
+}
+TEST_F(DesktopSceneTest, IdleCacheTrimWaitsForDrawsPreservesPinsAndReloads) {
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
+    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::AnimationScene) && std::chrono::steady_clock::now()<deadline) {
+        manager_.update(&world_);ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(scene->scene,nullptr);ASSERT_EQ(scene->scene->sceneType(),cgl::SceneTypes::AnimationScene);
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    cgl::AnimationLibrary cache;
+    auto pin=cache.acquire({100000,0,0},readers,device,pass);
+    for(int round=0;round<3;++round) {
+        auto clip=cache.acquire({100000,1,0},readers,device,pass);
+        std::weak_ptr<const cgl::AnimationClip> weak=clip;
+        auto entity=world_.createEntity();
+        world_.addComponent<cgl::component::Transform2D>(entity);
+        world_.addComponent<cgl::component::Sprite>(entity,clip);
+        world_.addComponent<cgl::component::AnimationPlayer>(entity);
+        draw_.update(&world_);world_.destroyEntity(entity);clip.reset();
+        EXPECT_GT(cache.trimUnused(0),0);EXPECT_TRUE(weak.expired());EXPECT_EQ(cache.usage().clips,1);
+    }
+    EXPECT_EQ(cache.acquireProgressive({100000,2,0},readers,device,pass),nullptr);
+    EXPECT_GT(cache.pendingBytes(),0);EXPECT_EQ(cache.trimUnused(0),0);EXPECT_GT(cache.pendingBytes(),0);
+    cache.cancelPending();std::weak_ptr<const cgl::AnimationClip> pinned=pin;pin.reset();
+    EXPECT_GT(cache.trimUnused(0),0);EXPECT_TRUE(pinned.expired());EXPECT_EQ(cache.usage().rgbaBytes,0);
+    EXPECT_EQ(cache.usage().evictions,4);cache.clear();
+    cgl::MapLibrary maps;
+    const auto root=world_.getSingleton<cgl::component::EngineState>()->settings->general.EngineRootPath;
+    auto map=maps.acquire(std::filesystem::path(root)/"map/0/100.dat",readers,device,pass);
+    std::weak_ptr<const cgl::MapResources> idle=maps.acquire(std::filesystem::path(root)/"map/0/2100.dat",readers,device,pass);
+    auto outline=maps.acquireHoverOutline(1,device,pass);
+    std::weak_ptr<const cgl::MapHoverOutline> idleOutline=maps.acquireHoverOutline(2,device,pass);
+    EXPECT_GT(maps.trimUnused(0,0),0);EXPECT_TRUE(idle.expired());EXPECT_TRUE(idleOutline.expired());
+    EXPECT_EQ(maps.usage().maps,1);EXPECT_EQ(maps.usage().outlines,1);EXPECT_EQ(map->layout.width,840);
+    map.reset();outline.reset();EXPECT_GT(maps.trimUnused(0,0),0);
+    EXPECT_EQ(maps.usage().rgbaBytes,0);EXPECT_EQ(maps.usage().outlineBytes,0);
+}
+
+TEST_F(DesktopSceneTest, TransitionMaintenanceEvictsAfterExitAndReloadsBeforeDraw) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.map.FilePath="map/0/100.dat";settings.animation.SerialNum=100000;
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
+    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::MapScene) && std::chrono::steady_clock::now()<deadline) {
+        manager_.update(&world_);ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(scene->scene,nullptr);ASSERT_EQ(scene->scene->sceneType(),cgl::SceneTypes::MapScene);
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    std::weak_ptr<const cgl::AnimationClip> clip;
+    std::weak_ptr<const cgl::MapResources> map;
+    int trims=0;
+    maintenance_=[&]{
+        EXPECT_GT(library_.trimUnused(0),0);EXPECT_GT(maps_.trimUnused(0,0),0);
+        EXPECT_TRUE(clip.expired());EXPECT_TRUE(map.expired());++trims;
+    };
+    for(int round=0;round<2;++round) {
+        world_.forEach<cgl::component::Sprite>([&](auto,auto* sprite){clip=sprite->clip;});
+        map=maps_.acquire(std::filesystem::path(settings.general.EngineRootPath)/settings.map.FilePath,readers,device,pass);
+        draw_.update(&world_);scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);
+        ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        EXPECT_EQ(library_.usage().clips,16);EXPECT_EQ(maps_.usage().maps,1);
+        draw_.update(&world_);
+    }
+    EXPECT_EQ(trims,2);EXPECT_GE(library_.usage().evictions,32);
+    maintenance_={};
 }

@@ -1,5 +1,6 @@
 #include "assets/map_library.h"
 #include "assets/assets_components.h"
+#include "cgl/graphics/device.h"
 #include "map/map_atlas.h"
 #include "map/map_render_data.h"
 #include "map/map_hover.h"
@@ -13,13 +14,13 @@ std::shared_ptr<const MapHoverOutline> MapLibrary::acquireHoverOutline(double sc
     if (!device || !pass || (device_ && device_ != device) || (pass_ && pass_ != pass) ||
         !std::isfinite(scale) || scale < 0.125 || scale > 16)
         throw std::invalid_argument("Hover outline requires a valid scale and one live device/render pass");
-    if (const auto found = outlines_.find(scale); found != outlines_.end()) return found->second;
+    if(auto found=outlines_.find(scale)) return found;
     const auto image = BuildMapHoverBitmap(scale);
     auto result = std::make_shared<MapHoverOutline>();
     result->renderer = graphics::ISpriteRenderer::create(device, pass, image.width, image.height, 1, image.rgba);
     if (!result->renderer) throw std::runtime_error("Could not upload map hover outline");
     result->width = image.width; result->height = image.height; result->scale = scale;
-    outlines_.emplace(scale, result);
+    outlines_.insert(scale,result,uint64_t(result->width)*result->height*4);
     device_ = device; pass_ = pass;
     return result;
 }
@@ -29,7 +30,7 @@ std::shared_ptr<const MapResources> MapLibrary::acquire(const std::filesystem::p
     if (!device || !pass || (device_ && device_ != device) || (pass_ && pass_ != pass))
         throw std::invalid_argument("Map library requires one live device/render pass");
     const auto key = std::filesystem::absolute(path).lexically_normal();
-    if (const auto found = maps_.find(key); found != maps_.end()) return found->second;
+    if(auto found=maps_.find(key)) return found;
     std::lock_guard readerLock(*readers.queryMutex);
     auto result = std::make_shared<MapResources>();
     if (IMapLayoutReader::create()->read(key, &result->layout) != Results::Success)
@@ -91,11 +92,23 @@ std::shared_ptr<const MapResources> MapLibrary::acquire(const std::filesystem::p
         result->renderers.push_back(std::move(renderer));
     }
     result->rgbaBytes=textureBytes;
-    maps_.emplace(key, result);
+    maps_.insert(key,result,result->rgbaBytes);
     device_ = device; pass_ = pass;
     LOGI("Map ready: " << result->layout.width << "x" << result->layout.height
         << ", images=" << result->images.size() << ", atlas pages=" << result->renderers.size()
         << ", texture bytes=" << textureBytes);
     return result;
 }
+uint64_t MapLibrary::trimUnused(uint64_t mapTargetBytes,uint64_t outlineTargetBytes) {
+    bool synchronized=false;
+    auto barrier=[&] {
+        if(synchronized) return;
+        if(!device_ || device_->waitIdle()!=Results::Success)
+            throw std::runtime_error("Cannot synchronize map cache eviction");
+        synchronized=true;
+    };
+    auto bytes=maps_.trim(mapTargetBytes,barrier,mapTargetBytes?2:0);
+    return bytes+outlines_.trim(outlineTargetBytes,barrier,outlineTargetBytes?16:0);
+}
+
 }

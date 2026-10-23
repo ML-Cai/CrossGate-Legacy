@@ -1,5 +1,6 @@
 #include "assets/animation_library.h"
 #include "assets/assets_components.h"
+#include "cgl/graphics/device.h"
 #include "cgl/trace/logger.h"
 #include <stdexcept>
 #include <algorithm>
@@ -10,10 +11,10 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquire(
     graphics::IDevice* device, graphics::IRenderPass* pass) {
     if (!device || !pass || (device_ && device_ != device) || (pass_ && pass_ != pass))
         throw std::invalid_argument("Animation library requires one live device/render pass");
-    if (const auto found = clips_.find(request); found != clips_.end()) return found->second;
+    if (auto found=clips_.find(request)) return found;
     if(pending_ || decodeRequest_) throw std::runtime_error("Synchronous acquire cannot create another clip while an upload is pending");
     auto clip=buildClip(request,readers,device,pass,false);
-    clips_.emplace(request,clip);
+    clips_.insert(request,clip,uint64_t(clip->width)*clip->height*clip->frameCount*4);
     return clip;
 }
 std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
@@ -21,7 +22,7 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
     graphics::IDevice* device,graphics::IRenderPass* pass,bool backgroundDecode) {
     if(!device || !pass || (device_ && device_!=device) || (pass_ && pass_!=pass))
         throw std::invalid_argument("Animation library requires one live device/render pass");
-    if(const auto found=clips_.find(request);found!=clips_.end()) return found->second;
+    if(auto found=clips_.find(request)) return found;
     if(decodeRequest_) {
         if(decodeReaders_!=&readers) throw std::invalid_argument("Cannot change readers during background decode");
         auto result=decoder_.tryTake();
@@ -37,8 +38,9 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
             pending_.reset();throw std::runtime_error("Progressive animation upload failed");
         }
         if(status==graphics::SpriteUploadState::Ready) {
-            clips_.emplace(pending_->first,pending_->second);pending_.reset();
-            if(const auto found=clips_.find(request);found!=clips_.end()) return found->second;
+            const auto& c=pending_->second;
+            clips_.insert(pending_->first,c,uint64_t(c->width)*c->height*c->frameCount*4);pending_.reset();
+            if(auto found=clips_.find(request)) return found;
         }
         return nullptr; // Do not start another submission in this same call.
     }
@@ -63,10 +65,15 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::buildClip(
     return uploadClip(request,std::move(pixels),device,pass,progressive);
 }
 uint64_t AnimationLibrary::remainingBytes() const {
-    uint64_t cachedBytes=0;
-    for(const auto& [key,clip]:clips_) cachedBytes+=uint64_t(clip->width)*clip->height*clip->frameCount*4;
+    const auto cachedBytes=clips_.bytes();
     if(cachedBytes>textureBudget_) throw std::runtime_error("Animation cache exceeds texture budget");
     return textureBudget_-cachedBytes;
+}
+uint64_t AnimationLibrary::trimUnused(uint64_t targetBytes) {
+    return clips_.trim(targetBytes,[this] {
+        if(!device_ || device_->waitIdle()!=Results::Success)
+            throw std::runtime_error("Cannot synchronize animation cache eviction");
+    });
 }
 std::shared_ptr<const AnimationClip> AnimationLibrary::uploadClip(const AnimationRequest& request,AnimationPixels pixels,
     graphics::IDevice* device,graphics::IRenderPass* pass,bool progressive) {

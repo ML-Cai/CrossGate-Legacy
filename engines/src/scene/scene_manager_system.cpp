@@ -28,8 +28,8 @@ cgl::IScene::Ptr cgl::CreateScene(SceneTypes type, AnimationLibrary& library, Ma
 cgl::SceneManagerSystem::SceneManagerSystem(AnimationLibrary& library)
     : SceneManagerSystem([&library](SceneTypes type) { return CreateScene(type, library); }) {}
 
-cgl::SceneManagerSystem::SceneManagerSystem(SceneFactory factory)
-    : factory_(std::move(factory)) {
+cgl::SceneManagerSystem::SceneManagerSystem(SceneFactory factory,std::function<void()> maintenance)
+    : factory_(std::move(factory)),maintenance_(std::move(maintenance)) {
     updater_ = &cgl::SceneManagerSystem::initStage;
 }
 
@@ -67,6 +67,11 @@ void cgl::SceneManagerSystem::switchScene(cgl::ECSCore* pECS) {
         pSceneState_->scene->onExit(pECS);
         pSceneState_->scene.reset();
         if (pSceneState_->state == cgl::StateTypes::ERROR) return;
+        try {if(maintenance_) maintenance_();}
+        catch(const std::exception& error) {
+            cgl::RaiseError(pSceneState_, "Scene maintenance failed: ",error.what());
+            return;
+        }
     }
     pSceneState_->scene = std::move(next);
     pSceneState_->scene->onEnter(pECS);
