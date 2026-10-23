@@ -2,7 +2,7 @@
 
 #include <filesystem>
 #include "assets/idle_resource_cache.h"
-#include "assets/deferred_resource_queue.h"
+#include "assets/keyed_retirement_cache.h"
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -39,9 +39,9 @@ public:
         component::AssetsReaderState& readers, graphics::IDevice* device, graphics::IRenderPass* pass);
     std::shared_ptr<const MapHoverOutline> acquireHoverOutline(double scale,
         graphics::IDevice* device, graphics::IRenderPass* pass);
-    struct Usage {size_t maps=0,pages=0,outlines=0;uint64_t rgbaBytes=0,outlineBytes=0,evictions=0,retiredMapBytes=0,retiredOutlineBytes=0;size_t retiredMaps=0,retiredOutlines=0;};
+    struct Usage {size_t maps=0,pages=0,outlines=0;uint64_t rgbaBytes=0,outlineBytes=0,evictions=0,retiredMapBytes=0,retiredOutlineBytes=0;size_t retiredMaps=0,retiredOutlines=0;uint64_t reusedMaps=0,reusedOutlines=0;};
     Usage usage() const noexcept {
-        Usage result{maps_.size(),0,outlines_.size(),maps_.bytes(),outlines_.bytes(),maps_.evictions()+outlines_.evictions(),retiredMaps_.bytes(),retiredOutlines_.bytes(),retiredMaps_.size(),retiredOutlines_.size()};
+        Usage result{maps_.size(),0,outlines_.size(),maps_.bytes(),outlines_.bytes(),maps_.evictions()+outlines_.evictions(),retiredMaps_.bytes(),retiredOutlines_.bytes(),retiredMaps_.size(),retiredOutlines_.size(),retiredMaps_.restores(),retiredOutlines_.restores()};
         maps_.forEach([&](const MapResources& map){result.pages+=map.renderers.size();});
         return result;
     }
@@ -57,8 +57,8 @@ public:
 private:
     IdleResourceCache<std::filesystem::path,MapResources> maps_;
     IdleResourceCache<double,MapHoverOutline> outlines_;
-    DeferredResourceQueue<MapResources> retiredMaps_;
-    DeferredResourceQueue<MapHoverOutline> retiredOutlines_;
+    KeyedRetirementCache<std::filesystem::path,MapResources> retiredMaps_;
+    KeyedRetirementCache<double,MapHoverOutline> retiredOutlines_;
     graphics::IDevice* device_ = nullptr;
     graphics::IRenderPass* pass_ = nullptr;
 };

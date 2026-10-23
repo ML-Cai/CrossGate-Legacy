@@ -43,6 +43,11 @@ public:
     // that entry stays cached on failure (earlier transfers remain committed).
     template<class Barrier,class Receiver> uint64_t retire(uint64_t targetBytes,Barrier&& barrier,Receiver&& receiver,
             size_t maxEntries=std::numeric_limits<size_t>::max(),size_t maxVictims=std::numeric_limits<size_t>::max()) {
+        return retireKeyed(targetBytes,std::forward<Barrier>(barrier),
+            [&](const Key&,const auto& resource,uint64_t bytes){receiver(resource,bytes);},maxEntries,maxVictims);
+    }
+    template<class Barrier,class Receiver> uint64_t retireKeyed(uint64_t targetBytes,Barrier&& barrier,Receiver&& receiver,
+            size_t maxEntries=std::numeric_limits<size_t>::max(),size_t maxVictims=std::numeric_limits<size_t>::max()) {
         if(bytes_<=targetBytes && entries_.size()<=maxEntries) return 0;
         std::vector<typename Entries::iterator> candidates;
         for(auto it=entries_.begin();it!=entries_.end();++it)
@@ -56,7 +61,7 @@ public:
         for(size_t i=0;i<count;++i) {
             const auto it=candidates[i];
             if(it->second.value.use_count()!=1) continue;
-            receiver(it->second.value,it->second.bytes);
+            receiver(it->first,it->second.value,it->second.bytes);
             released+=it->second.bytes;bytes_-=it->second.bytes;
             ++evictions_;evictedBytes_+=it->second.bytes;entries_.erase(it);
         }

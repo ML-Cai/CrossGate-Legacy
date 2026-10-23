@@ -15,6 +15,10 @@ std::shared_ptr<const MapHoverOutline> MapLibrary::acquireHoverOutline(double sc
         !std::isfinite(scale) || scale < 0.125 || scale > 16)
         throw std::invalid_argument("Hover outline requires a valid scale and one live device/render pass");
     if(auto found=outlines_.find(scale)) return found;
+    std::shared_ptr<const MapHoverOutline> restored;
+    if(retiredOutlines_.restore(scale,[&](const auto& outline,uint64_t bytes) {
+        outlines_.insert(scale,outline,bytes);restored=outline;
+    })) return restored;
     const auto image = BuildMapHoverBitmap(scale);
     auto result = std::make_shared<MapHoverOutline>();
     result->renderer = graphics::ISpriteRenderer::create(device, pass, image.width, image.height, 1, image.rgba);
@@ -31,6 +35,10 @@ std::shared_ptr<const MapResources> MapLibrary::acquire(const std::filesystem::p
         throw std::invalid_argument("Map library requires one live device/render pass");
     const auto key = std::filesystem::absolute(path).lexically_normal();
     if(auto found=maps_.find(key)) return found;
+    std::shared_ptr<const MapResources> restored;
+    if(retiredMaps_.restore(key,[&](const auto& map,uint64_t bytes) {
+        maps_.insert(key,map,bytes);restored=map;
+    })) return restored;
     std::lock_guard readerLock(*readers.queryMutex);
     auto result = std::make_shared<MapResources>();
     if (IMapLayoutReader::create()->read(key, &result->layout) != Results::Success)
@@ -100,11 +108,11 @@ std::shared_ptr<const MapResources> MapLibrary::acquire(const std::filesystem::p
     return result;
 }
 uint64_t MapLibrary::retireUnused(uint64_t mapTargetBytes,uint64_t lastSubmitted,uint64_t outlineTargetBytes) {
-    const auto maps=maps_.retire(mapTargetBytes,[]{},[&](const auto& map,uint64_t bytes) {
-        retiredMaps_.retain(lastSubmitted,map,bytes);
+    const auto maps=maps_.retireKeyed(mapTargetBytes,[]{},[&](const auto& key,const auto& map,uint64_t bytes) {
+        retiredMaps_.retain(key,lastSubmitted,map,bytes);
     },mapTargetBytes?2:0);
-    return maps+outlines_.retire(outlineTargetBytes,[]{},[&](const auto& outline,uint64_t bytes) {
-        retiredOutlines_.retain(lastSubmitted,outline,bytes);
+    return maps+outlines_.retireKeyed(outlineTargetBytes,[]{},[&](const auto& key,const auto& outline,uint64_t bytes) {
+        retiredOutlines_.retain(key,lastSubmitted,outline,bytes);
     },outlineTargetBytes?16:0);
 }
 uint64_t MapLibrary::trimUnused(uint64_t mapTargetBytes,uint64_t outlineTargetBytes) {
