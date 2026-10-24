@@ -1,5 +1,5 @@
 import unittest
-from run_stress import validate_report
+from run_stress import validate_report, DEMAND_FIELDS
 
 class ReportValidation(unittest.TestCase):
     def report(self):
@@ -22,6 +22,19 @@ class ReportValidation(unittest.TestCase):
             with self.subTest(key=key),self.assertRaises(ValueError):
                 validate_report(invalid,16,600,600)
         del report["stream_budget_deferred_frames"]
+        with self.assertRaises(ValueError):validate_report(report,16,600,600)
+    def test_demand_latency_outcomes_windows_and_timings(self):
+        report=self.report();report.update({k:0 for k in DEMAND_FIELDS})
+        report.update(demand_started=4,demand_completed=1,demand_withdrawn=1,demand_failed=1,demand_pending=1,
+            demand_samples=1,demand_mean_ms=30,demand_p95_ms=30,demand_p99_ms=30,demand_max_ms=30,
+            demand_queued_mean_ms=10,demand_deferred_mean_ms=15,demand_loading_mean_ms=5)
+        self.assertEqual(validate_report(report,16,600,600),.25)
+        for k,v in [("demand_started",5),("demand_pending",1025),("demand_visible_pending",2),
+                    ("demand_samples",257),("demand_visible_completed",2),("demand_mean_ms",float("nan")),
+                    ("demand_p99_ms",31),("demand_loading_mean_ms",6),("demand_oldest_visible_ms",1),("demand_peak_visible_ms",1)]:
+            invalid=dict(report);invalid[k]=v
+            with self.subTest(key=k),self.assertRaises(ValueError):validate_report(invalid,16,600,600)
+        del report["demand_samples"]
         with self.assertRaises(ValueError):validate_report(report,16,600,600)
     def test_wrong_replacement_cadence_is_rejected(self):
         with self.assertRaises(ValueError):

@@ -53,6 +53,10 @@ public:
         return candidate && waiting_.at(*candidate).demand.region<current->second.demand.region;
     }
     bool contains(size_t appearance) const noexcept {return waiting_.contains(appearance);}
+    bool blocked(size_t appearance,uint64_t capacity) const noexcept {
+        const auto it=waiting_.find(appearance);
+        return it!=waiting_.end() && it->second.requiredBytes && *it->second.requiredBytes>capacity;
+    }
     size_t blockedCount(uint64_t capacity) const noexcept {
         return std::count_if(waiting_.begin(),waiting_.end(),[&](const auto& item) {
             return item.second.requiredBytes && *item.second.requiredBytes>capacity;
