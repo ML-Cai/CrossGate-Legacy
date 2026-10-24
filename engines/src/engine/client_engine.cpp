@@ -268,6 +268,9 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
                 << ",\"stream_visible\":" << stats->visible << ",\"stream_ready_visible\":" << stats->readyVisible
                 << ",\"stream_prefetch\":" << stats->prefetch << ",\"stream_ready_prefetch\":" << stats->readyPrefetch
                 << ",\"stream_visible_samples\":" << stats->visibleSamples << ",\"stream_ready_visible_samples\":" << stats->readyVisibleSamples
+                << ",\"stream_budget_deferred_appearances\":" << stats->deferred
+                << ",\"stream_peak_budget_deferred_appearances\":" << stats->peakDeferred
+                << ",\"stream_budget_deferred_frames\":" << stats->deferredFrames
                 << ",\"stream_missing_visible_frames\":" << stats->visibleMissingFrames << ",\"stream_budget_wait_frames\":" << stats->budgetWaitFrames
                 << ",\"stream_peak_accounted_bytes\":" << stats->peakAccountedBytes << ",\"stream_peak_retired_bytes\":" << stats->peakRetiredBytes << ",\"stream_peak_pending_bytes\":" << stats->peakPendingBytes
                 << ",\"stream_snapshot_fingerprint\":\"" << stats->fingerprint << "\",\"stream_player_x\":" << stats->x << ",\"stream_player_y\":" << stats->y << ",\"stream_travel_cells\":" << stats->travelCells;

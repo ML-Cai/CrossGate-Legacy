@@ -75,7 +75,16 @@ Key JSON fields:
   `stream_missing_visible_frames` counts updates with any unresolved visible actor.
 - `stream_visible`/`stream_ready_visible`, `stream_prefetch`/`stream_ready_prefetch`:
   final counts, including a potentially fresh replacement on the last update.
-- `stream_budget_wait_frames`: updates with an animation admission budget wait.
+- `stream_budget_wait_frames`: updates with the library's active admission budget
+  wait, not all unresolved demand. A blocked request may now be parked so another
+  appearance can use the slot.
+- `stream_budget_deferred_appearances`, `stream_peak_budget_deferred_appearances`,
+  `stream_budget_deferred_frames`: current/peak unique appearance demands whose
+  known required bytes exceed the last sampled eventual capacity, and updates
+  with at least one such demand. These include visible and prefetch requests;
+  they are policy estimates, not reserved bytes or successful loads. The runner
+  preserves these counters when present and accepts older-client reports without
+  them for comparisons.
 - `stream_peak_accounted_bytes`, `stream_peak_retired_bytes`,
   `stream_peak_pending_bytes`: observed per-update high water marks; they can miss
   brief between-update changes. Animation accounting is ready + retired + reserved
@@ -103,6 +112,22 @@ Eviction still runs only under actual admission pressure with bounded maintenanc
 and submission/completion serials. Releasing a Sprite reference does not bypass
 GPU completion or force immediate destruction. A key shared by visible and outer
 actors remains protected by its visible owners. No blocking GPU waits were added.
+When background metadata reports a temporary budget miss, the scheduler keeps the
+exact required bytes only for that current unresolved appearance. A known request
+that cannot fit is parked while other fitting or as-yet-unknown requests progress;
+its original age remains intact. Unknown costs still require the bounded metadata
+worker and normal exact admission check. Region and aging priority among eligible
+requests are unchanged. Prefetch may use spare capacity if no eligible visible
+request exists; it never displaces a pinned visible clip.
+
+During pressure, an owner-thread scan at most every 250 ms estimates capacity after
+idle/retired clips can eventually be reclaimed, subtracting held clips and pending
+reservations. This hint never grants an allocation or frees in-flight memory;
+normal maintenance and exact admission still enforce the actual budget/fences.
+A stale hint can delay reconsideration or optimistically select a request that
+must still wait. Leaving the demand set drops remembered costs and clears obsolete
+budget waits. Already displayed visible owners remain stable to avoid upload churn.
+
 Temporary pressure waits/retries; intrinsically oversized clips fail and keep
 their placeholder. A visible working set larger than the budget can still leave
 actors unresolved indefinitely: choosing far-visible victims or lower-detail
@@ -118,7 +143,7 @@ without enabling the scripted route.
 ## Tests
 
 ```powershell
-ctest --test-dir build/dev -R "StreamingStress|Configurable1024|ScriptedServerChurn|VisibleWorkingSetOverBudget|PrefetchDoesNotPin|streaming_stress_runner|LongRunOverwrites" --output-on-failure
+ctest --test-dir build/dev -R "StreamingStress|Configurable1024|ScriptedServerChurn|VisibleWorkingSetOverBudget|PrefetchDoesNotPin|BudgetBlockedVisibleClip|AppearanceScheduler|IdleByteHint|streaming_stress_runner|LongRunOverwrites" --output-on-failure
 ```
 
 Headless tests validate schedule boundaries, limits, 1024-appearance seeded churn,

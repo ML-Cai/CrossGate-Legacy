@@ -31,10 +31,10 @@ private:
 };
 namespace component {
 struct StreamingDiagnostics {
-    uint64_t frames=0,snapshots=0,replacements=0,budgetWaitFrames=0,visibleMissingFrames=0;
+    uint64_t frames=0,snapshots=0,replacements=0,budgetWaitFrames=0,visibleMissingFrames=0,deferredFrames=0;
     uint64_t visibleSamples=0,readyVisibleSamples=0,peakAccountedBytes=0,peakRetiredBytes=0,peakPendingBytes=0;
     uint64_t fingerprint=14695981039346656037ull;
-    uint32_t configuredFrames=0;size_t visible=0,readyVisible=0,prefetch=0,readyPrefetch=0;
+    uint32_t configuredFrames=0;size_t visible=0,readyVisible=0,prefetch=0,readyPrefetch=0,deferred=0,peakDeferred=0;
     double x=0,y=0,travelCells=0;
 };
 }

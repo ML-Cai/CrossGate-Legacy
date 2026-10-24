@@ -61,6 +61,8 @@ void ServerDemoScenario::update(ECSCore* world,const Viewport& viewport) {
     stats.prefetch=remote_->outer;stats.readyPrefetch=remote_->readyOuter;
     stats.visibleSamples+=stats.visible;stats.readyVisibleSamples+=stats.readyVisible;
     if(stats.readyVisible<stats.visible) ++stats.visibleMissingFrames;
+    stats.deferred=remote_->budgetDeferred;stats.peakDeferred=std::max(stats.peakDeferred,stats.deferred);
+    if(stats.deferred) ++stats.deferredFrames;
     const auto usage=animations_.usage();if(usage.waitingForBudget) ++stats.budgetWaitFrames;
     stats.peakAccountedBytes=std::max(stats.peakAccountedBytes,usage.rgbaBytes+usage.retiredBytes+usage.pendingBytes);
     stats.peakRetiredBytes=std::max(stats.peakRetiredBytes,usage.retiredBytes);stats.peakPendingBytes=std::max(stats.peakPendingBytes,usage.pendingBytes);

@@ -964,6 +964,8 @@ TEST_F(DesktopSceneTest, RemoteBudgetWaitCanChangeCandidateAndRetryWithoutPerman
     remote.apply(world_,{1,{{1,{10,10},0}}},placeholder);
     remote.update(world_,library_,readers,device,pass,camera,viewport);
     EXPECT_EQ(remote.visible,1);EXPECT_EQ(remote.readyVisible,0);
+    remote.update(world_,library_,readers,device,pass,camera,viewport);
+    EXPECT_EQ(remote.budgetDeferred,1); // No active request; owner must still expire.
     remote.apply(world_,{2,{}},placeholder);
     remote.update(world_,library_,readers,device,pass,camera,viewport);
     EXPECT_FALSE(library_.waitingForBudget());EXPECT_EQ(library_.pendingBytes(),0);
@@ -1510,5 +1512,66 @@ TEST_F(DesktopSceneTest, PrefetchDoesNotPinTexturesAndVisiblePromotionSurvivesPr
     EXPECT_EQ(remote.readyVisible,1);EXPECT_EQ(library_.failedLoads(),0);
     remote.clear(world_);EXPECT_EQ(remote.visible,0);EXPECT_EQ(remote.outer,0);
     library_.cancelPending();device->waitIdle();library_.collectRetired(UINT64_MAX);
+    library_.trimUnused(baseline);EXPECT_EQ(library_.usage().rgbaBytes,baseline);
+}
+
+TEST_F(DesktopSceneTest, BudgetBlockedVisibleClipDoesNotStarveSmallerVisibleClip) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.animation.SerialNum=101406;settings.animation.Direction=0;settings.animation.Motion=5;
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    auto* sync=world_.getSingleton<cgl::component::PrimaryRenderSyncObjects>();
+    auto placeholder=library_.findReady({101406,0,5});ASSERT_NE(placeholder,nullptr);
+    const auto baseline=library_.usage().rgbaBytes;
+    auto source=cgl::ReadCharacterCatalog(readers,32);ASSERT_EQ(source.size(),32);
+    cgl::AnimationBuilder planner;
+    std::vector<std::pair<uint64_t,cgl::AnimationRequest>> sizes;
+    for(const auto& request:source) sizes.emplace_back(planner.requiredBytes(request,readers),request);
+    std::stable_sort(sizes.begin(),sizes.end(),[](const auto& a,const auto& b){return a.first<b.first;});
+    const auto small=sizes.front(),large=sizes[sizes.size()-2],resident=sizes.back();
+    ASSERT_GT(large.first,small.first);
+    library_.setTextureBudget(baseline+resident.first+small.first);
+    std::weak_ptr<const cgl::AnimationClip> residentWeak=library_.acquire(resident.second,readers,device,pass);
+    cgl::RemoteCharacters remote({resident.second,large.second,small.second});
+    cgl::component::MapCamera camera{{10,10},1};const cgl::Viewport viewport{0,0,800,600};
+    const auto far=cgl::ScreenToMap({150,300},camera,viewport);
+    remote.apply(world_,{1,{{1,far,0}}},placeholder);
+    remote.update(world_,library_,readers,device,pass,camera,viewport);ASSERT_EQ(remote.readyVisible,1);
+    EXPECT_EQ(library_.eventualAdmissionBytes(),small.first);
+    remote.apply(world_,{2,{{1,far,0},{2,{10,10},1},{3,far,2}}},placeholder);
+    bool sawWait=false;
+    auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while(!library_.findReady(small.second) && std::chrono::steady_clock::now()<deadline) {
+        remote.update(world_,library_,readers,device,pass,camera,viewport);
+        sawWait|=library_.waitingForBudget();draw_.update(&world_);
+        library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
+        const auto u=library_.usage();EXPECT_LE(u.rgbaBytes+u.retiredBytes+u.pendingBytes,u.budgetBytes);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(sawWait);ASSERT_NE(library_.findReady(small.second),nullptr);
+    EXPECT_EQ(library_.findReady(large.second),nullptr);EXPECT_FALSE(residentWeak.expired());
+    for(int i=0;i<64;++i) {
+        remote.update(world_,library_,readers,device,pass,camera,viewport);draw_.update(&world_);
+        library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
+    }
+    EXPECT_EQ(remote.readyVisible,2);EXPECT_EQ(library_.usage().evictions,0);
+    EXPECT_EQ(remote.budgetDeferred,1);EXPECT_FALSE(library_.streamingPending());
+    EXPECT_EQ(library_.failedLoads(),0);EXPECT_EQ(library_.eventualAdmissionBytes(),0);
+    // Releasing a resident changes eventual capacity; blocked demand retries,
+    // but its actual allocation still waits for retirement and frame completion.
+    remote.apply(world_,{3,{{1,cgl::ScreenToMap({-10000,300},camera,viewport),0},{2,{10,10},1},{3,far,2}}},placeholder);
+    deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while(!library_.findReady(large.second) && std::chrono::steady_clock::now()<deadline) {
+        remote.update(world_,library_,readers,device,pass,camera,viewport);draw_.update(&world_);
+        library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
+        const auto u=library_.usage();EXPECT_LE(u.rgbaBytes+u.retiredBytes+u.pendingBytes,u.budgetBytes);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(library_.findReady(large.second),nullptr);EXPECT_TRUE(residentWeak.expired());
+    remote.update(world_,library_,readers,device,pass,camera,viewport);
+    EXPECT_EQ(remote.readyVisible,2);EXPECT_EQ(library_.failedLoads(),0);
+    remote.clear(world_);EXPECT_EQ(remote.budgetDeferred,0);library_.cancelPending();device->waitIdle();library_.collectRetired(UINT64_MAX);
     library_.trimUnused(baseline);EXPECT_EQ(library_.usage().rgbaBytes,baseline);
 }

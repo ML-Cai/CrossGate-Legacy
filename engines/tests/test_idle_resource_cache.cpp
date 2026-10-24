@@ -187,3 +187,13 @@ TEST(KeyedRetirementCache, RepeatedRestoreRetireHasBoundedOwnershipAndIndex) {
     EXPECT_EQ(queue.restores(),1000);EXPECT_EQ(queue.collect(1000),0);EXPECT_FALSE(weak.expired());
     EXPECT_EQ(queue.collect(1001),4);EXPECT_TRUE(weak.expired());
 }
+
+TEST(IdleResourceCache, IdleByteHintTracksOwnersWithoutReleasingOrTouchingLru) {
+    Cache cache;cache.insert(1,std::make_shared<Resource>(1),10);
+    cache.insert(2,std::make_shared<Resource>(2),20);
+    auto pin=cache.find(1);EXPECT_EQ(cache.idleBytes(),20);EXPECT_EQ(cache.bytes(),30);
+    pin.reset();EXPECT_EQ(cache.idleBytes(),30);EXPECT_EQ(cache.evictions(),0);
+    EXPECT_EQ(cache.trim(20,[]{}),20); // Hint did not make older key 2 newer.
+    EXPECT_NE(cache.find(1),nullptr);EXPECT_EQ(cache.find(2),nullptr);
+    cache.clear();EXPECT_EQ(cache.idleBytes(),0);
+}

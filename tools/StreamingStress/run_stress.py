@@ -29,6 +29,13 @@ def validate_report(report, budget, frames, replace_frames):
     ready = report["stream_ready_visible_samples"]
     if not 0 <= ready <= visible or visible <= 0:
         raise ValueError("Invalid visible coverage counters")
+    deferred_keys=("stream_budget_deferred_appearances", "stream_peak_budget_deferred_appearances", "stream_budget_deferred_frames")
+    if any(k in report for k in deferred_keys):
+        if not all(k in report for k in deferred_keys):
+            raise ValueError("Incomplete deferred demand counters")
+        current,peak,updates=(report[k] for k in deferred_keys)
+        if not all(type(v) is int for v in (current,peak,updates)) or not 0 <= current <= peak <= 1024 or not 0 <= updates <= frames:
+            raise ValueError("Invalid deferred demand counters")
     for key in ("lifetime_fps", "lifetime_frame_max_ms", "frame_p99_ms"):
         if not math.isfinite(report[key]) or report[key] < 0:
             raise ValueError("Invalid timing data")
@@ -108,6 +115,8 @@ ReportPath={report_path.as_posix()}
             "tail_process_mean_bytes": sum(rss_tail)/len(rss_tail) if rss_tail else None,
             "tail_process_min_bytes": min(rss_tail) if rss_tail else None,
             "tail_process_max_bytes": max(rss_tail) if rss_tail else None, "workload_fingerprint": report["stream_snapshot_fingerprint"],
+            **{key: report[key] for key in ("stream_budget_deferred_appearances",
+                "stream_peak_budget_deferred_appearances", "stream_budget_deferred_frames") if key in report},
             **{key: report[key] for key in ("lifetime_fps", "lifetime_frame_max_ms", "lifetime_frames_over_33ms",
                 "stream_budget_wait_frames", "stream_peak_accounted_bytes", "stream_missing_visible_frames", "animation_load_failed")}}
 

@@ -31,6 +31,12 @@ public:
     }
     size_t size() const noexcept {return entries_.size();}
     uint64_t bytes() const noexcept {return bytes_;}
+    // Owner-thread snapshot only; this does not establish GPU completion.
+    uint64_t idleBytes() const noexcept {
+        uint64_t total=0;
+        for(const auto& [key,entry]:entries_) if(entry.value.use_count()==1) total+=entry.bytes;
+        return total;
+    }
     uint64_t evictions() const noexcept {return evictions_;}
     uint64_t evictedBytes() const noexcept {return evictedBytes_;}
     template<class F> void forEach(F&& f) const {for(const auto& [key,entry]:entries_) f(*entry.value);}

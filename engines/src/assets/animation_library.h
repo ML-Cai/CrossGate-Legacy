@@ -77,6 +77,17 @@ public:
     bool uploadPending() const noexcept {return bool(pending_);}
     uint64_t discardedDecodes() const noexcept {return discardedDecodes_;}
     bool waitingForBudget() const noexcept {return bool(budgetWait_);}
+    std::optional<uint64_t> waitingBytes(const AnimationRequest& request) const noexcept {
+        return budgetWait_ && budgetWait_->request==request ?
+            std::optional<uint64_t>(budgetWait_->requiredBytes) : std::nullopt;
+    }
+    // Owner-thread O(cache size) planning hint. Includes idle/retired payload that
+    // may eventually retire, never credits it to actual admission before fences.
+    // Call at a throttled policy boundary, not for every actor or every frame.
+    uint64_t eventualAdmissionBytes() const noexcept {
+        const auto held=clips_.bytes()-clips_.idleBytes()+pendingBytes();
+        return held<textureBudget_ ? textureBudget_-held : 0;
+    }
     // Render-thread maintenance: <=8 completed clip destructions, <=8 retirements
     // per scan. Full LRU scans are throttled to once every 16 update calls.
     void maintainStreaming(uint64_t submitted,uint64_t completed,bool allowEviction=true);
