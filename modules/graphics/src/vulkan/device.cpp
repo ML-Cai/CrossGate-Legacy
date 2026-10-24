@@ -220,7 +220,8 @@ Device::Device(bool enableDebug)
       instance_(VK_NULL_HANDLE),
       debugMessenger_(VK_NULL_HANDLE),
       surface_(VK_NULL_HANDLE),
-      physicalDevice_(VK_NULL_HANDLE) {
+      physicalDevice_(VK_NULL_HANDLE),
+      device_(VK_NULL_HANDLE) {
 }
 
 Device::~Device() {
@@ -281,6 +282,10 @@ void Device::onValidationLayerCallback(
     VkDebugUtilsMessageTypeFlagsEXT             typeFlag,
     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData
 ) {
+    if ((flag & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) &&
+        (typeFlag & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)) {
+        validationErrors_.fetch_add(1, std::memory_order_relaxed);
+    }
     if (flag & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
         LOGD("Validation Layer msg: " << pCallbackData->pMessage);
     } else if (flag & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
