@@ -97,3 +97,61 @@ TEST(AnimationDecodeWorkerTest, RepeatedNonblockingCancelReclaimsQueuedOrRunning
         EXPECT_EQ(worker.reservedBytes(),0);EXPECT_FALSE(worker.tryTake());
     }
 }
+
+TEST(AnimationDecodeWorkerTest, MetadataOwnsSlotWithoutPixelsThenReservesExactBytes) {
+    cgl::AnimationDecodeWorker worker;
+    std::promise<void> planning,releasePlan,decoding,releaseDecode;
+    auto planned=planning.get_future(),decoded=decoding.get_future();
+    auto planGate=releasePlan.get_future().share(),decodeGate=releaseDecode.get_future().share();
+    ASSERT_TRUE(worker.submitPlanned([&](const auto&) {planning.set_value();planGate.wait();return uint64_t(16);},
+        [&](uint64_t bytes,const auto&) {EXPECT_EQ(bytes,16);decoding.set_value();decodeGate.wait();cgl::AnimationPixels p;p.rgba.resize(16);return p;},32));
+    const auto planStatus=planned.wait_for(2s);
+    if(planStatus!=std::future_status::ready) {releasePlan.set_value();releaseDecode.set_value();}
+    ASSERT_EQ(planStatus,std::future_status::ready);
+    EXPECT_TRUE(worker.busy());EXPECT_EQ(worker.reservedBytes(),0);
+    EXPECT_FALSE(worker.submit([](const auto&){return cgl::AnimationPixels{};},32));
+    releasePlan.set_value();const auto decodeStatus=decoded.wait_for(2s);
+    if(decodeStatus!=std::future_status::ready) releaseDecode.set_value();
+    ASSERT_EQ(decodeStatus,std::future_status::ready);
+    EXPECT_EQ(worker.reservedBytes(),16);EXPECT_TRUE(worker.busy());
+    releaseDecode.set_value();auto result=take(worker);ASSERT_TRUE(result);ASSERT_FALSE(result->error);
+    EXPECT_EQ(result->pixels.rgba.size(),16);EXPECT_GE(result->cpuMs,0);EXPECT_EQ(worker.reservedBytes(),0);EXPECT_FALSE(worker.busy());
+}
+TEST(AnimationDecodeWorkerTest, InvalidOrOverBudgetPlanNeverCallsPixelDecoder) {
+    cgl::AnimationDecodeWorker worker;int decoded=0;
+    auto decode=[&](uint64_t,const auto&){++decoded;return cgl::AnimationPixels{};};
+    EXPECT_THROW(worker.submitPlanned({},decode,32),std::invalid_argument);
+    for(uint64_t required:{uint64_t(0),uint64_t(16),worker.MaxBytes+1}) {
+        ASSERT_TRUE(worker.submitPlanned([=](const auto&){return required;},decode,8));
+        auto result=take(worker);ASSERT_TRUE(result);ASSERT_TRUE(result->error);EXPECT_EQ(decoded,0);
+        if(required==16) {
+            try {std::rethrow_exception(result->error);} catch(const cgl::AnimationBudgetExceeded& error) {EXPECT_EQ(error.requiredBytes,16);}
+        } else EXPECT_THROW(std::rethrow_exception(result->error),std::runtime_error);
+        EXPECT_EQ(worker.reservedBytes(),0);EXPECT_FALSE(worker.busy());
+    }
+    ASSERT_TRUE(worker.submitPlanned([](const auto&)->uint64_t{throw std::runtime_error("bad metadata");},decode,32));
+    auto result=take(worker);ASSERT_TRUE(result);ASSERT_TRUE(result->error);EXPECT_EQ(decoded,0);
+    ASSERT_TRUE(worker.submitPlanned([](const auto&){return uint64_t(16);},decode,0));
+    result=take(worker);ASSERT_TRUE(result);EXPECT_TRUE(result->error);EXPECT_EQ(decoded,0);
+}
+TEST(AnimationDecodeWorkerTest, CancelDuringMetadataRetainsZeroByteSlotUntilCpuAccessEnds) {
+    cgl::AnimationDecodeWorker worker;std::promise<void> entered,release;
+    auto started=entered.get_future();auto gate=release.get_future().share();
+    auto token=std::make_shared<int>(42);std::weak_ptr<int> weak=token;
+    ASSERT_TRUE(worker.submitPlanned([&,keep=std::move(token)](const auto&) {entered.set_value();gate.wait();return uint64_t(16);},
+        [](uint64_t,const auto&){ADD_FAILURE()<<"Cancelled metadata must not decode pixels";return cgl::AnimationPixels{};},32));
+    const auto status=started.wait_for(2s);if(status!=std::future_status::ready) release.set_value();
+    ASSERT_EQ(status,std::future_status::ready);
+    worker.requestCancel();EXPECT_EQ(worker.reservedBytes(),0);EXPECT_TRUE(worker.busy());EXPECT_FALSE(worker.collectCancelled());
+    EXPECT_FALSE(weak.expired());EXPECT_FALSE(worker.submit([](const auto&){return cgl::AnimationPixels{};},32));
+    release.set_value();const auto deadline=std::chrono::steady_clock::now()+2s;
+    while(!worker.collectCancelled() && std::chrono::steady_clock::now()<deadline) std::this_thread::sleep_for(1ms);
+    EXPECT_FALSE(worker.busy());EXPECT_TRUE(weak.expired());EXPECT_FALSE(worker.tryTake());
+}
+TEST(AnimationDecodeWorkerTest, PlannedDecoderCannotPublishBeyondExactReservation) {
+    cgl::AnimationDecodeWorker worker;
+    ASSERT_TRUE(worker.submitPlanned([](const auto&){return uint64_t(4);},[](uint64_t,const auto&) {
+        cgl::AnimationPixels p;p.rgba.reserve(16);p.rgba.resize(4);return p;
+    },32));
+    auto result=take(worker);ASSERT_TRUE(result);EXPECT_TRUE(result->error);EXPECT_TRUE(result->pixels.rgba.empty());EXPECT_FALSE(worker.busy());
+}

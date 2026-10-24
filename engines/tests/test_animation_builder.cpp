@@ -200,6 +200,8 @@ TEST_F(AnimationBuilderTest, ReportsRequiredPayloadWithoutReadingPixelsForTransi
 TEST_F(AnimationBuilderTest, RequiredBytesPlansWithoutPaletteOrPixelReads) {
     ASSERT_TRUE(std::filesystem::remove(dir/"bin/pal/palet_00.cgp"));
     EXPECT_EQ(builder.requiredBytes(request,readers),128);
+    std::atomic_bool cancelled{true};
+    EXPECT_THROW(builder.requiredBytes(request,readers,&cancelled),std::runtime_error);
     EXPECT_EQ(readers.pGfxDataReader[version]->cacheStatistics().fileReadCalls,0);
     EXPECT_THROW(builder.build(request,readers),std::runtime_error);
 }

@@ -391,3 +391,57 @@ CPU task: requestCancel must return before the test releases that task, while it
 reservation and captured references remain live. Vulkan tests displace prefetch
 with a visible character, cycle repeated complete replacements without stale
 uploads, and verify submitted GPU uploads cannot be cancelled through this path.
+
+## Exact background decode admission and load timing
+
+Background progressive loads first plan canvas metadata on the CPU worker; no
+RGBA payload is allocated or reserved during that phase. Once the exact byte
+count is known, the worker checks its 32 MiB clip limit and the owner-provided
+available-budget snapshot, then reserves that exact payload before decoding.
+The builder validates metadata again with that exact limit before allocating
+pixels. No new GPU work or reader queries run on the owner thread for this plan.
+Metadata/descriptions themselves still consume bounded CPU memory; zero RGBA
+reservation does not mean zero CPU memory usage.
+
+An occupied slot is independent of reservedBytes. Queued/running metadata and a
+ready error can occupy it while bytes are zero. Use AnimationLibrary.cpuPending
+or streamingPending for lifetime/cleanup decisions, not pendingBytes > 0.
+Nonblocking cancellation retains slot ownership until CPU access ends, including
+zero-byte metadata. A second job cannot enter while draining. Existing immediate
+submit with an explicit reservation remains available to headless worker users.
+
+Only one owner-thread admission can allocate animation payload at a time. Ready/
+retired restoration does not grow the accounted sum. Shrinking the hard budget
+while a metadata/decode request exists is rejected even at zero reserved bytes;
+collect/cancel that CPU request first. Increasing budget is safe, but an existing
+job uses its original snapshot and may defer once before retrying. Ready + retired
++ pending RGBA remains within the hard budget; accounting excludes driver overhead,
+staging and other resource classes as before. This refines reservation accounting;
+it does not imply the old 32 MiB reservation was an actual 32 MiB allocation.
+
+Runtime JSON adds animation_cpu_pending and background-load timing fields:
+animation_load_samples/completed/mean_ms/p95_ms/p99_ms/max_ms,
+animation_cpu_service_mean_ms, animation_upload_wait_mean_ms,
+animation_load_cancelled and animation_load_failed. The window holds the latest
+256 successful requests, with a separate lifetime completion count; recording and
+summary use fixed storage. Cache hits and synchronous scene/progressive loads do
+not start timing samples. Cancelled/failed requests increment separate counters,
+not successful latency percentiles. clear resets all counters/window samples.
+
+Total latency starts at first background submission and ends at ready-cache
+publication. It includes queue scheduling, metadata/pixel CPU work, temporary
+budget waits/retries and owner polling. It excludes demand waiting before first
+submission. CPU service sums actual worker task wall time, including failed
+metadata admission attempts for that same request. Upload wait starts after the
+initial upload submission and includes chunk/fence/owner-poll delays; it is not a
+GPU timestamp. These metrics therefore cannot alone establish server-demand
+latency or pure GPU upload cost. Cancel/scene exit discards unfinished timings.
+
+Headless gated tests exercise zero-byte occupied metadata, exact reservation
+before pixel decoding, errors/oversized plans without decoder calls, cancellation
+while metadata still owns reader access, oversized decoded capacity, and bounded
+latency-window arithmetic. Real Vulkan tests hold the reader mutex on the owner
+while submitting/cancelling background metadata, compare exact reservation with
+actual RGBA usage, verify success-only timing, and reject a total budget of one
+byte before any graphics pixel-file reads. The existing sixteen low-budget
+appearance batches still verify eventual frame-fence recovery and teardown.

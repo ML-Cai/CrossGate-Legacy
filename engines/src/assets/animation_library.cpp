@@ -37,27 +37,38 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
     if(!device || !pass || (device_ && device_!=device) || (pass_ && pass_!=pass))
         throw std::invalid_argument("Animation library requires one live device/render pass");
     if(!collectDiscardedDecode()) return nullptr;
-    if(auto found=findOrRestore(request)) return found;
+    if(auto found=findOrRestore(request)) {
+        if(loadStarted_ && loadStarted_->request==request && !decodeRequest_ && !pending_) finishLoadTiming();
+        return found;
+    }
     if(decodeRequest_) {
         if(decodeReaders_!=&readers) throw std::invalid_argument("Cannot change readers during background decode");
         auto result=decoder_.tryTake();
         if(!result) return nullptr;
         const auto completed=*decodeRequest_;decodeRequest_.reset();decodeReaders_=nullptr;
+        if(loadStarted_) loadStarted_->cpuMs+=result->cpuMs;
         if(result->error) {
             try {std::rethrow_exception(result->error);}
-            catch(const AnimationBudgetExceeded& error) {deferBudget(completed,error.requiredBytes);return nullptr;}
+            catch(const AnimationBudgetExceeded& error) {
+                try {deferBudget(completed,error.requiredBytes);} catch(...) {++failedLoads_;loadStarted_.reset();throw;}
+                return nullptr;
+            }
+            catch(...) {++failedLoads_;loadStarted_.reset();throw;}
         }
-        pending_=std::pair{completed,uploadClip(completed,std::move(result->pixels),device,pass,true)};
+        try {pending_=std::pair{completed,uploadClip(completed,std::move(result->pixels),device,pass,true)};}
+        catch(...) {++failedLoads_;loadStarted_.reset();throw;}
+        if(loadStarted_) loadStarted_->uploadStart=Clock::now();
         return nullptr; // First upload chunk was just submitted. Never poll twice.
     }
     if(pending_) {
         const auto status=pending_->second->renderer->pollUpload();
         if(status==graphics::SpriteUploadState::Failed) {
-            pending_.reset();throw std::runtime_error("Progressive animation upload failed");
+            pending_.reset();if(loadStarted_) {++failedLoads_;loadStarted_.reset();}
+            throw std::runtime_error("Progressive animation upload failed");
         }
         if(status==graphics::SpriteUploadState::Ready) {
             const auto& c=pending_->second;
-            clips_.insert(pending_->first,c,uint64_t(c->width)*c->height*c->frameCount*4);pending_.reset();
+            clips_.insert(pending_->first,c,uint64_t(c->width)*c->height*c->frameCount*4);pending_.reset();finishLoadTiming();
             if(auto found=findOrRestore(request)) return found;
         }
         return nullptr; // Do not start another submission in this same call.
@@ -68,11 +79,16 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
         else budgetWait_.reset();
     }
     if(backgroundDecode) {
-        const auto limit=std::min<uint64_t>(remainingBytes(),AnimationDecodeWorker::MaxBytes);
-        if(!limit) {deferBudget(request,1);return nullptr;}
-        if(!decoder_.submit([this,&readers,request,limit](const std::atomic_bool& cancelled) {
-            return builder_.build(request,readers,limit,&cancelled);
-        },limit)) throw std::logic_error("Decoder slot unexpectedly occupied");
+        const auto available=remainingBytes();
+        // No CPU pixel reservation until metadata is validated on the worker.
+        // The occupied slot prevents concurrent admissions, even at zero bytes.
+        if(loadStarted_ && loadStarted_->request!=request) cancelLoadTiming();
+        if(!loadStarted_) loadStarted_=StartedLoad{request,Clock::now()};
+        if(!decoder_.submitPlanned([this,&readers,request](const auto& cancelled) {
+            return builder_.requiredBytes(request,readers,&cancelled);
+        },[this,&readers,request](uint64_t required,const auto& cancelled) {
+            return builder_.build(request,readers,required,&cancelled);
+        },available)) throw std::logic_error("Decoder slot unexpectedly occupied");
         decodeRequest_=request;decodeReaders_=&readers;device_=device;pass_=pass;
         return nullptr;
     }
@@ -103,6 +119,13 @@ void AnimationLibrary::deferBudget(const AnimationRequest& request,uint64_t requ
         throw std::runtime_error("Animation exceeds clip/total texture budget");
     budgetWait_=BudgetWait{request,requiredBytes};++budgetDeferrals_;
 }
+void AnimationLibrary::finishLoadTiming() {
+    if(!loadStarted_) return;
+    const auto now=Clock::now();
+    loadTimings_.add({std::chrono::duration<double,std::milli>(now-loadStarted_->start).count(),loadStarted_->cpuMs,
+        loadStarted_->uploadStart==Clock::time_point{}?0:std::chrono::duration<double,std::milli>(now-loadStarted_->uploadStart).count()});
+    loadStarted_.reset();
+}
 bool AnimationLibrary::collectDiscardedDecode() noexcept {
     if(!decodeDiscarding_) return true;
     if(!decoder_.collectCancelled()) return false;
@@ -110,7 +133,7 @@ bool AnimationLibrary::collectDiscardedDecode() noexcept {
 }
 bool AnimationLibrary::discardUnsubmitted() noexcept {
     if(pending_) return false;
-    budgetWait_.reset();
+    cancelLoadTiming();budgetWait_.reset();
     if(decodeRequest_ && !decodeDiscarding_) {
         decoder_.requestCancel();decodeDiscarding_=true;++discardedDecodes_;
     }

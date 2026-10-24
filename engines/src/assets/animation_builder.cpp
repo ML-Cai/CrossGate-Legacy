@@ -82,9 +82,9 @@ AnimationBuilder::Plan AnimationBuilder::prepare(const AnimationRequest& request
     return {{uint32_t(width),uint32_t(height),uint32_t(frames.size()),clip.duration,
              int32_t(left),int32_t(top),{}},std::move(frames),requiredBytes};
 }
-uint64_t AnimationBuilder::requiredBytes(const AnimationRequest& request,component::AssetsReaderState& readers) {
+uint64_t AnimationBuilder::requiredBytes(const AnimationRequest& request,component::AssetsReaderState& readers,const std::atomic_bool* cancelled) {
     std::lock_guard readerLock(*readers.queryMutex);
-    return prepare(request,readers,nullptr).bytes;
+    return prepare(request,readers,cancelled).bytes;
 }
 AnimationPixels AnimationBuilder::build(const AnimationRequest& request,
     component::AssetsReaderState& readers,uint64_t availableBytes,const std::atomic_bool* cancelled) {
