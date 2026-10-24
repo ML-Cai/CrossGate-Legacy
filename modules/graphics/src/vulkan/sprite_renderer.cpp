@@ -318,19 +318,11 @@ void SpriteRenderer::drawRegion(ICommandBuffer* command, const cgl::Viewport& vi
         source.width > width_ - source.x || source.height > height_ - source.y ||
         viewport.x < 0 || viewport.y < 0 || !std::isfinite(x) || !std::isfinite(y) ||
         !std::isfinite(scale) || scale <= 0) return;
-    const auto buffer = static_cast<CommandBuffer*>(command)->commandBuffer();
-    VkViewport area{float(viewport.x), float(viewport.y), float(viewport.width), float(viewport.height), 0, 1};
-    VkRect2D scissor{{viewport.x, viewport.y}, {viewport.width, viewport.height}};
     const float push[]{2 * x / viewport.width - 1, 2 * y / viewport.height - 1,
                        2 * source.width * scale / viewport.width, 2 * source.height * scale / viewport.height,
                        float(source.x) / width_, float(source.y) / height_,
                        float(source.width) / width_, float(source.height) / height_, float(frame)};
-    vkCmdSetViewport(buffer, 0, 1, &area);
-    vkCmdSetScissor(buffer, 0, 1, &scissor);
-    vkCmdBindPipeline(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->pipeline_);
-    vkCmdBindDescriptorSets(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->layout_, 0, 1, &descriptor_, 0, nullptr);
-    vkCmdPushConstants(buffer, pipeline_->layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), push);
-    vkCmdDraw(buffer, 6, 1, 0, 0);
+    static_cast<CommandBuffer*>(command)->drawSprite(pipeline_->pipeline_,pipeline_->layout_,descriptor_,viewport,push);
 }
 }
 }

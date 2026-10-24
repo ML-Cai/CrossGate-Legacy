@@ -92,6 +92,7 @@ CommandBuffer::~CommandBuffer() {
 }
 
 bool CommandBuffer::reset() {
+    invalidateGraphicsState();spriteBindings_={};
     auto result = vkResetCommandBuffer(cmdBuffer_, 0);
     if (result != VK_SUCCESS) {
         LOGE("Failed to reset the command buffer.");
@@ -102,6 +103,7 @@ bool CommandBuffer::reset() {
 }
 
 bool CommandBuffer::begin() {
+    invalidateGraphicsState();spriteBindings_={};
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
@@ -115,6 +117,7 @@ bool CommandBuffer::begin() {
 }
 
 bool CommandBuffer::end() {
+    invalidateGraphicsState();
     auto result = vkEndCommandBuffer(cmdBuffer_);
     if (result != VK_SUCCESS) {
         LOGE("Failed to end the command buffer.");
@@ -125,6 +128,7 @@ bool CommandBuffer::end() {
 }
 
 void CommandBuffer::destroy() {
+    invalidateGraphicsState();spriteBindings_={};
     cmdBuffer_ = VK_NULL_HANDLE;
 }
 
@@ -132,6 +136,27 @@ bool CommandBuffer::prepare() {
     LOGD("Prepare CommandBuffer(Vulkan), index: " << idx());
 
     return createCommandBuffer();
+}
+
+void CommandBuffer::drawSprite(VkPipeline pipeline,VkPipelineLayout layout,VkDescriptorSet descriptor,const cgl::Viewport& viewport,const float (&push)[9]) {
+    bindSpriteState(pipeline,layout,descriptor,viewport);
+    vkCmdPushConstants(cmdBuffer_,layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(push),push);
+    vkCmdDraw(cmdBuffer_,6,1,0,0);
+}
+
+void CommandBuffer::bindSpriteState(VkPipeline pipeline,VkPipelineLayout layout,VkDescriptorSet descriptor,const cgl::Viewport& viewport) {
+    const auto changes=spriteState_.update(pipeline,layout,descriptor,viewport);
+    if(changes.viewport) {
+        const VkViewport area{float(viewport.x),float(viewport.y),float(viewport.width),float(viewport.height),0,1};
+        const VkRect2D scissor{{viewport.x,viewport.y},{viewport.width,viewport.height}};
+        vkCmdSetViewport(cmdBuffer_,0,1,&area);vkCmdSetScissor(cmdBuffer_,0,1,&scissor);++spriteBindings_.viewports;
+    }
+    if(changes.pipeline) {
+        vkCmdBindPipeline(cmdBuffer_,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline);++spriteBindings_.pipelines;
+    }
+    if(changes.descriptor) {
+        vkCmdBindDescriptorSets(cmdBuffer_,VK_PIPELINE_BIND_POINT_GRAPHICS,layout,0,1,&descriptor,0,nullptr);++spriteBindings_.descriptors;
+    }
 }
 
 bool CommandBuffer::createCommandBuffer() {

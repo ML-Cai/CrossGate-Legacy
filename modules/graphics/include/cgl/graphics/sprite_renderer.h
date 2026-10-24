@@ -42,7 +42,8 @@ public:
     virtual SpriteUploadState pollUpload() = 0;
     // Record inside the compatible render pass. Coordinates are relative to the
     // viewport's top-left, in pixels. Invalid frames/scales are ignored. Sets the
-    // graphics pipeline, descriptors, viewport and scissor; later draws must bind
+    // graphics pipeline, descriptors, viewport and scissor (redundant state may be reused
+    // within this command buffer); later draws must bind
     // their own state. The viewport must fit within the active framebuffer.
     virtual void draw(ICommandBuffer* command, const cgl::Viewport& viewport,
                       uint32_t frame, float x, float y, float scale) = 0;

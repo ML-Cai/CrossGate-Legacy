@@ -1,19 +1,19 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #73 (bounded preparation/upload overlap). Each follow-up
+Current base: merged PR #74 (reused sort scratch and disjoint-prefix indexing). Each follow-up
 must run independently on its merged develop base. Scope is selected from actual
 profiles, not a commitment to speculative abstractions.
 
 | Priority | PR scope | Required validation |
 | --- | --- | --- |
-| Current | Reuse scene-owned CPU sorting scratch and flat adjacency; skip provably disjoint prefixes; reorder draw items in place | Exhaustive order/cycle oracle, dense actors, payload preservation, capacity release, full normal/ASan, fixed preloaded crowd and streaming comparisons |
-| Next | Profile remaining draw recording/submission costs and reduce redundant work without changing painter order | Same ready resources and actor counts, draw/visual equivalence, command-buffer state and frame-slot lifetimes, actual Vulkan validation and uncapped frame timing |
-| If warranted | Refine capacity/working-allowance backpressure and long-session residency from traces | Completed and censored misses together, visible coverage, pending ages, exact ready/retired/pending accounting and process/device memory measurements |
+| Current | Reuse consecutive sprite bindings within each command-buffer recording | Headless transition tests; actual pixel readback and binding counts; native interop invalidation; recording/slot resets; full normal/ASan and uncapped fixed-crowd/streaming comparisons |
+| Next | Profile remaining recording versus GPU work before choosing order-preserving batching/instancing | Same ready resources and actor counts, transparent order, frame-local buffer lifetimes, actual Vulkan validation and long-frame costs |
+| If warranted | Refine capacity/working-allowance backpressure and long-session residency from traces | Completed/censored misses, coverage, pending ages, exact accounting and process/device memory measurements |
 
 Estimate: **2-3 PRs including the current change** for this near-term work, depending
 on whether resource-policy follow-up remains necessary after rendering profiles.
-This is a scope estimate, not a calendar deadline. Do not combine CPU sorting,
-GPU state/batching, visible-residency policy and platform rewrites into one PR.
+This is a scope estimate, not a calendar deadline. Do not combine GPU batching, visible-residency policy and platform rewrites into
+one PR.
 
 #73 raises appearance readiness consistently in the measured large cases but does
 not uniformly improve FPS or successful latency tails. More ready actors also
@@ -45,3 +45,8 @@ The former BasicDrawFlow presentation-layout issue was addressed in #71; its
 teardown checks the validation counter through device-child cleanup. Continue
 inspecting complete positive validation logs for other fixtures too. See
 [basic draw validation](basic-draw-validation.md) for the negative control.
+
+The command-buffer binding optimization and native interop contract are recorded in
+[sprite command state validation](sprite-command-state-validation.md). Raw Vulkan
+state changes through retained handles require explicit invalidation before the
+next tracked sprite draw; UI/custom native recorders must preserve this boundary.
