@@ -704,6 +704,8 @@ TEST_F(DesktopSceneTest, SwitchBetweenServerDemoAndCrowdReleasesPreviousModeEnti
     EXPECT_EQ(remoteCount(),288);EXPECT_EQ(crowdCount(),0);
     // Start a cold appearance, then leave while work may still be pending.
     manager_.update(&world_);
+    EXPECT_EQ(world_.getSingleton<cgl::component::RuntimeTelemetry>(),nullptr);
+    EXPECT_EQ(world_.getSingleton<cgl::component::StreamingDiagnostics>()->demand.summary().started,0);
     settings.serverdemo.Enabled=false;settings.benchmark.ActorCount=16;settings.benchmark.UniqueCharacters=2;
     world_.addSingleton<cgl::component::CrowdBenchmark>();
     scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);
@@ -1320,9 +1322,11 @@ TEST_F(DesktopSceneTest, BackgroundMetadataKeepsZeroByteSlotAndCancelsWithoutOwn
         std::unique_lock held(*readers.queryMutex);
         EXPECT_EQ(cache.acquireProgressive({100000,0,0},readers,device,pass),nullptr);
         ASSERT_TRUE(cache.cpuPending());EXPECT_EQ(cache.pendingBytes(),0);
+        EXPECT_TRUE(cache.loading({100000,0,0}));EXPECT_FALSE(cache.loading({100000,1,0}));
         EXPECT_EQ(cache.acquireProgressive({100000,1,0},readers,device,pass),nullptr);
         EXPECT_THROW(cache.setTextureBudget(cache.usage().budgetBytes-1),std::invalid_argument);
         EXPECT_TRUE(cache.discardUnsubmitted());EXPECT_EQ(cache.pendingBytes(),0);
+        EXPECT_FALSE(cache.loading({100000,0,0})); // Draining cancellation is not another request's service time.
         EXPECT_EQ(cache.loadTimings().completed,0);EXPECT_EQ(cache.cancelledLoads(),1);
     }
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
@@ -1381,6 +1385,7 @@ TEST_F(DesktopSceneTest, BackgroundInsufficientTotalBudgetFailsBeforeAnyPixelRea
 }
 
 TEST_F(DesktopSceneTest, ScriptedServerChurnMovesAndRestartsWithoutLeakingEntities) {
+    world_.addSingleton<cgl::component::RuntimeTelemetry>();
     auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
     settings.map.FilePath="map/0/100.dat";settings.animation.SerialNum=100000;
     auto& demo=settings.serverdemo;demo.Enabled=true;demo.AnimationBudgetMiB=16;
@@ -1409,10 +1414,16 @@ TEST_F(DesktopSceneTest, ScriptedServerChurnMovesAndRestartsWithoutLeakingEntiti
         EXPECT_GT(stats->travelCells,7);EXPECT_LT(stats->travelCells,8);EXPECT_LE(stats->peakAccountedBytes,16ull*1024*1024);
         EXPECT_LE(stats->readyVisibleSamples,stats->visibleSamples);EXPECT_GT(stats->visibleSamples,0);
         size_t count=0;world_.forEach<cgl::component::RemoteCharacter>([&](auto,auto*){++count;});EXPECT_EQ(count,16);
-        if(!epoch) {fingerprint=stats->fingerprint;travel=stats->travelCells;}
+        if(!epoch) {
+            EXPECT_GT(stats->demand.summary().started,0); // First cold run must observe misses.
+            fingerprint=stats->fingerprint;travel=stats->travelCells;
+        }
         else {EXPECT_EQ(stats->fingerprint,fingerprint);EXPECT_DOUBLE_EQ(stats->travelCells,travel);}
         device->waitIdle();
     }
+    const auto latency=world_.getSingleton<cgl::component::StreamingDiagnostics>()->demand.summary();
+    EXPECT_LE(latency.pending,16); // A warm restart may legitimately have no misses.
+    EXPECT_EQ(latency.started,latency.completed+latency.withdrawn+latency.failed+latency.pending);
     std::weak_ptr<const cgl::AnimationClip> player=library_.findReady({100000,0,0});EXPECT_FALSE(player.expired());
     cgl::SceneManagerDestroySystem{}.update(&world_);
     EXPECT_EQ(world_.getSingleton<cgl::component::StreamingDiagnostics>(),nullptr);
@@ -1534,17 +1545,18 @@ TEST_F(DesktopSceneTest, BudgetBlockedVisibleClipDoesNotStarveSmallerVisibleClip
     ASSERT_GT(large.first,small.first);
     library_.setTextureBudget(baseline+resident.first+small.first);
     std::weak_ptr<const cgl::AnimationClip> residentWeak=library_.acquire(resident.second,readers,device,pass);
+    cgl::AppearanceDemandTelemetry demand;
     cgl::RemoteCharacters remote({resident.second,large.second,small.second});
     cgl::component::MapCamera camera{{10,10},1};const cgl::Viewport viewport{0,0,800,600};
     const auto far=cgl::ScreenToMap({150,300},camera,viewport);
     remote.apply(world_,{1,{{1,far,0}}},placeholder);
-    remote.update(world_,library_,readers,device,pass,camera,viewport);ASSERT_EQ(remote.readyVisible,1);
+    remote.update(world_,library_,readers,device,pass,camera,viewport,&demand);ASSERT_EQ(remote.readyVisible,1);
     EXPECT_EQ(library_.eventualAdmissionBytes(),small.first);
     remote.apply(world_,{2,{{1,far,0},{2,{10,10},1},{3,far,2}}},placeholder);
     bool sawWait=false;
     auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
     while(!library_.findReady(small.second) && std::chrono::steady_clock::now()<deadline) {
-        remote.update(world_,library_,readers,device,pass,camera,viewport);
+        remote.update(world_,library_,readers,device,pass,camera,viewport,&demand);
         sawWait|=library_.waitingForBudget();draw_.update(&world_);
         library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
         const auto u=library_.usage();EXPECT_LE(u.rgbaBytes+u.retiredBytes+u.pendingBytes,u.budgetBytes);
@@ -1553,7 +1565,7 @@ TEST_F(DesktopSceneTest, BudgetBlockedVisibleClipDoesNotStarveSmallerVisibleClip
     ASSERT_TRUE(sawWait);ASSERT_NE(library_.findReady(small.second),nullptr);
     EXPECT_EQ(library_.findReady(large.second),nullptr);EXPECT_FALSE(residentWeak.expired());
     for(int i=0;i<64;++i) {
-        remote.update(world_,library_,readers,device,pass,camera,viewport);draw_.update(&world_);
+        remote.update(world_,library_,readers,device,pass,camera,viewport,&demand);draw_.update(&world_);
         library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
     }
     EXPECT_EQ(remote.readyVisible,2);EXPECT_EQ(library_.usage().evictions,0);
@@ -1564,14 +1576,18 @@ TEST_F(DesktopSceneTest, BudgetBlockedVisibleClipDoesNotStarveSmallerVisibleClip
     remote.apply(world_,{3,{{1,cgl::ScreenToMap({-10000,300},camera,viewport),0},{2,{10,10},1},{3,far,2}}},placeholder);
     deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
     while(!library_.findReady(large.second) && std::chrono::steady_clock::now()<deadline) {
-        remote.update(world_,library_,readers,device,pass,camera,viewport);draw_.update(&world_);
+        remote.update(world_,library_,readers,device,pass,camera,viewport,&demand);draw_.update(&world_);
         library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
         const auto u=library_.usage();EXPECT_LE(u.rgbaBytes+u.retiredBytes+u.pendingBytes,u.budgetBytes);
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     ASSERT_NE(library_.findReady(large.second),nullptr);EXPECT_TRUE(residentWeak.expired());
-    remote.update(world_,library_,readers,device,pass,camera,viewport);
+    remote.update(world_,library_,readers,device,pass,camera,viewport,&demand);
     EXPECT_EQ(remote.readyVisible,2);EXPECT_EQ(library_.failedLoads(),0);
+    const auto latency=demand.summary();EXPECT_EQ(latency.completed,2);EXPECT_EQ(latency.pending,0);
+    EXPECT_EQ(latency.started,latency.completed+latency.withdrawn+latency.failed+latency.pending);
+    EXPECT_GT(latency.deferredMeanMs,0);
+    EXPECT_NEAR(latency.meanMs,latency.queuedMeanMs+latency.deferredMeanMs+latency.loadingMeanMs,1e-6);
     remote.clear(world_);EXPECT_EQ(remote.budgetDeferred,0);library_.cancelPending();device->waitIdle();library_.collectRetired(UINT64_MAX);
     library_.trimUnused(baseline);EXPECT_EQ(library_.usage().rgbaBytes,baseline);
 }

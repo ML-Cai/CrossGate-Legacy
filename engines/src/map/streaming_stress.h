@@ -1,4 +1,5 @@
 #pragma once
+#include "telemetry/appearance_demand_telemetry.h"
 #include <cmath>
 #include <cstdint>
 #include <stdexcept>
@@ -31,6 +32,7 @@ private:
 };
 namespace component {
 struct StreamingDiagnostics {
+    AppearanceDemandTelemetry demand;
     uint64_t frames=0,snapshots=0,replacements=0,budgetWaitFrames=0,visibleMissingFrames=0,deferredFrames=0;
     uint64_t visibleSamples=0,readyVisibleSamples=0,peakAccountedBytes=0,peakRetiredBytes=0,peakPendingBytes=0;
     uint64_t fingerprint=14695981039346656037ull;

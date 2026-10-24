@@ -12,6 +12,34 @@ import time
 import uuid
 
 
+DEMAND_FIELDS=(
+    'demand_started',
+    'demand_completed',
+    'demand_withdrawn',
+    'demand_failed',
+    'demand_samples',
+    'demand_pending',
+    'demand_visible_pending',
+    'demand_oldest_pending_ms',
+    'demand_oldest_visible_ms',
+    'demand_peak_pending_ms',
+    'demand_peak_visible_ms',
+    'demand_mean_ms',
+    'demand_p95_ms',
+    'demand_p99_ms',
+    'demand_max_ms',
+    'demand_queued_mean_ms',
+    'demand_deferred_mean_ms',
+    'demand_loading_mean_ms',
+    'demand_visible_samples',
+    'demand_visible_completed',
+    'demand_visible_mean_ms',
+    'demand_visible_p95_ms',
+    'demand_visible_p99_ms',
+    'demand_visible_max_ms',
+)
+
+
 def validate_report(report, budget, frames, replace_frames):
     if report.get("status") != "complete" or not report.get("stress_completed") or report.get("scene_loading"):
         raise ValueError("Client did not complete the scripted workload")
@@ -36,6 +64,25 @@ def validate_report(report, budget, frames, replace_frames):
         current,peak,updates=(report[k] for k in deferred_keys)
         if not all(type(v) is int for v in (current,peak,updates)) or not 0 <= current <= peak <= 1024 or not 0 <= updates <= frames:
             raise ValueError("Invalid deferred demand counters")
+    if any(k in report for k in DEMAND_FIELDS):
+        if not all(k in report for k in DEMAND_FIELDS):
+            raise ValueError("Incomplete demand latency counters")
+        d={k[len("demand_"):]:report[k] for k in DEMAND_FIELDS}
+        for k in ("started","completed","withdrawn","failed","samples","pending","visible_pending","visible_samples","visible_completed"):
+            if type(d[k]) is not int or d[k]<0:raise ValueError("Invalid demand count")
+        if d["started"]!=d["completed"]+d["withdrawn"]+d["failed"]+d["pending"] or not 0<=d["visible_pending"]<=d["pending"]<=1024:
+            raise ValueError("Inconsistent demand outcomes")
+        if not d["samples"]<=min(256,d["completed"]) or not d["visible_samples"]<=min(256,d["visible_completed"]) or d["visible_completed"]>d["completed"]:
+            raise ValueError("Invalid demand sample window")
+        for k,v in d.items():
+            if k.endswith("_ms") and (not math.isfinite(v) or v<0):raise ValueError("Invalid demand timing")
+        if not d["oldest_pending_ms"]<=d["peak_pending_ms"] or not d["oldest_visible_ms"]<=d["peak_visible_ms"]<=d["peak_pending_ms"]:
+            raise ValueError("Invalid demand age high water marks")
+        for prefix in ("", "visible_"):
+            if not d[prefix+"p95_ms"]<=d[prefix+"p99_ms"]<=d[prefix+"max_ms"] or d[prefix+"mean_ms"]>d[prefix+"max_ms"]:
+                raise ValueError("Invalid demand timing order")
+        if d["oldest_visible_ms"]>d["oldest_pending_ms"] or not math.isclose(d["mean_ms"],sum(d[k] for k in ("queued_mean_ms","deferred_mean_ms","loading_mean_ms")),rel_tol=1e-4,abs_tol=.02):
+            raise ValueError("Invalid demand phase partition")
     for key in ("lifetime_fps", "lifetime_frame_max_ms", "frame_p99_ms"):
         if not math.isfinite(report[key]) or report[key] < 0:
             raise ValueError("Invalid timing data")
@@ -115,6 +162,7 @@ ReportPath={report_path.as_posix()}
             "tail_process_mean_bytes": sum(rss_tail)/len(rss_tail) if rss_tail else None,
             "tail_process_min_bytes": min(rss_tail) if rss_tail else None,
             "tail_process_max_bytes": max(rss_tail) if rss_tail else None, "workload_fingerprint": report["stream_snapshot_fingerprint"],
+            **{key: report[key] for key in DEMAND_FIELDS if key in report},
             **{key: report[key] for key in ("stream_budget_deferred_appearances",
                 "stream_peak_budget_deferred_appearances", "stream_budget_deferred_frames") if key in report},
             **{key: report[key] for key in ("lifetime_fps", "lifetime_frame_max_ms", "lifetime_frames_over_33ms",

@@ -49,6 +49,10 @@ public:
         return {clips_.size(),clips_.bytes(),pendingBytes(),textureBudget_,clips_.evictions(),clips_.evictedBytes(),retired_.bytes(),retired_.size(),budgetDeferrals_,bool(budgetWait_),retired_.restores()};
     }
     bool cpuPending() const noexcept {return bool(decodeRequest_);}
+    bool loading(const AnimationRequest& request) const noexcept {
+        return (!decodeDiscarding_ && decodeRequest_ && *decodeRequest_==request) ||
+            (pending_ && pending_->first==request);
+    }
     bool streamingPending() const noexcept {return bool(decodeRequest_) || bool(pending_);}
     LoadSummary loadTimings() const {return loadTimings_.summary();}
     uint64_t cancelledLoads() const noexcept {return cancelledLoads_;}

@@ -8,6 +8,7 @@
 #include <set>
 #include <chrono>
 #include "map/appearance_scheduler.h"
+#include "telemetry/appearance_demand_telemetry.h"
 
 namespace cgl {
 namespace component { struct RemoteCharacter { uint64_t serverId; size_t appearance; }; }
@@ -18,7 +19,7 @@ public:
     explicit RemoteCharacters(std::vector<AnimationRequest> catalog):catalog_(std::move(catalog)) {}
     void clear(ECSCore& world) {
         for(const auto& [id,entity]:entities_) world.destroyEntity(entity);
-        entities_.clear(); placeholder_.reset(); visible=readyVisible=outer=readyOuter=0; sequence_=0; active_.reset(); budgetOwner_.reset(); budgetDeferred=0; failed_.clear();scheduler_.clear();demands_.clear();capacity_=nextCapacityProbe_=0;
+        entities_.clear(); placeholder_.reset(); visible=readyVisible=outer=readyOuter=0; sequence_=0; active_.reset(); budgetOwner_.reset(); budgetDeferred=0; failed_.clear();scheduler_.clear();demands_.clear();observations_.clear();capacity_=nextCapacityProbe_=0;
     }
     void apply(ECSCore& world,const CharacterSnapshot& packet,std::shared_ptr<const AnimationClip> placeholder) {
         if(packet.sequence<=sequence_) return;
@@ -55,8 +56,9 @@ public:
     }
     void update(ECSCore& world,AnimationLibrary& library,component::AssetsReaderState& readers,
                 graphics::IDevice* device,graphics::IRenderPass* pass,
-                const component::MapCamera& camera,const Viewport& viewport) {
+                const component::MapCamera& camera,const Viewport& viewport,AppearanceDemandTelemetry* telemetry=nullptr) {
         auto& demands=demands_;demands.clear();demands.reserve(entities_.size());
+        observations_.clear();if(telemetry) observations_.reserve(entities_.size());
         visible=readyVisible=outer=readyOuter=0;
         for(const auto& [id,entity]:entities_) {
             auto* tag=world.getComponent<component::RemoteCharacter>(entity);
@@ -78,6 +80,7 @@ public:
             }
             if(region==0) {++visible;if(ready) ++readyVisible;}
             if(region==1) {++outer;if(ready) ++readyOuter;}
+            if(telemetry && region>=0) observations_.push_back({tag->appearance,region,bool(ready),failed_.contains(tag->appearance)});
             if(ready || region<0 || failed_.contains(tag->appearance)) continue;
             const double distance=std::hypot(p.x-viewport.width*.5,p.y-viewport.height*.5);
             demands.push_back({tag->appearance,region,distance});
@@ -111,12 +114,21 @@ public:
             active_.reset();
         budgetDeferred=scheduler_.blockedCount(capacity_);
         if(!active_) active_=candidate;
-        if(!active_) return;
-        try {
-            if(library.acquireProgressive(catalog_[*active_],readers,device,pass)) active_.reset();
+        std::optional<size_t> completed;
+        if(active_) try {
+            if(library.acquireProgressive(catalog_[*active_],readers,device,pass)) {completed=active_;active_.reset();}
         } catch(const std::exception& error) {
             LOGE("Character appearance failed: " << error.what());
             failed_.insert(*active_);library.cancelPending();active_.reset();
+        }
+        if(telemetry) {
+            for(auto& o:observations_) {
+                o.failed=failed_.contains(o.appearance);
+                if(o.ready || o.failed) continue;
+                if(scheduler_.blocked(o.appearance,capacity_) || library.waitingBytes(catalog_[o.appearance])) o.phase=DemandPhase::Deferred;
+                else if(library.loading(catalog_[o.appearance]) || completed==o.appearance) o.phase=DemandPhase::Loading;
+            }
+            telemetry->observe(observations_,now);
         }
     }
     size_t visible=0,readyVisible=0,outer=0,readyOuter=0,budgetDeferred=0;
@@ -124,6 +136,7 @@ private:
     std::shared_ptr<const AnimationClip> placeholder_;
     std::vector<AppearanceScheduler::Demand> demands_;
     AppearanceScheduler scheduler_;
+    std::vector<AppearanceObservation> observations_;
     std::vector<AnimationRequest> catalog_;
     std::map<uint64_t,Entity> entities_;
     std::optional<size_t> active_,budgetOwner_;

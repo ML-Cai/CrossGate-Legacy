@@ -263,6 +263,32 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             << ",\"cached_maps\":" << maps.maps << ",\"map_pages\":" << maps.pages
             << ",\"map_rgba_bytes\":" << maps.rgbaBytes << ",\"outline_rgba_bytes\":" << maps.outlineBytes;
         if(const auto* stats=pEcs->getSingleton<cgl::component::StreamingDiagnostics>()) {
+            const auto demand=stats->demand.summary();
+            out
+                << ",\"demand_started\":" << demand.started
+                << ",\"demand_completed\":" << demand.completed
+                << ",\"demand_withdrawn\":" << demand.withdrawn
+                << ",\"demand_failed\":" << demand.failed
+                << ",\"demand_samples\":" << demand.samples
+                << ",\"demand_pending\":" << demand.pending
+                << ",\"demand_visible_pending\":" << demand.visiblePending
+                << ",\"demand_oldest_pending_ms\":" << demand.oldestPendingMs
+                << ",\"demand_oldest_visible_ms\":" << demand.oldestVisibleMs
+                << ",\"demand_peak_pending_ms\":" << demand.peakPendingMs
+                << ",\"demand_peak_visible_ms\":" << demand.peakVisibleMs
+                << ",\"demand_mean_ms\":" << demand.meanMs
+                << ",\"demand_p95_ms\":" << demand.p95Ms
+                << ",\"demand_p99_ms\":" << demand.p99Ms
+                << ",\"demand_max_ms\":" << demand.maxMs
+                << ",\"demand_queued_mean_ms\":" << demand.queuedMeanMs
+                << ",\"demand_deferred_mean_ms\":" << demand.deferredMeanMs
+                << ",\"demand_loading_mean_ms\":" << demand.loadingMeanMs
+                << ",\"demand_visible_samples\":" << demand.visibleSamples
+                << ",\"demand_visible_completed\":" << demand.visibleCompleted
+                << ",\"demand_visible_mean_ms\":" << demand.visibleMeanMs
+                << ",\"demand_visible_p95_ms\":" << demand.visibleP95Ms
+                << ",\"demand_visible_p99_ms\":" << demand.visibleP99Ms
+                << ",\"demand_visible_max_ms\":" << demand.visibleMaxMs;
             out << ",\"stream_frames\":" << stats->frames << ",\"stream_snapshots\":" << stats->snapshots << ",\"stream_replacements\":" << stats->replacements
                 << ",\"stress_configured_frames\":" << stats->configuredFrames << ",\"stress_completed\":" << (stats->configuredFrames && stats->frames>=stats->configuredFrames?"true":"false")
                 << ",\"stream_visible\":" << stats->visible << ",\"stream_ready_visible\":" << stats->readyVisible

@@ -97,6 +97,52 @@ Key JSON fields:
   every failure implies a corrupt source file. Pending work at the final scripted
   update is expected; normal shutdown waits/cancels/releases it after reporting.
 
+## Appearance demand latency
+
+With Telemetry enabled, ServerDemo tracks each continuous observed cache miss by
+catalog appearance index, shared across actors. Clock origin is the first scene
+update observing missing ready data in the current 1.5-view interest region;
+completion is the update observing usable cached data (and attaching it for a
+visible actor). It is not server/network time, GPU timestamp or presentation time.
+Already-ready cache hits produce no latency sample; consult coverage alongside it.
+
+`demand_started/completed/withdrawn/failed/pending` count scene-lifetime miss
+outcomes and current misses. Started equals completed + withdrawn + failed +
+pending. Leaving interest/removing the last user withdraws a miss; known failed
+appearances do not create repeated failures every update. Reentry after withdrawal
+starts a fresh miss. Replacing actor IDs while the appearance remains demanded
+does not restart the shared miss. Region membership uses the existing foot point.
+
+`demand_samples` is the most recent 256 successful misses; completed is lifetime.
+`demand_mean_ms/p95_ms/p99_ms/max_ms` describe that window. Queued, deferred and
+loading mean fields partition the same samples and sum to mean_ms. Queued includes
+selection/slot-drain waiting; deferred means a known capacity exclusion or the
+library's exact budget wait; loading means that request owns metadata/decode/upload
+work or a just-completed library handoff, including owner-thread polling. CPU worker and upload-wait timings remain
+separate projections in the existing animation_load fields; do not add them again.
+Phases attribute the interval following each observation, with 1 ms wall-clock
+resolution. They are sampled states, not exact GPU/CPU service timestamps.
+
+`demand_visible_samples/visible_completed/visible_mean_ms/visible_p95_ms/
+visible_p99_ms/visible_max_ms` measure only the current continuous visible period
+when a tracked miss completes visibly. Prefetch before entry is excluded. Leaving
+the visible region resets that period; ready-at-promotion may give zero visible
+wait. Their sample window differs from the total-miss window.
+
+`demand_visible_pending`, `demand_oldest_pending_ms/oldest_visible_ms` describe the
+current sample. `demand_peak_pending_ms/peak_visible_ms` retain the largest observed
+ages over the scene, including boundary observations of completion/withdrawal or
+failure. A final fresh snapshot therefore does not erase earlier long waits.
+Successful percentiles alone cannot characterize unresolved/censored demand.
+
+Tracking holds at most 1024 current miss records and two fixed 256-sample rings,
+with no entity/GPU owners or historical snapshot queue. Samples are sorted only
+when a JSON report is emitted. It is disabled when RuntimeTelemetry is absent;
+scene exit/restart destroys the state. The Python runner validates these optional
+fields, including outcome conservation, finite/order/phase/ring/age bounds, and
+still accepts older clients without them. Script movement uses simulated time,
+while all latency and FPS measurements use actual wall time.
+
 ## Current over-budget behavior
 
 The fallback keeps entity identities and a shared placeholder until an appearance

@@ -56,7 +56,8 @@ void ServerDemoScenario::update(ECSCore* world,const Viewport& viewport) {
     auto& readers=*world->getSingleton<cgl::component::AssetsReaderState>();
     auto* device=world->getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
     auto* pass=world->getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
-    remote_->update(*world,animations_,readers,device,pass,camera,viewport);
+    auto* demandTelemetry=world->getSingleton<component::RuntimeTelemetry>()?&stats.demand:nullptr;
+    remote_->update(*world,animations_,readers,device,pass,camera,viewport,demandTelemetry);
     stats.visible=remote_->visible;stats.readyVisible=remote_->readyVisible;
     stats.prefetch=remote_->outer;stats.readyPrefetch=remote_->readyOuter;
     stats.visibleSamples+=stats.visible;stats.readyVisibleSamples+=stats.readyVisible;
