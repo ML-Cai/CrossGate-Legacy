@@ -1,18 +1,18 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #67 (exact background reservations and load timing).
+Current base: merged PR #68 (repeatable churn workloads and coverage diagnostics).
 This is an estimate of independently reviewable changes, not a claim that the
 remaining features already exist. Each PR must run on its merged develop base.
 
 | Priority | PR scope | Required validation |
 | --- | --- | --- |
-| Current | Repeatable movement/snapshot churn runner, configurable demo budgets/counts and coverage/high-water diagnostics | Seeded workload equality across budgets; fixed-step route/restart; default interactive regression; bounded placeholders under pinned pressure; full normal/ASan and native measurements |
-| Next | Choose and implement over-budget quality policy: prefetch pin release, far-visible residency and demand-to-ready observability | Same churn traces; quality/latency/FPS tradeoffs; no stale ownership or early GPU release; separately measured process memory and GPU residency where available |
+| Current | Remove off-screen Sprite pins; keep outer prefetch cache-owned and reclaimable under visible admission pressure | Shared-key protection, promotion/demotion, eventual visible admission under a tight budget, serial-safe retirement, full normal/ASan and identical native churn traces |
+| Next | Decide far-visible over-budget quality policy and add demand-to-ready observability | Visible-only overload; stable victim selection/hysteresis; quality/latency/FPS tradeoffs; no stale ownership or early GPU release |
 
-Resource work is estimated at **2-3 PRs including the current change**.
-The measurement harness is separate from residency/quality policy. Existing
-placeholders are now measured explicitly; a clean run does not imply all visible
-appearances fit. The next scope may split if residency needs a larger design.
+Resource work is estimated at **2 PRs including the current change**, with another
+possible split if visible residency needs a larger design. This PR does not evict
+live visible owners or guarantee all visible appearances fit the budget.
+
 The present LRU policy scans/sorts the cache when pressure scans are due. Profile
 that cost before replacing it with a persistent/incremental LRU structure. Count
 limits are not CPU-time guarantees, and map loading is still synchronous.

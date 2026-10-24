@@ -1453,3 +1453,62 @@ TEST_F(DesktopSceneTest, VisibleWorkingSetOverBudgetKeepsEntitiesAndPlaceholders
     remote.clear(world_);library_.cancelPending();EXPECT_FALSE(library_.cpuPending());
     EXPECT_GT(library_.trimUnused(baseline),0);EXPECT_EQ(library_.usage().rgbaBytes,baseline);
 }
+
+TEST_F(DesktopSceneTest, PrefetchDoesNotPinTexturesAndVisiblePromotionSurvivesPressure) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.animation.SerialNum=101406;settings.animation.Direction=0;settings.animation.Motion=5;
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    auto* sync=world_.getSingleton<cgl::component::PrimaryRenderSyncObjects>();
+    auto placeholder=library_.findReady({101406,0,5});ASSERT_NE(placeholder,nullptr);
+    const auto baseline=library_.usage().rgbaBytes;
+    const cgl::AnimationRequest prefetched{100000,0,0},incoming{100000,1,0};
+    cgl::AnimationBuilder planner;
+    const auto firstBytes=planner.requiredBytes(prefetched,readers);
+    const auto secondBytes=planner.requiredBytes(incoming,readers);
+    library_.setTextureBudget(baseline+std::max(firstBytes,secondBytes));
+    std::weak_ptr<const cgl::AnimationClip> old=library_.acquire(prefetched,readers,device,pass);
+    ASSERT_FALSE(old.expired());
+    cgl::RemoteCharacters remote({prefetched,incoming});
+    cgl::component::MapCamera camera{{10,10},1};const cgl::Viewport viewport{0,0,800,600};
+    const auto outside=cgl::ScreenToMap({-100,300},camera,viewport);
+    remote.apply(world_,{1,{{1,{10,10},0},{2,outside,0}}},placeholder);
+    remote.update(world_,library_,readers,device,pass,camera,viewport);
+    ASSERT_EQ(remote.readyVisible,1);ASSERT_EQ(remote.readyOuter,1);
+    // Shared outer/visible key stays alive through the visible owner.
+    library_.retireUnused(baseline,sync->progress.submitted);
+    EXPECT_NE(library_.findReady(prefetched),nullptr);
+    // A foot outside the viewport must not discard an image still on-screen.
+    auto cached=old.lock();ASSERT_NE(cached,nullptr);ASSERT_LT(cached->offsetY,0);
+    const auto edge=cgl::ScreenToMap({400,600-cached->offsetY*.5},camera,viewport);
+    remote.apply(world_,{2,{{1,edge,0},{2,outside,0}}},placeholder);
+    remote.update(world_,library_,readers,device,pass,camera,viewport);
+    world_.forEach<cgl::component::RemoteCharacter,cgl::component::Sprite>([&](auto,auto* tag,auto* sprite) {
+        if(tag->serverId==1) EXPECT_EQ(sprite->clip,cached);
+    });
+    cached.reset();
+    // Both old owners become fully off-screen; the new visible clip needs their bytes.
+    remote.apply(world_,{3,{{1,outside,0},{2,outside,0},{3,{10,10},1}}},placeholder);
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while((!remote.readyVisible || !library_.findReady(incoming)) && std::chrono::steady_clock::now()<deadline) {
+        remote.update(world_,library_,readers,device,pass,camera,viewport);draw_.update(&world_);
+        library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
+        const auto u=library_.usage();EXPECT_LE(u.rgbaBytes+u.retiredBytes+u.pendingBytes,u.budgetBytes);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_EQ(remote.readyVisible,1);ASSERT_NE(library_.findReady(incoming),nullptr);
+    EXPECT_TRUE(old.expired());EXPECT_GT(library_.usage().evictions,0);
+    world_.forEach<cgl::component::RemoteCharacter,cgl::component::Sprite>([&](auto,auto* tag,auto* sprite) {
+        if(tag->serverId<3) EXPECT_EQ(sprite->clip,placeholder);
+        else EXPECT_EQ(sprite->clip,library_.findReady(incoming));
+    });
+    // Promoting the cached visible key to another actor does not duplicate it.
+    remote.apply(world_,{4,{{4,{10,10},1}}},placeholder);
+    remote.update(world_,library_,readers,device,pass,camera,viewport);
+    EXPECT_EQ(remote.readyVisible,1);EXPECT_EQ(library_.failedLoads(),0);
+    remote.clear(world_);EXPECT_EQ(remote.visible,0);EXPECT_EQ(remote.outer,0);
+    library_.cancelPending();device->waitIdle();library_.collectRetired(UINT64_MAX);
+    library_.trimUnused(baseline);EXPECT_EQ(library_.usage().rgbaBytes,baseline);
+}

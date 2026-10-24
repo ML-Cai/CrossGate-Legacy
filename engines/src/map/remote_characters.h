@@ -18,7 +18,7 @@ public:
     explicit RemoteCharacters(std::vector<AnimationRequest> catalog):catalog_(std::move(catalog)) {}
     void clear(ECSCore& world) {
         for(const auto& [id,entity]:entities_) world.destroyEntity(entity);
-        entities_.clear(); sequence_=0; active_.reset(); failed_.clear();scheduler_.clear();demands_.clear();
+        entities_.clear(); placeholder_.reset(); visible=readyVisible=outer=readyOuter=0; sequence_=0; active_.reset(); failed_.clear();scheduler_.clear();demands_.clear();
     }
     void apply(ECSCore& world,const CharacterSnapshot& packet,std::shared_ptr<const AnimationClip> placeholder) {
         if(packet.sequence<=sequence_) return;
@@ -28,6 +28,7 @@ public:
             if(!actor.id || !ids.insert(actor.id).second || actor.appearance>=catalog_.size() ||
                !std::isfinite(actor.cell.x) || !std::isfinite(actor.cell.y))
                 throw std::invalid_argument("Invalid character snapshot");
+        placeholder_=placeholder;
         for(auto it=entities_.begin();it!=entities_.end();) {
             if(!ids.contains(it->first)) {world.destroyEntity(it->second);it=entities_.erase(it);} else ++it;
         }
@@ -60,16 +61,24 @@ public:
         for(const auto& [id,entity]:entities_) {
             auto* tag=world.getComponent<component::RemoteCharacter>(entity);
             auto* sprite=world.getComponent<component::Sprite>(entity);
-            const auto ready=library.findReady(catalog_[tag->appearance]);
-            if(ready && sprite->clip!=ready) {
-                sprite->clip=ready; *world.getComponent<component::AnimationPlayer>(entity)={};
-            }
             const auto cell=world.getComponent<component::MapPosition>(entity)->cell;
             const int region=LocalCharacterFeed::region(cell,camera,viewport);
+            // Fully off-screen actors retain data, not texture pins. Prefetched clips
+            // remain cache-owned and can retire under pressure. Shared visible
+            // appearances stay protected by their visible Sprite owners.
+            const auto ready=library.findReady(catalog_[tag->appearance]);
+            const auto p=MapToScreen(cell,camera,viewport);
+            // Match renderer bounds: an off-screen foot can still have visible pixels.
+            const bool intersects=ready && MapImageVisible(
+                {p.x+ready->offsetX*camera.scale,p.y+ready->offsetY*camera.scale},
+                ready->width,ready->height,camera.scale,viewport);
+            const auto presented=ready && (region==0 || intersects) ? ready : placeholder_;
+            if(sprite->clip!=presented) {
+                sprite->clip=presented; *world.getComponent<component::AnimationPlayer>(entity)={};
+            }
             if(region==0) {++visible;if(ready) ++readyVisible;}
             if(region==1) {++outer;if(ready) ++readyOuter;}
             if(ready || region<0 || failed_.contains(tag->appearance)) continue;
-            const auto p=MapToScreen(cell,camera,viewport);
             const double distance=std::hypot(p.x-viewport.width*.5,p.y-viewport.height*.5);
             demands.push_back({tag->appearance,region,distance});
         }
@@ -91,6 +100,7 @@ public:
     }
     size_t visible=0,readyVisible=0,outer=0,readyOuter=0;
 private:
+    std::shared_ptr<const AnimationClip> placeholder_;
     std::vector<AppearanceScheduler::Demand> demands_;
     AppearanceScheduler scheduler_;
     std::vector<AnimationRequest> catalog_;
