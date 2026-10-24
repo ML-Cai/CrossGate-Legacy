@@ -25,7 +25,7 @@ target_include_directories(test_map_render_data PRIVATE ${CMAKE_CURRENT_SOURCE_D
 target_link_libraries(test_map_render_data PRIVATE GTest::gtest_main cgl::graphics cgl::common)
 set_target_properties(test_map_render_data PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 gtest_discover_tests(test_map_render_data WORKING_DIRECTORY ${CGL_BIN_PATH}
-    PROPERTIES LABELS "unit" TIMEOUT 60)
+    PROPERTIES LABELS "unit\;memory" TIMEOUT 60)
 
 add_executable(test_map_hover test_map_hover.cpp)
 target_include_directories(test_map_hover PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)

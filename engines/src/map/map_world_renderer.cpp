@@ -39,7 +39,7 @@ MapRenderStats MapWorldRenderer::draw(ECSCore& world,const MapResources& map,
                 player->frame, clip->offsetX, clip->offsetY, (1ull << 32) | entity, 0, 0});
         });
     const auto sortStart=std::chrono::steady_clock::now();
-    SortMapDrawItems(items_);
+    sorter_.sort(items_);
     stats.sortMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-sortStart).count();
     for(const auto& item:items_) submit(item);
     if (hovered && outline) {

@@ -11,10 +11,11 @@ public:
     MapRenderStats draw(ECSCore& world,const MapResources& map,
         const component::MapCamera& camera,std::optional<MapCellCoord> hovered,
         const MapHoverOutline* outline,graphics::ICommandBuffer* command,const Viewport& viewport);
-    void clear() {items_.clear();}
+    void clear() {std::vector<MapDrawItem>().swap(items_);sorter_.clear();}
 private:
     static bool record(const MapDrawItem& item,const component::MapCamera& camera,
         graphics::ICommandBuffer* command,const Viewport& viewport);
+    MapDrawSorter sorter_;
     std::vector<MapDrawItem> items_; // Scratch pointers, never resource ownership.
 };
 }

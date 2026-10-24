@@ -58,7 +58,7 @@ TEST(MapWorld, RecordingPreservesOrderPlaybackAndWorldHover) {
     EXPECT_EQ(static_cast<RecordingSprite*>(f.clip->renderer.get())->polls,0);
 }
 TEST(MapWorld, RecordingFailureAndReuseDoNotRetainClipOwnership) {
-    Fixture f;
+    Fixture f;f.map.images.at(124).tileX=4;f.map.images.at(124).tileY=6;
     auto* sprite=static_cast<RecordingSprite*>(f.clip->renderer.get());sprite->fail=true;
     EXPECT_THROW(f.draw(),std::runtime_error);
     sprite->fail=false;f.calls.clear();EXPECT_EQ(f.draw().drawnActors,1);

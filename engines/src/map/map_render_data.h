@@ -3,7 +3,8 @@
 #include "map/map_camera.h"
 #include "cgl/graphics/sprite_renderer.h"
 #include <numeric>
-#include <queue>
+#include <limits>
+#include <functional>
 
 namespace cgl {
 // Classic map placeholders/debug markers are not scene artwork.
@@ -52,59 +53,100 @@ inline MapFootprint GroundFootprint(const MapDrawItem& item) noexcept {
 // Ambiguous/intersecting footprints keep the baseline order where unconstrained.
 // Cycles (interlocking whole sprites) break deterministically in baseline order;
 // a single sprite cannot express every possible interlocking geometry.
+// Scene-owned CPU scratch. Flat adjacency and an in-place permutation avoid
+// per-node allocations and a second array of borrowed renderer pointers.
+// Capacity follows the largest graph in this scene; clear()/destruction releases
+// it. No renderer, entity, resource or asynchronous work is owned here.
+class MapDrawSorter final {
+public:
+    size_t sort(std::vector<MapDrawItem>& items) {
+        std::sort(items.begin(),items.end(),MapDrawLess);
+        if(std::none_of(items.begin(),items.end(),[](const auto& item){return item.tileX>1 || item.tileY>1;})) return 0;
+        const size_t n=items.size();
+        sweep_.resize(n);std::iota(sweep_.begin(),sweep_.end(),0);
+        rects_.clear();rects_.reserve(n);
+        for(const auto& item:items) {
+            const auto p=MapToWorld(item.cell);
+            rects_.push_back({p.x+item.offsetX,p.x+item.offsetX+item.source.width,
+                             p.y+item.offsetY,p.y+item.offsetY+item.source.height});
+        }
+        std::sort(sweep_.begin(),sweep_.end(),[&](size_t a,size_t b) {
+            return rects_[a].left!=rects_[b].left ? rects_[a].left<rects_[b].left : a<b;
+        });
+        // Monotone prefix bounds skip only rectangles whose right edges are
+        // all <= this object's left edge. A wide earlier sprite still participates.
+        rightMax_.resize(n);double right=std::numeric_limits<double>::lowest();
+        for(size_t i=0;i<n;++i) rightMax_[i]=right=std::max(right,rects_[sweep_[i]].right);
+        heads_.assign(n,None);incoming_.assign(n,0);edges_.clear();
+        // Preserve the overlapping pairs and footprint constraints. Dense
+        // actor/actor and single-cell pairs need only the baseline anchor order.
+        for(size_t a=0;a<n;++a) {
+            if(items[a].tileX<=1 && items[a].tileY<=1) continue;
+            const auto& ra=rects_[a];const auto fa=GroundFootprint(items[a]);
+            const auto start=size_t(std::upper_bound(rightMax_.begin(),rightMax_.end(),ra.left)-rightMax_.begin());
+            for(size_t k=start;k<n;++k) {
+                const auto b=sweep_[k];
+                const auto& rb=rects_[b];
+                if(rb.left>=ra.right) break;
+                if(a==b || rb.right<=ra.left || ra.top>=rb.bottom || rb.top>=ra.bottom) continue;
+                if((items[b].tileX>1 || items[b].tileY>1) && b<a) continue;
+                const auto fb=GroundFootprint(items[b]);
+                const bool aBehind=fa.minX>=fb.maxX || fa.maxY<=fb.minY;
+                const bool bBehind=fb.minX>=fa.maxX || fb.maxY<=fa.minY;
+                if(aBehind==bBehind) continue;
+                const auto first=aBehind?a:b,last=aBehind?b:a;
+                edges_.push_back({last,heads_[first]});heads_[first]=edges_.size()-1;++incoming_[last];
+            }
+        }
+        ready_.clear();ready_.reserve(n);order_.clear();order_.reserve(n);emitted_.assign(n,0);
+        const auto push=[&](size_t i) {ready_.push_back(i);std::push_heap(ready_.begin(),ready_.end(),std::greater<size_t>{});};
+        for(size_t i=0;i<n;++i) if(!incoming_[i]) push(i);
+        size_t cycleBreaks=0,next=0;
+        while(order_.size()<n) {
+            if(ready_.empty()) {
+                while(emitted_[next]) ++next;
+                push(next);++cycleBreaks;
+            }
+            std::pop_heap(ready_.begin(),ready_.end(),std::greater<size_t>{});
+            const auto i=ready_.back();ready_.pop_back();
+            if(emitted_[i]) continue;
+            emitted_[i]=1;order_.push_back(i);
+            for(auto e=heads_[i];e!=None;e=edges_[e].next) {
+                const auto j=edges_[e].to;
+                if(!emitted_[j] && --incoming_[j]==0) push(j);
+            }
+        }
+        // order_[destination] is its old source index. Rotate each permutation
+        // cycle using one item on the stack, then mark that cycle as identity.
+        for(size_t i=0;i<n;++i) {
+            if(order_[i]==i) continue;
+            auto saved=std::move(items[i]);auto j=i;
+            while(order_[j]!=i) {
+                const auto source=order_[j];items[j]=std::move(items[source]);order_[j]=j;j=source;
+            }
+            items[j]=std::move(saved);order_[j]=j;
+        }
+        return cycleBreaks;
+    }
+    // Capacity, not live object ownership or total allocator overhead.
+    size_t retainedBytes() const noexcept {
+        return (sweep_.capacity()+heads_.capacity()+incoming_.capacity()+ready_.capacity()+order_.capacity())*sizeof(size_t)
+            +rects_.capacity()*sizeof(Rect)+rightMax_.capacity()*sizeof(double)+edges_.capacity()*sizeof(Edge)+emitted_.capacity();
+    }
+    void clear() noexcept { *this=MapDrawSorter{}; }
+private:
+    static constexpr size_t None=std::numeric_limits<size_t>::max();
+    struct Rect {double left,right,top,bottom;};
+    struct Edge {size_t to,next;};
+    std::vector<size_t> sweep_,heads_,incoming_,ready_,order_;
+    std::vector<Rect> rects_;
+    std::vector<double> rightMax_;
+    std::vector<Edge> edges_;
+    std::vector<uint8_t> emitted_;
+};
+// Convenience for one-shot data queries/tests. Rendering retains one sorter.
 inline size_t SortMapDrawItems(std::vector<MapDrawItem>& items) {
-    std::sort(items.begin(),items.end(),MapDrawLess);
-    if (std::none_of(items.begin(),items.end(),[](const auto& item){return item.tileX>1 || item.tileY>1;})) return 0;
-    const size_t n=items.size();
-    std::vector<size_t> sweep(n); std::iota(sweep.begin(),sweep.end(),0);
-    struct Rect { double left,right,top,bottom; };
-    std::vector<Rect> rects; rects.reserve(n);
-    for(const auto& item:items) {
-        const auto p=MapToWorld(item.cell);
-        rects.push_back({p.x+item.offsetX,p.x+item.offsetX+item.source.width,
-                         p.y+item.offsetY,p.y+item.offsetY+item.source.height});
-    }
-    std::sort(sweep.begin(),sweep.end(),[&](size_t a,size_t b) {
-        return rects[a].left!=rects[b].left ? rects[a].left<rects[b].left : a<b;
-    });
-    std::vector<std::vector<size_t>> after(n);
-    std::vector<size_t> incoming(n,0);
-    // Only large footprints can impose additional constraints. Actor/actor
-    // and single-cell pairs already follow the baseline order. Query candidates
-    // from each large footprint instead of enumerating dense actor pairs.
-    for(size_t a=0;a<n;++a) {
-        if(items[a].tileX<=1 && items[a].tileY<=1) continue;
-        const auto& ra=rects[a];
-        for(const auto b:sweep) {
-            const auto& rb=rects[b];
-            if(rb.left>=ra.right) break;
-            if(a==b || rb.right<=ra.left || ra.top>=rb.bottom || rb.top>=ra.bottom) continue;
-            if((items[b].tileX>1 || items[b].tileY>1) && b<a) continue;
-            const auto fa=GroundFootprint(items[a]),fb=GroundFootprint(items[b]);
-            const bool aBehind=fa.minX>=fb.maxX || fa.maxY<=fb.minY;
-            const bool bBehind=fb.minX>=fa.maxX || fb.maxY<=fa.minY;
-            if(aBehind==bBehind) continue;
-            const auto first=aBehind?a:b,last=aBehind?b:a;
-            after[first].push_back(last); ++incoming[last];
-        }
-    }
-    std::priority_queue<size_t,std::vector<size_t>,std::greater<size_t>> ready;
-    for(size_t i=0;i<n;++i) if(!incoming[i]) ready.push(i);
-    std::vector<bool> emitted(n,false);
-    std::vector<MapDrawItem> ordered;ordered.reserve(n);
-    size_t cycleBreaks=0,next=0;
-    while(ordered.size()<n) {
-        if(ready.empty()) {
-            while(emitted[next]) ++next;
-            ready.push(next); ++cycleBreaks;
-        }
-        const auto i=ready.top();ready.pop();
-        if(emitted[i]) continue;
-        emitted[i]=true;ordered.push_back(std::move(items[i]));
-        for(const auto j:after[i]) if(!emitted[j] && --incoming[j]==0) ready.push(j);
-    }
-    items=std::move(ordered);
-    return cycleBreaks;
+    MapDrawSorter sorter;return sorter.sort(items);
 }
 
 inline bool MapImageVisible(MapPoint position, uint32_t width, uint32_t height,
