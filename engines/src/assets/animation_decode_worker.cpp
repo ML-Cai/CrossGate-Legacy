@@ -23,6 +23,16 @@ std::optional<AnimationDecodeWorker::Result> AnimationDecodeWorker::tryTake() {
 uint64_t AnimationDecodeWorker::reservedBytes() const {
     std::lock_guard lock(mutex_);return reserved_;
 }
+void AnimationDecodeWorker::requestCancel() noexcept {
+    std::lock_guard lock(mutex_);
+    cancelled_.store(true);job_={};
+    if(!running_) {result_.reset();reserved_=0;}
+}
+bool AnimationDecodeWorker::collectCancelled() noexcept {
+    std::lock_guard lock(mutex_);
+    if(!cancelled_.load() || running_) return false;
+    result_.reset();reserved_=0;return true;
+}
 void AnimationDecodeWorker::cancel() noexcept {
     std::unique_lock lock(mutex_);
     cancelled_.store(true);job_={};

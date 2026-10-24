@@ -92,3 +92,10 @@ target_link_libraries(test_scene_animation_load PRIVATE GTest::gtest_main cgl::g
 set_target_properties(test_scene_animation_load PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 gtest_discover_tests(test_scene_animation_load WORKING_DIRECTORY ${CGL_BIN_PATH}
     PROPERTIES LABELS "unit\;memory" TIMEOUT 60)
+
+add_executable(test_appearance_scheduler test_appearance_scheduler.cpp)
+target_include_directories(test_appearance_scheduler PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_appearance_scheduler PRIVATE GTest::gtest_main)
+set_target_properties(test_appearance_scheduler PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
+gtest_discover_tests(test_appearance_scheduler WORKING_DIRECTORY ${CGL_BIN_PATH}
+    PROPERTIES LABELS "unit\;memory" TIMEOUT 60)

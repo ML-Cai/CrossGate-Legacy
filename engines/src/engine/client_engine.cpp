@@ -235,6 +235,7 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             << ",\"animation_retired_clips\":" << animations.retiredClips
             << ",\"animation_reused_clips\":" << animations.reusedClips
             << ",\"map_reuses\":" << maps.reusedMaps << ",\"outline_reuses\":" << maps.reusedOutlines
+            << ",\"animation_discarded_decodes\":" << animationLibrary_.discardedDecodes()
             << ",\"animation_budget_deferrals\":" << animations.budgetDeferrals
             << ",\"animation_waiting_for_budget\":" << (animations.waitingForBudget?"true":"false")
             << ",\"animation_evictions\":" << animations.evictions << ",\"animation_evicted_bytes\":" << animations.evictedBytes

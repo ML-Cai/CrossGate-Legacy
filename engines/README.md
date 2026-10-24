@@ -446,3 +446,9 @@ are published only when all required clips are ready; exit releases partial pins
 Successful decode/upload and map loading remain synchronous. A fuller streaming
 scheduler remains follow-up work. See docs/build-and-test.md and
 docs/resource-streaming-plan.md for diagnostics and limits.
+
+Remote appearance scheduling prioritizes visible demand, ages unresolved requests
+within each region, and retains only current snapshot demand. Stale CPU decode or
+prefetch displaced by visible work is cooperatively discarded without blocking
+updates. Its reservation stays charged until CPU completion. Submitted GPU uploads
+finish normally; scene exit retains the blocking cleanup/lifetime boundary.

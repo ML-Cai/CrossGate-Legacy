@@ -20,6 +20,9 @@ public:
     std::optional<Result> tryTake();
     uint64_t reservedBytes() const;
     // Cooperative cancellation waits for active CPU access to end; discards output.
+    // Owner-thread nonblocking discard: reservation remains until CPU access ends.
+    void requestCancel() noexcept;
+    bool collectCancelled() noexcept;
     void cancel() noexcept;
     void stop() noexcept;
 private:

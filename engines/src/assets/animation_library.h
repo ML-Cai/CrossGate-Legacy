@@ -46,7 +46,7 @@ public:
         return {clips_.size(),clips_.bytes(),pendingBytes(),textureBudget_,clips_.evictions(),clips_.evictedBytes(),retired_.bytes(),retired_.size(),budgetDeferrals_,bool(budgetWait_),retired_.restores()};
     }
     // Cancellation/scene exit can wait for the one already-submitted chunk.
-    void cancelPending() noexcept { budgetWait_.reset(); decoder_.cancel(); decodeRequest_.reset(); decodeReaders_=nullptr; pending_.reset(); builder_.clear(); }
+    void cancelPending() noexcept { budgetWait_.reset(); decoder_.cancel(); decodeDiscarding_=false; decodeRequest_.reset(); decodeReaders_=nullptr; pending_.reset(); builder_.clear(); }
     void setTextureBudget(uint64_t bytes) {
         const uint64_t used=clips_.bytes()+retired_.bytes()+pendingBytes();
         if (!bytes || used > bytes || (budgetWait_ && budgetWait_->requiredBytes>bytes)) throw std::invalid_argument("Texture budget below live payload/reservation or waiting clip minimum");
@@ -61,6 +61,11 @@ public:
     uint64_t collectRetired(uint64_t completed,size_t maxEntries=std::numeric_limits<size_t>::max()) noexcept {
         return retired_.collect(completed,maxEntries);
     }
+    // Cancel only CPU/budget work without waiting. Submitted GPU chunks are never
+    // cancelled by this path. Reservation stays charged until worker completion.
+    bool discardUnsubmitted() noexcept;
+    bool uploadPending() const noexcept {return bool(pending_);}
+    uint64_t discardedDecodes() const noexcept {return discardedDecodes_;}
     bool waitingForBudget() const noexcept {return bool(budgetWait_);}
     // Render-thread maintenance: <=8 completed clip destructions, <=8 retirements
     // per scan. Full LRU scans are throttled to once every 16 update calls.
@@ -68,7 +73,7 @@ public:
     // Release scene/entity references and wait for GPU work before clearing.
     void clear() noexcept {
         budgetWait_.reset();budgetDeferrals_=0;pressureCooldown_=0;
-        decoder_.stop(); decodeRequest_.reset(); decodeReaders_=nullptr;
+        decoder_.stop(); decodeDiscarding_=false; discardedDecodes_=0; decodeRequest_.reset(); decodeReaders_=nullptr;
         pending_.reset(); // Waits for only its own submitted chunk, if any.
         clips_.clear();
         retired_.clear();
@@ -86,6 +91,9 @@ private:
     uint64_t remainingBytes() const;
     std::shared_ptr<const AnimationClip> uploadClip(const AnimationRequest& request,AnimationPixels pixels,
         graphics::IDevice* device,graphics::IRenderPass* pass,bool progressive);
+    bool collectDiscardedDecode() noexcept;
+    bool decodeDiscarding_=false;
+    uint64_t discardedDecodes_=0;
     AnimationDecodeWorker decoder_;
     std::optional<AnimationRequest> decodeRequest_;
     component::AssetsReaderState* decodeReaders_=nullptr;

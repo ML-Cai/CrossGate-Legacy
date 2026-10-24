@@ -1,19 +1,19 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #64 (keyed retired-resource reuse).
+Current base: merged PR #65 (frame-driven scene animation admission).
 This is an estimate of independently reviewable changes, not a claim that the
 remaining features already exist. Each PR must run on its merged develop base.
 
 | Priority | PR scope | Required validation |
 | --- | --- | --- |
-| Current | Frame-driven scene animation admission while old GPU resources retire | Whole-set metadata validation; no partial characters or movement during loading; partial-load restart/cancellation; full normal/ASan and native regression |
-| Next | Streaming scheduler: superseded/off-screen CPU work, visible versus 1.5-view prefetch priority, metadata size planning, fairness and per-request latency | Movement with repeated appearance batches, pending decode/upload cancellation boundaries, starvation/placeholder checks |
-| Follow-up, possibly combined with scheduler | Sustained churn benchmark and memory evidence; configurable demo budgets; 512/1024 distinct appearances and low-budget cases; decide fallback when the visible working set exceeds budget | Warm/cold FPS p95/p99/max, admission latency, pending/retired plateaus, repeated teardown, separately measured process memory and GPU residency |
+| Current | Visible/prefetch scheduling, same-region aging and nonblocking stale CPU-work discard | Bounded current demand; no early reservation credit or stale upload; stable active work; full normal/ASan and native regression |
+| Next | Streaming measurements and admission refinement: exact metadata reservations, per-request latency, sustained churn, configurable demo budgets and low-budget cases | Warm/cold FPS p95/p99/max, cancellation/latency distributions, pending/retired plateaus, repeated teardown, separately measured process memory and GPU residency |
 
 Resource work is estimated at **2-3 PRs including the current change**.
-Scene-entry admission is separate from keyed reuse. Existing correctness tests
-are not substitutes for sustained churn measurements; the standalone benchmark PR
-can be combined only if the scheduler PR stays reviewable.
+The scheduler ownership change is separate from metadata reservation and sustained
+churn measurement. Existing correctness tests are not substitutes for sustained
+churn measurements; measurements and reservation refinement can split if the next
+PR grows too large.
 The present LRU policy scans/sorts the cache when pressure scans are due. Profile
 that cost before replacing it with a persistent/incremental LRU structure. Count
 limits are not CPU-time guarantees, and map loading is still synchronous.

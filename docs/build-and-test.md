@@ -353,3 +353,41 @@ Headless tests cover whole-set admission, overflow, duplicate requests, partial
 ownership and exception cleanup. Vulkan lifecycle tests cover waiting for old
 frames, movement suppression, 15/16-clip restart/cancellation, impossible budgets
 before map allocation, and atomic preview sprite publication.
+
+## Visible-demand scheduling and nonblocking CPU discard
+
+Remote character snapshots feed a bounded CPU-only appearance scheduler. Duplicate
+appearance demand is merged using its best region/distance. Visible demand always
+precedes the 1.5-view prefetch band; within a region, requests waiting at least
+250 ms precede newcomers, oldest first, then distance and appearance ID. Time is
+monotonic; this is an ordering policy, not a completion-latency guarantee. Demand
+age survives position/region changes but is removed when demand disappears or
+becomes ready. Prefetch remains best effort while visible demand exists.
+
+Same-region active CPU work is stable even if a nearer actor appears. CPU work
+is superseded only when it loses all current interest or visible demand displaces
+prefetch. Budget waits use the same rule. Submitted GPU uploads are completed,
+including when their actor disappears; this avoids upload-destructor waits during
+snapshot refresh. Completed unused clips become normal eviction candidates.
+
+AnimationDecodeWorker.requestCancel does not wait for running CPU access. The
+single slot and its reservation remain occupied until collectCancelled observes
+actual completion. Old output/errors are discarded and cannot start an upload or
+be attributed to a new appearance. No second task is queued while draining.
+AnimationLibrary maintenance collects cancelled work even when no candidate remains.
+Blocking scene-exit/shutdown cancellation remains available and still protects
+reader lifetime. This does not make an individual file read interruptible.
+
+Telemetry adds animation_discarded_decodes, counting superseded CPU requests, not
+budget waits or GPU cancellation. Ready + retired + pending accounting stays in
+force during cancellation. Scheduler nodes/scratch capacity are reused between
+stable snapshots, and retained demand is bounded by the existing 1024-actor limit.
+There is no queue of obsolete snapshots. Metadata planning for tighter worker
+reservations and per-request latency diagnostics remain follow-up work.
+
+Headless tests verify visible/prefetch ordering, duplicate demand, same-region
+stability, aging, bounded replacement, and cancellation with a deliberately held
+CPU task: requestCancel must return before the test releases that task, while its
+reservation and captured references remain live. Vulkan tests displace prefetch
+with a visible character, cycle repeated complete replacements without stale
+uploads, and verify submitted GPU uploads cannot be cancelled through this path.

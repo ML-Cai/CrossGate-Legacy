@@ -36,6 +36,7 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
     graphics::IDevice* device,graphics::IRenderPass* pass,bool backgroundDecode) {
     if(!device || !pass || (device_ && device_!=device) || (pass_ && pass_!=pass))
         throw std::invalid_argument("Animation library requires one live device/render pass");
+    if(!collectDiscardedDecode()) return nullptr;
     if(auto found=findOrRestore(request)) return found;
     if(decodeRequest_) {
         if(decodeReaders_!=&readers) throw std::invalid_argument("Cannot change readers during background decode");
@@ -102,7 +103,21 @@ void AnimationLibrary::deferBudget(const AnimationRequest& request,uint64_t requ
         throw std::runtime_error("Animation exceeds clip/total texture budget");
     budgetWait_=BudgetWait{request,requiredBytes};++budgetDeferrals_;
 }
+bool AnimationLibrary::collectDiscardedDecode() noexcept {
+    if(!decodeDiscarding_) return true;
+    if(!decoder_.collectCancelled()) return false;
+    decodeRequest_.reset();decodeReaders_=nullptr;decodeDiscarding_=false;builder_.clear();return true;
+}
+bool AnimationLibrary::discardUnsubmitted() noexcept {
+    if(pending_) return false;
+    budgetWait_.reset();
+    if(decodeRequest_ && !decodeDiscarding_) {
+        decoder_.requestCancel();decodeDiscarding_=true;++discardedDecodes_;
+    }
+    collectDiscardedDecode();return true;
+}
 void AnimationLibrary::maintainStreaming(uint64_t submitted,uint64_t completed,bool allowEviction) {
+    collectDiscardedDecode();
     retired_.collect(completed,8);
     if(pressureCooldown_) {--pressureCooldown_;return;}
     if(!allowEviction || !budgetWait_) return;
