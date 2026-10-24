@@ -1,6 +1,8 @@
 #include "map/map_atlas.h"
 #include "map/map_render_data.h"
 #include <gtest/gtest.h>
+#include <random>
+#include <queue>
 
 namespace {
 TEST(MapRenderTest, AtlasPreservesImageSizeAndSeparatesRegions) {
@@ -212,4 +214,114 @@ TEST(MapRenderTest, DenseActorsRespectOneLargeBuildingPrecedence) {
         const bool actorBehind=f.minX>=bf.maxX || f.maxY<=bf.minY;
         if(buildingBehind!=actorBehind) EXPECT_EQ(building<it,buildingBehind);
     }
+}
+
+namespace {
+// Deliberately exhaustive reference: no sweep, flat adjacency or in-place
+// permutation. Preserve the established footprint/cycle policy independently.
+size_t ReferenceMapOrder(std::vector<cgl::MapDrawItem>& items) {
+    std::sort(items.begin(),items.end(),cgl::MapDrawLess);
+    const auto n=items.size();
+    std::vector<std::vector<size_t>> edges(n);std::vector<size_t> incoming(n);
+    for(size_t a=0;a<n;++a) for(size_t b=a+1;b<n;++b) {
+        if(items[a].tileX<=1 && items[a].tileY<=1 && items[b].tileX<=1 && items[b].tileY<=1) continue;
+        const auto pa=cgl::MapToWorld(items[a].cell),pb=cgl::MapToWorld(items[b].cell);
+        const auto ax=pa.x+items[a].offsetX,ay=pa.y+items[a].offsetY;
+        const auto bx=pb.x+items[b].offsetX,by=pb.y+items[b].offsetY;
+        if(ax>=bx+items[b].source.width || bx>=ax+items[a].source.width ||
+           ay>=by+items[b].source.height || by>=ay+items[a].source.height) continue;
+        const auto fa=cgl::GroundFootprint(items[a]),fb=cgl::GroundFootprint(items[b]);
+        const bool ab=fa.minX>=fb.maxX || fa.maxY<=fb.minY;
+        const bool ba=fb.minX>=fa.maxX || fb.maxY<=fa.minY;
+        if(ab==ba) continue;
+        const auto first=ab?a:b,last=ab?b:a;edges[first].push_back(last);++incoming[last];
+    }
+    std::priority_queue<size_t,std::vector<size_t>,std::greater<size_t>> ready;
+    for(size_t i=0;i<n;++i) if(!incoming[i]) ready.push(i);
+    std::vector<bool> emitted(n);std::vector<cgl::MapDrawItem> result;
+    size_t cycles=0,next=0;
+    while(result.size()<n) {
+        if(ready.empty()) {while(emitted[next]) ++next;ready.push(next);++cycles;}
+        const auto i=ready.top();ready.pop();if(emitted[i]) continue;
+        emitted[i]=true;result.push_back(items[i]);
+        for(const auto j:edges[i]) if(!emitted[j] && --incoming[j]==0) ready.push(j);
+    }
+    items=std::move(result);return cycles;
+}
+void ExpectSameDrawItems(const std::vector<cgl::MapDrawItem>& actual,const std::vector<cgl::MapDrawItem>& expected) {
+    ASSERT_EQ(actual.size(),expected.size());
+    for(size_t i=0;i<actual.size();++i) {
+        const auto& a=actual[i];const auto& b=expected[i];
+        ASSERT_EQ(a.stableId,b.stableId) << "draw index " << i;
+        EXPECT_EQ(a.cell.x,b.cell.x);EXPECT_EQ(a.cell.y,b.cell.y);EXPECT_EQ(a.renderer,b.renderer);
+        EXPECT_EQ(a.source.x,b.source.x);EXPECT_EQ(a.source.y,b.source.y);
+        EXPECT_EQ(a.source.width,b.source.width);EXPECT_EQ(a.source.height,b.source.height);
+        EXPECT_EQ(a.frame,b.frame);EXPECT_EQ(a.offsetX,b.offsetX);EXPECT_EQ(a.offsetY,b.offsetY);
+        EXPECT_EQ(a.tileX,b.tileX);EXPECT_EQ(a.tileY,b.tileY);
+    }
+}
+std::vector<cgl::MapDrawItem> MixedDrawItems(size_t n,std::mt19937& random) {
+    std::vector<cgl::MapDrawItem> items;
+    for(size_t i=0;i<n;++i) {
+        const bool large=i%7==0;
+        items.push_back({{double(random()%20),double(random()%20)},nullptr,
+            {uint32_t(i),uint32_t(i*2),uint32_t(32+random()%550),uint32_t(48+random()%550)},uint32_t(i%16),
+            -int32_t(random()%250),-int32_t(random()%500),i+1,
+            uint8_t(large?2+random()%5:0),uint8_t(large?2+random()%5:0)});
+    }
+    return items;
+}
+}
+TEST(MapRenderTest, ReusedSorterMatchesExhaustiveOrderIncludingCyclesAndPayload) {
+    cgl::MapDrawSorter sorter;std::mt19937 random(3169);size_t cycles=0;
+    for(size_t frame=0;frame<120;++frame) {
+        auto items=MixedDrawItems(frame%3==0?0:20+random()%180,random);
+        auto expected=items;const auto breaks=ReferenceMapOrder(expected);cycles+=breaks;
+        EXPECT_EQ(sorter.sort(items),breaks);ExpectSameDrawItems(items,expected);
+    }
+    EXPECT_GT(cycles,0); // Exercises deterministic cycle fallback, not just DAGs.
+}
+TEST(MapRenderTest, ReusedSorterHandlesThousandsOfOverlappingActorsAndBuildings) {
+    cgl::MapDrawSorter sorter;
+    for(size_t n:{size_t(1024),size_t(6000),size_t(1),size_t(0)}) {
+        std::vector<cgl::MapDrawItem> items;
+        for(size_t i=0;i<n;++i) items.push_back({{double(i%13),double((i/13)%13)},nullptr,
+            {0,0,64,120},0,-32,-110,i+1,0,0});
+        for(size_t i=0;i<12;++i) items.push_back({{double(3+i%4),double(4+i/4)},nullptr,
+            {0,0,300,350},0,-150,-300,n+i+1,3,4});
+        auto expected=items;const auto breaks=ReferenceMapOrder(expected);
+        EXPECT_EQ(sorter.sort(items),breaks);ExpectSameDrawItems(items,expected);
+    }
+}
+TEST(MapRenderTest, SortScratchReusesCapacityAndReleasesItExplicitly) {
+    cgl::MapDrawSorter sorter;std::mt19937 random(73);
+    const auto input=MixedDrawItems(256,random);auto expected=input;
+    const auto cycles=ReferenceMapOrder(expected);auto items=input;
+    EXPECT_EQ(sorter.sort(items),cycles);const auto bytes=sorter.retainedBytes();ASSERT_GT(bytes,0);
+    for(size_t frame=0;frame<64;++frame) {
+        items=input;std::shuffle(items.begin(),items.end(),random);
+        EXPECT_EQ(sorter.sort(items),cycles);ExpectSameDrawItems(items,expected);
+        EXPECT_EQ(sorter.retainedBytes(),bytes);
+    }
+    items.clear();EXPECT_EQ(sorter.sort(items),0);
+    sorter.clear();EXPECT_EQ(sorter.retainedBytes(),0);sorter.clear();
+    items=input;EXPECT_EQ(sorter.sort(items),cycles);ExpectSameDrawItems(items,expected);
+}
+
+TEST(MapRenderTest, PrefixBoundsKeepWideEarlierSpritesAndStrictTouchingEdges) {
+    cgl::MapDrawSorter sorter;
+    const cgl::MapDrawItem house{{50,61},nullptr,{0,0,372,460},0,-210,-437,1,4,6};
+    // Far-left image start must not hide an actor whose image overlaps the house.
+    const cgl::MapDrawItem wide{{49,58},nullptr,{0,0,6000,500},0,-3000,-400,2,0,0};
+    std::vector<cgl::MapDrawItem> input{house,wide};
+    for(uint64_t i=0;i<100;++i) input.push_back({{double(i%20),double(i/20)},nullptr,{0,0,1,1},0,0,0,i+3,0,0});
+    auto expected=input;EXPECT_EQ(sorter.sort(input),ReferenceMapOrder(expected));ExpectSameDrawItems(input,expected);
+    ASSERT_EQ(input.back().stableId,wide.stableId);
+    // Exact right/left contact adds no overlap constraint; anchor order survives.
+    auto touching=wide;
+    const auto hp=cgl::MapToWorld(house.cell),wp=cgl::MapToWorld(wide.cell);
+    touching.source.width=uint32_t(hp.x+house.offsetX-wp.x-wide.offsetX);
+    input={house,touching};expected=input;
+    EXPECT_EQ(sorter.sort(input),ReferenceMapOrder(expected));ExpectSameDrawItems(input,expected);
+    EXPECT_TRUE(std::is_sorted(input.begin(),input.end(),cgl::MapDrawLess));
 }
