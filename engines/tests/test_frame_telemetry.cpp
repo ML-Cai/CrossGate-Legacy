@@ -30,8 +30,10 @@ TEST(FrameTelemetry, LongRunOverwritesOldSpikesAndResetDropsHistory) {
     const auto s=frames.summary();
     EXPECT_EQ(s.count,cgl::FrameTelemetry::Capacity);EXPECT_EQ(s.total,100001);
     EXPECT_DOUBLE_EQ(s.maxMs,2);EXPECT_DOUBLE_EQ(s.fps,500);EXPECT_EQ(s.over33ms,0);
+    EXPECT_DOUBLE_EQ(s.lifetimeMaxMs,1000);EXPECT_EQ(s.lifetimeOver33ms,1);
+    EXPECT_DOUBLE_EQ(s.lifetimeFps,1000.0*100001/201000);
     frames.clear();EXPECT_EQ(frames.summary().count,0);EXPECT_EQ(frames.summary().total,0);
-    frames.add({10});EXPECT_DOUBLE_EQ(frames.summary().p99Ms,10);
+    frames.add({10});EXPECT_DOUBLE_EQ(frames.summary().p99Ms,10);EXPECT_EQ(frames.summary().lifetimeOver33ms,0);EXPECT_DOUBLE_EQ(frames.summary().lifetimeMaxMs,10);
 }
 TEST(FrameTelemetry, WindowContainsLatestValuesAfterWrap) {
     cgl::FrameTelemetry frames;

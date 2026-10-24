@@ -99,3 +99,7 @@ target_link_libraries(test_appearance_scheduler PRIVATE GTest::gtest_main)
 set_target_properties(test_appearance_scheduler PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 gtest_discover_tests(test_appearance_scheduler WORKING_DIRECTORY ${CGL_BIN_PATH}
     PROPERTIES LABELS "unit\;memory" TIMEOUT 60)
+
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_test(NAME streaming_stress_runner COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/StreamingStress/test_stress_runner.py)
+set_tests_properties(streaming_stress_runner PROPERTIES LABELS "unit;python;memory" TIMEOUT 60)

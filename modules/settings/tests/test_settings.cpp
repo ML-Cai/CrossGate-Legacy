@@ -126,6 +126,18 @@ TEST(settings_test, RejectInvalidNumericValue) {
     std::filesystem::remove(path);
 }
 
+TEST(settings_test, StreamingStressFieldsAndInteractiveDefaults) {
+    const std::string path="test_streaming_stress.ini";
+    {std::ofstream file(path);file<<"[ServerDemo]\nEnabled=true\nAnimationBudgetMiB=16\nVisibleActors=512\nPrefetchActors=512\nCatalogLimit=2048\nSeed=42\nStressFrames=6000\nStressLegFrames=120\nStressReplaceFrames=300\nStressStepMs=20\n";}
+    auto settings=cgl::LoadSettings(path);std::filesystem::remove(path);ASSERT_NE(settings,nullptr);
+    EXPECT_TRUE(settings->serverdemo.Enabled);EXPECT_EQ(settings->serverdemo.AnimationBudgetMiB,16);
+    EXPECT_EQ(settings->serverdemo.VisibleActors,512);EXPECT_EQ(settings->serverdemo.PrefetchActors,512);
+    EXPECT_EQ(settings->serverdemo.CatalogLimit,2048);EXPECT_EQ(settings->serverdemo.Seed,42);
+    EXPECT_EQ(settings->serverdemo.StressFrames,6000);EXPECT_EQ(settings->serverdemo.StressLegFrames,120);
+    EXPECT_EQ(settings->serverdemo.StressReplaceFrames,300);EXPECT_FLOAT_EQ(settings->serverdemo.StressStepMs,20);
+    cgl::Settings defaults;EXPECT_EQ(defaults.serverdemo.StressFrames,0);EXPECT_EQ(defaults.serverdemo.AnimationBudgetMiB,512);
+}
+
 // -----------------------------------------------------------------------------
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

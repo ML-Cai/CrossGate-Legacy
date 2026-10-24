@@ -12,6 +12,7 @@
 #include <chrono>
 #include <fstream>
 #include "telemetry/frame_telemetry.h"
+#include "map/streaming_stress.h"
 #include "benchmark/crowd_benchmark.h"
 #include "cgl/settings/settings.h"
 #include "cgl/engine/engine.h"
@@ -129,11 +130,18 @@ void ClientEngine::initSingletonStage(cgl::ECSCore* pEcs) {
         cgl::RaiseError(pEngineState_, "Cache maintenance targets must be at most 1024 MiB");
     const auto& bench = pEngineState_->settings->benchmark;
     const bool pressure = bench.ActorCount || bench.ActorsPerCell;
-    const bool serverDemo=pEngineState_->settings->serverdemo.Enabled;
+    const auto& demo=pEngineState_->settings->serverdemo;
+    const bool serverDemo=demo.Enabled;
+    if(demo.StressFrames && (!serverDemo || !pEngineState_->settings->telemetry.Enabled || pEngineState_->settings->telemetry.ReportPath.empty()))
+        cgl::RaiseError(pEngineState_,"ServerDemo stress requires Enabled and a telemetry report");
     if(serverDemo) {
         if(pressure || pEngineState_->settings->map.FilePath.empty())
             cgl::RaiseError(pEngineState_, "ServerDemo requires a map and cannot run with Benchmark");
-        animationLibrary_.setTextureBudget(512ull*1024*1024);
+        try {
+            cgl::ValidateDemoLimits(demo.AnimationBudgetMiB,demo.VisibleActors,demo.PrefetchActors,demo.CatalogLimit);
+            if(demo.StressFrames) cgl::StreamingStress(demo.StressFrames,demo.StressLegFrames,demo.StressReplaceFrames,demo.StressStepMs);
+            animationLibrary_.setTextureBudget(uint64_t(demo.AnimationBudgetMiB)*1024*1024);
+        } catch(const std::exception& error) {cgl::RaiseError(pEngineState_,"Invalid ServerDemo settings: ",error.what());}
     }
     if (pressure) {
         if ((bench.BackgroundDecode && (!bench.LoadDuringPlayback || !bench.ProgressiveUploads)) || bench.AnimationBudgetMiB<16 || bench.AnimationBudgetMiB>1024 || pEngineState_->settings->map.FilePath.empty() || !bench.SampleFrames || bench.SampleFrames > 100000 || bench.WarmupFrames > 100000 ||
@@ -228,6 +236,7 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             << ",\"frame_mean_ms\":" << summary.meanMs << ",\"frame_p50_ms\":" << summary.p50Ms
             << ",\"frame_p95_ms\":" << summary.p95Ms << ",\"frame_p99_ms\":" << summary.p99Ms
             << ",\"frame_max_ms\":" << summary.maxMs << ",\"frames_over_33ms\":" << summary.over33ms
+            << ",\"lifetime_fps\":" << summary.lifetimeFps << ",\"lifetime_frame_max_ms\":" << summary.lifetimeMaxMs << ",\"lifetime_frames_over_33ms\":" << summary.lifetimeOver33ms
             << ",\"update_mean_ms\":" << summary.updateMs << ",\"render_loop_mean_ms\":" << summary.renderMs
             << ",\"sort_mean_ms\":" << summary.sortMs << ",\"drawn_actors_last_frame\":" << telemetry->rendering.actors
             << ",\"draw_calls_last_frame\":" << telemetry->rendering.drawCalls
@@ -252,7 +261,18 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             << ",\"map_outline_evictions\":" << maps.evictions
             << ",\"animation_pending_reserved_bytes\":" << animations.pendingBytes << ",\"animation_budget_bytes\":" << animations.budgetBytes
             << ",\"cached_maps\":" << maps.maps << ",\"map_pages\":" << maps.pages
-            << ",\"map_rgba_bytes\":" << maps.rgbaBytes << ",\"outline_rgba_bytes\":" << maps.outlineBytes << "\n}\n";
+            << ",\"map_rgba_bytes\":" << maps.rgbaBytes << ",\"outline_rgba_bytes\":" << maps.outlineBytes;
+        if(const auto* stats=pEcs->getSingleton<cgl::component::StreamingDiagnostics>()) {
+            out << ",\"stream_frames\":" << stats->frames << ",\"stream_snapshots\":" << stats->snapshots << ",\"stream_replacements\":" << stats->replacements
+                << ",\"stress_configured_frames\":" << stats->configuredFrames << ",\"stress_completed\":" << (stats->configuredFrames && stats->frames>=stats->configuredFrames?"true":"false")
+                << ",\"stream_visible\":" << stats->visible << ",\"stream_ready_visible\":" << stats->readyVisible
+                << ",\"stream_prefetch\":" << stats->prefetch << ",\"stream_ready_prefetch\":" << stats->readyPrefetch
+                << ",\"stream_visible_samples\":" << stats->visibleSamples << ",\"stream_ready_visible_samples\":" << stats->readyVisibleSamples
+                << ",\"stream_missing_visible_frames\":" << stats->visibleMissingFrames << ",\"stream_budget_wait_frames\":" << stats->budgetWaitFrames
+                << ",\"stream_peak_accounted_bytes\":" << stats->peakAccountedBytes << ",\"stream_peak_retired_bytes\":" << stats->peakRetiredBytes << ",\"stream_peak_pending_bytes\":" << stats->peakPendingBytes
+                << ",\"stream_snapshot_fingerprint\":\"" << stats->fingerprint << "\",\"stream_player_x\":" << stats->x << ",\"stream_player_y\":" << stats->y << ",\"stream_travel_cells\":" << stats->travelCells;
+        }
+        out << "\n}\n";
     };
     while (!pWinHandle->windowShouldClose && (!frameLimit || frames < frameLimit)) {
         const auto now = std::chrono::steady_clock::now();
