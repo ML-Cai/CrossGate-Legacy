@@ -9,16 +9,14 @@ void require(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
 }
-AnimationPixels AnimationBuilder::build(const AnimationRequest& request,
-    component::AssetsReaderState& readers, uint64_t availableBytes, const std::atomic_bool* cancelled) {
-    std::lock_guard readerLock(*readers.queryMutex);
+AnimationBuilder::Plan AnimationBuilder::prepare(const AnimationRequest& request,
+    component::AssetsReaderState& readers,const std::atomic_bool* cancelled) {
     auto checkCancellation=[&] {
         if(cancelled && cancelled->load()) throw std::runtime_error("Animation decode cancelled");
     };
     checkCancellation();
     const auto version = request.version;
     require(version < CrossGateVersion::COUNT, "Invalid animation resource version");
-    constexpr uint64_t maxBytes = 256ull * 1024 * 1024;
     constexpr size_t maxFramesPerMotion = 65536, maxDescriptionFrames = 1024 * 1024;
     require(request.direction < uint32_t(DirectionTypes::COUNT) &&
             request.motion < uint32_t(MotionTypes::COUNT), "Invalid animation direction or motion");
@@ -80,15 +78,32 @@ AnimationPixels AnimationBuilder::build(const AnimationRequest& request,
     require(width > 0 && height > 0 && width <= 4096 && height <= 4096,
             "Invalid animation canvas dimensions");
     const uint64_t requiredBytes=uint64_t(width)*height*4*frames.size();
-    require(requiredBytes<=maxBytes,"Animation exceeds per-clip texture memory limit");
-    if(requiredBytes>availableBytes) throw AnimationBudgetExceeded(requiredBytes);
+    require(requiredBytes<=MaxBytes,"Animation exceeds per-clip texture memory limit");
+    return {{uint32_t(width),uint32_t(height),uint32_t(frames.size()),clip.duration,
+             int32_t(left),int32_t(top),{}},std::move(frames),requiredBytes};
+}
+uint64_t AnimationBuilder::requiredBytes(const AnimationRequest& request,component::AssetsReaderState& readers) {
+    std::lock_guard readerLock(*readers.queryMutex);
+    return prepare(request,readers,nullptr).bytes;
+}
+AnimationPixels AnimationBuilder::build(const AnimationRequest& request,
+    component::AssetsReaderState& readers,uint64_t availableBytes,const std::atomic_bool* cancelled) {
+    std::lock_guard readerLock(*readers.queryMutex);
+    auto plan=prepare(request,readers,cancelled);
+    if(plan.bytes>availableBytes) throw AnimationBudgetExceeded(plan.bytes);
+    auto checkCancellation=[&] {
+        if(cancelled && cancelled->load()) throw std::runtime_error("Animation decode cancelled");
+    };
     checkCancellation();
+    const auto version=request.version;
+    auto result=std::move(plan.canvas);const auto& frames=plan.frames;
+    const auto width=result.width,height=result.height;
+    const auto left=result.offsetX,top=result.offsetY;
     PaletteData256 palette{};
     require(readers.pPaletteReader->read(EnvironmentPaletteTypes::Daytime, &palette) == Results::Success,
             "Could not read daytime palette");
     const size_t frameBytes = size_t(width * height) * 4;
-    AnimationPixels result{uint32_t(width), uint32_t(height), uint32_t(frames.size()), clip.duration,
-                           int32_t(left), int32_t(top), std::vector<uint8_t>(frameBytes * frames.size(), 0)};
+    result.rgba.resize(size_t(plan.bytes),0);
     for (size_t f = 0; f < frames.size(); ++f) {
         checkCancellation();
         // The indexed pixels for this frame die before the next decode begins.

@@ -305,7 +305,7 @@ device/render pass and unchanged resource corpus. Device/pass validation runs
 before restoration. Map keys keep absolute lexical normalization; outline scales
 must remain valid/finite. Clear after GPU completion when reloading files or
 changing device/pass. This does not add file-version detection, simultaneous-device
-sharing, asynchronous map loading or automatic scene-entry waits.
+sharing or asynchronous map loading.
 
 Telemetry adds animation_reused_clips, map_reuses and outline_reuses. These count
 retired-to-ready restorations, not ordinary ready-cache hits, new uploads or GPU
@@ -319,3 +319,37 @@ map100 three times at an exactly full animation budget, assert clip/map/outline
 object identity and zero graphic-file reads, and require the latest fence before
 final release. Progressive reuse is also tested with zero free budget and with an
 unrelated decoder reservation still active.
+
+## Scene animation admission
+
+Map and animation-preview scenes plan their complete animation working set from
+metadata before acquiring clips (and before loading the map). Invalid metadata or
+a set larger than the hard animation budget fails explicitly without allocating
+animation pixels. This budget covers animations, not map textures or driver VRAM.
+
+Temporary pressure from old ready/retired allocations produces a loading state.
+The owner thread retries admission on subsequent updates; normal blank-frame
+submissions keep frame-fence completion advancing. Existing bounded maintenance
+collects completed allocations and retires unheld ready clips under pressure.
+A budget wait holds no decoded pixels or submitted upload. Metadata is not
+replanned on every waiting frame. Already acquired clips remain strongly owned
+until entry finishes, is restarted, or is cancelled by a scene change.
+
+The map scene publishes its player only after all sixteen directional clips are
+ready; the preview publishes both sprites together. Movement and animation updates
+are skipped while waiting. SceneLoadProgress exposes completed/total clips and
+required animation bytes, and the window title shows loading progress. Reports add
+scene_loading, scene_load_completed and scene_load_total; loading frames are
+excluded from gameplay FPS samples. Benchmark startup retains its existing path.
+
+This is frame-driven capacity admission, not fully asynchronous scene loading:
+map parsing, successful synchronous clip decode/upload and map upload can still
+stall a frame. External owners can pin enough resources to keep a scene waiting;
+disabled pressure eviction can also prevent progress. No timeout forcibly frees
+live resources. Exit cancels the wait and releases partial ownership; GPU lifetime
+still follows acknowledged submissions and shutdown ordering.
+
+Headless tests cover whole-set admission, overflow, duplicate requests, partial
+ownership and exception cleanup. Vulkan lifecycle tests cover waiting for old
+frames, movement suppression, 15/16-clip restart/cancellation, impossible budgets
+before map allocation, and atomic preview sprite publication.
