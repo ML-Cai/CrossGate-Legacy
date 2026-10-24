@@ -10,6 +10,7 @@
 
 #include <vulkan/vulkan_core.h>
 #include <string>
+#include <atomic>
 #include <memory>
 #include <vector>
 #include <filesystem>
@@ -51,6 +52,12 @@ class Device : public cgl::graphics::IDevice  {
         VkDebugUtilsMessageSeverityFlagBitsEXT severityFlag,
         VkDebugUtilsMessageTypeFlagsEXT typeFlag,
         const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData);
+
+    // Counts validation errors, including repeated identical messages. General
+    // loader diagnostics (e.g. stale layer manifests) are tracked by the logger.
+    uint64_t validationErrorCount() const noexcept {
+        return validationErrors_.load(std::memory_order_relaxed);
+    }
 
     VkSurfaceKHR surface() const { return surface_; }
 
@@ -106,6 +113,7 @@ class Device : public cgl::graphics::IDevice  {
                             VkShaderModule*              pModule);
 
  private:
+    std::atomic<uint64_t> validationErrors_{0};
     bool enableDebug_;
     std::string last_error_;
     VkInstance instance_;

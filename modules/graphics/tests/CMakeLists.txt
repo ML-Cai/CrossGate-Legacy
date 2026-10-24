@@ -16,7 +16,12 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
     set_target_properties(${EXE_NAME} PROPERTIES FOLDER "tests")
     set_target_properties(${EXE_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 
-    gtest_discover_tests(${EXE_NAME} WORKING_DIRECTORY ${CGL_BIN_PATH}
-        PROPERTIES LABELS "desktop" TIMEOUT 60 RESOURCE_LOCK cgl_desktop)
+    if(EXE_NAME STREQUAL "test_validation_diagnostics")
+        gtest_discover_tests(${EXE_NAME} WORKING_DIRECTORY ${CGL_BIN_PATH}
+            PROPERTIES LABELS "unit\;memory" TIMEOUT 60)
+    else()
+        gtest_discover_tests(${EXE_NAME} WORKING_DIRECTORY ${CGL_BIN_PATH}
+            PROPERTIES LABELS "desktop" TIMEOUT 60 RESOURCE_LOCK cgl_desktop)
+    endif()
     message(STATUS "Add test ${EXE_NAME}")
 endforeach()
