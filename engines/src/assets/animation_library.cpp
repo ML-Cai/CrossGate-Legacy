@@ -36,29 +36,9 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
     graphics::IDevice* device,graphics::IRenderPass* pass,bool backgroundDecode) {
     if(!device || !pass || (device_ && device_!=device) || (pass_ && pass_!=pass))
         throw std::invalid_argument("Animation library requires one live device/render pass");
-    if(!collectDiscardedDecode()) return nullptr;
     if(auto found=findOrRestore(request)) {
         if(loadStarted_ && loadStarted_->request==request && !decodeRequest_ && !pending_) finishLoadTiming();
         return found;
-    }
-    if(decodeRequest_) {
-        if(decodeReaders_!=&readers) throw std::invalid_argument("Cannot change readers during background decode");
-        auto result=decoder_.tryTake();
-        if(!result) return nullptr;
-        const auto completed=*decodeRequest_;decodeRequest_.reset();decodeReaders_=nullptr;
-        if(loadStarted_) loadStarted_->cpuMs+=result->cpuMs;
-        if(result->error) {
-            try {std::rethrow_exception(result->error);}
-            catch(const AnimationBudgetExceeded& error) {
-                try {deferBudget(completed,error.requiredBytes);} catch(...) {++failedLoads_;loadStarted_.reset();throw;}
-                return nullptr;
-            }
-            catch(...) {++failedLoads_;loadStarted_.reset();throw;}
-        }
-        try {pending_=std::pair{completed,uploadClip(completed,std::move(result->pixels),device,pass,true)};}
-        catch(...) {++failedLoads_;loadStarted_.reset();throw;}
-        if(loadStarted_) loadStarted_->uploadStart=Clock::now();
-        return nullptr; // First upload chunk was just submitted. Never poll twice.
     }
     if(pending_) {
         const auto status=pending_->second->renderer->pollUpload();
@@ -73,6 +53,27 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
         }
         return nullptr; // Do not start another submission in this same call.
     }
+    if(!collectDiscardedDecode()) return nullptr;
+    if(decodeRequest_) {
+        if(decodeReaders_!=&readers) throw std::invalid_argument("Cannot change readers during background decode");
+        auto result=decoder_.tryTake();
+        if(!result) return nullptr;
+        const auto completed=*decodeRequest_;decodeRequest_.reset();decodeReaders_=nullptr;
+        if(preparedStarted_) {loadStarted_=std::move(preparedStarted_);preparedStarted_.reset();}
+        if(loadStarted_) loadStarted_->cpuMs+=result->cpuMs;
+        if(result->error) {
+            try {std::rethrow_exception(result->error);}
+            catch(const AnimationBudgetExceeded& error) {
+                try {deferBudget(completed,error.requiredBytes);} catch(...) {++failedLoads_;loadStarted_.reset();throw;}
+                return nullptr;
+            }
+            catch(...) {++failedLoads_;loadStarted_.reset();throw;}
+        }
+        try {pending_=std::pair{completed,uploadClip(completed,std::move(result->pixels),device,pass,true)};}
+        catch(...) {++failedLoads_;loadStarted_.reset();throw;}
+        if(loadStarted_) loadStarted_->uploadStart=Clock::now();
+        return nullptr; // First upload chunk was just submitted. Never poll twice.
+    }
     if(budgetWait_) {
         if(budgetWait_->request!=request) budgetWait_.reset();
         else if(remainingBytes()<budgetWait_->requiredBytes) {++budgetDeferrals_;return nullptr;}
@@ -84,12 +85,8 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
         // The occupied slot prevents concurrent admissions, even at zero bytes.
         if(loadStarted_ && loadStarted_->request!=request) cancelLoadTiming();
         if(!loadStarted_) loadStarted_=StartedLoad{request,Clock::now()};
-        if(!decoder_.submitPlanned([this,&readers,request](const auto& cancelled) {
-            return builder_.requiredBytes(request,readers,&cancelled);
-        },[this,&readers,request](uint64_t required,const auto& cancelled) {
-            return builder_.build(request,readers,required,&cancelled);
-        },available)) throw std::logic_error("Decoder slot unexpectedly occupied");
-        decodeRequest_=request;decodeReaders_=&readers;device_=device;pass_=pass;
+        if(!submitDecode(request,readers,available)) throw std::logic_error("Decoder slot unexpectedly occupied");
+        device_=device;pass_=pass;
         return nullptr;
     }
     try {
@@ -97,6 +94,32 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
         pending_=std::pair{request,std::move(clip)};
     } catch(const AnimationBudgetExceeded& error) {deferBudget(request,error.requiredBytes);}
     return nullptr;
+}
+bool AnimationLibrary::submitDecode(const AnimationRequest& request,component::AssetsReaderState& readers,uint64_t available) {
+    if(!decoder_.submitPlanned([this,&readers,request](const auto& cancelled) {
+        return builder_.requiredBytes(request,readers,&cancelled);
+    },[this,&readers,request](uint64_t required,const auto& cancelled) {
+        return builder_.build(request,readers,required,&cancelled);
+    },available)) return false;
+    decodeRequest_=request;decodeReaders_=&readers;return true;
+}
+bool AnimationLibrary::prepareNext(const AnimationRequest& request,component::AssetsReaderState& readers) {
+    if(!pending_ || pending_->first==request || !collectDiscardedDecode() || decodeRequest_ || findOrRestore(request)) return false;
+    const auto uploading=uploadBytes();
+    if(uploading>=AnimationDecodeWorker::MaxBytes) return false;
+    const auto available=std::min(remainingBytes(),AnimationDecodeWorker::MaxBytes-uploading);
+    if(!available) return false;
+    if(!submitDecode(request,readers,available)) return false;
+    budgetWait_.reset();preparedStarted_=StartedLoad{request,Clock::now()};return true;
+}
+void AnimationLibrary::discardPrepared() noexcept {
+    cancelPreparedTiming();
+    if(!pending_) cancelLoadTiming();
+    budgetWait_.reset();
+    if(decodeRequest_ && !decodeDiscarding_) {
+        decoder_.requestCancel();decodeDiscarding_=true;++discardedDecodes_;
+    }
+    collectDiscardedDecode();
 }
 std::shared_ptr<const AnimationClip> AnimationLibrary::buildClip(
     const AnimationRequest& request,component::AssetsReaderState& readers,
@@ -133,11 +156,7 @@ bool AnimationLibrary::collectDiscardedDecode() noexcept {
 }
 bool AnimationLibrary::discardUnsubmitted() noexcept {
     if(pending_) return false;
-    cancelLoadTiming();budgetWait_.reset();
-    if(decodeRequest_ && !decodeDiscarding_) {
-        decoder_.requestCancel();decodeDiscarding_=true;++discardedDecodes_;
-    }
-    collectDiscardedDecode();return true;
+    discardPrepared();return true;
 }
 void AnimationLibrary::maintainStreaming(uint64_t submitted,uint64_t completed,bool allowEviction) {
     collectDiscardedDecode();
@@ -157,7 +176,7 @@ void AnimationLibrary::maintainStreaming(uint64_t submitted,uint64_t completed,b
     pressureCooldown_=15;
 }
 uint64_t AnimationLibrary::remainingBytes() const {
-    const auto cachedBytes=clips_.bytes()+retired_.bytes();
+    const auto cachedBytes=clips_.bytes()+retired_.bytes()+pendingBytes();
     if(cachedBytes>textureBudget_) throw std::runtime_error("Animation cache exceeds texture budget");
     return textureBudget_-cachedBytes;
 }

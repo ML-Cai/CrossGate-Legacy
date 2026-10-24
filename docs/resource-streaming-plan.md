@@ -1,15 +1,16 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #71 (validated basic presentation flow and fixture cleanup).
+Current base: merged PR #72 (bounded appearance-miss telemetry and censored outcomes).
 This is an estimate of independently reviewable changes, not a claim that the
 remaining features already exist. Each PR must run on its merged develop base.
 
 | Priority | PR scope | Required validation |
 | --- | --- | --- |
-| Current | Observe complete appearance-miss latency, queued/deferred/loading phases, visible waiting, pending ages and censored outcomes | Deterministic windowless clocks; bounded rings/current demand; sharing, promotion, withdrawals/failures/reentry/reset; native blocked-request recovery; full normal/ASan and identical churn traces |
-| Next | Profile eligible queue waiting (busy service slot versus another request blocked on global capacity); evaluate bounded preparation/upload overlap before choosing visible-residency changes | Same routes and miss outcomes; exact ready/retired/pending accounting; cancellation/scene exit; queued and visible tail latency together with FPS; no unbounded parallel jobs |
+| Current | Overlap one bounded CPU preparation with one GPU upload, preserving total working allowance, admission and cancellation | Exact two-slot accounting; zero-byte metadata cancellation; upload progress while CPU drains; snapshot replacement; normal/ASan and identical native churn traces |
+| Next | Use overlap measurements to decide whether resource policy needs more work before rendering changes | Completed and censored miss outcomes, visible coverage, tail frames and budget pressure together; do not infer capacity from dedicated VRAM size alone |
 
-Resource work is estimated at **1-2 PRs including the current change**. Existing
+Resource work is estimated at **1-2 PRs including the current change**, depending on
+the measured outcome of bounded overlap. Existing
 visible owners remain held; no quality/eviction rule changes in the current PR.
 Do not add repeated uploads just to show more distinct clips without measuring
 visible latency, unresolved demand and frame costs together. Metrics report only
@@ -41,3 +42,8 @@ Later architecture work stays separate: ECS reference safety, CPU-only public AP
 and Python bindings, and UI input consumption/focus. Android/Linux platform
 lifecycle and surface integration require their own concrete requirements and
 validation; Vulkan support alone does not complete either port.
+
+The bounded preparation implementation and reproducible measurements are recorded in
+[bounded animation preparation validation](bounded-animation-preparation-validation.md).
+It adds no workers or unbounded queue, and keeps the combined CPU preparation/upload
+RGBA allowance at 32 MiB rather than granting each slot 32 MiB independently.
