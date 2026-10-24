@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "telemetry/frame_telemetry.h"
+#include "telemetry/load_telemetry.h"
 #include "benchmark/crowd_benchmark.h"
 #include <limits>
 TEST(FrameTelemetry, EmptyWindowAndInvalidInputs) {
@@ -37,4 +38,16 @@ TEST(FrameTelemetry, WindowContainsLatestValuesAfterWrap) {
     for(int i=1;i<=600;++i) frames.add({double(i)});
     const auto s=frames.summary();
     EXPECT_DOUBLE_EQ(s.meanMs,(89+600)/2.0);EXPECT_DOUBLE_EQ(s.p50Ms,344);EXPECT_DOUBLE_EQ(s.maxMs,600);
+}
+
+TEST(LoadTelemetry, RejectsInvalidSamplesAndSeparatesLifetimeCountFromBoundedWindow) {
+    cgl::LoadTelemetry telemetry;
+    EXPECT_EQ(telemetry.summary().completed,0);EXPECT_EQ(telemetry.summary().count,0);
+    EXPECT_FALSE(telemetry.add({-1,0,0}));EXPECT_FALSE(telemetry.add({1,std::numeric_limits<double>::infinity(),0}));
+    EXPECT_FALSE(telemetry.add({1,0,std::numeric_limits<double>::quiet_NaN()}));
+    for(int i=1;i<=258;++i) ASSERT_TRUE(telemetry.add({double(i),i*.25,i*.5}));
+    const auto summary=telemetry.summary();EXPECT_EQ(summary.count,256);EXPECT_EQ(summary.completed,258);
+    EXPECT_DOUBLE_EQ(summary.meanMs,130.5);EXPECT_DOUBLE_EQ(summary.p95Ms,246);EXPECT_DOUBLE_EQ(summary.p99Ms,256);
+    EXPECT_DOUBLE_EQ(summary.maxMs,258);EXPECT_DOUBLE_EQ(summary.cpuMeanMs,32.625);EXPECT_DOUBLE_EQ(summary.uploadWaitMeanMs,65.25);
+    telemetry.clear();EXPECT_EQ(telemetry.summary().completed,0);EXPECT_EQ(telemetry.summary().count,0);
 }

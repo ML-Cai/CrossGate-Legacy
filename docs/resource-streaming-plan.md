@@ -1,19 +1,18 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #65 (frame-driven scene animation admission).
+Current base: merged PR #66 (visible-demand scheduling and nonblocking CPU cancellation).
 This is an estimate of independently reviewable changes, not a claim that the
 remaining features already exist. Each PR must run on its merged develop base.
 
 | Priority | PR scope | Required validation |
 | --- | --- | --- |
-| Current | Visible/prefetch scheduling, same-region aging and nonblocking stale CPU-work discard | Bounded current demand; no early reservation credit or stale upload; stable active work; full normal/ASan and native regression |
-| Next | Streaming measurements and admission refinement: exact metadata reservations, per-request latency, sustained churn, configurable demo budgets and low-budget cases | Warm/cold FPS p95/p99/max, cancellation/latency distributions, pending/retired plateaus, repeated teardown, separately measured process memory and GPU residency |
+| Current | Exact worker-side metadata reservation and bounded background-load latency diagnostics | Zero-byte occupied-slot safety; budget snapshot/shrink rules; cancellation/error cleanup; real Vulkan payload accounting; full normal/ASan and native regression |
+| Next | Sustained movement/churn harness, configurable demo budgets and over-budget display policy | Warm/cold FPS p95/p99/max, request/demand latency distinction, cancellation distributions, pending/retired plateaus, repeated teardown, separately measured process memory and GPU residency |
 
 Resource work is estimated at **2-3 PRs including the current change**.
-The scheduler ownership change is separate from metadata reservation and sustained
-churn measurement. Existing correctness tests are not substitutes for sustained
-churn measurements; measurements and reservation refinement can split if the next
-PR grows too large.
+Admission/timing is separated from sustained churn measurement and the visible
+working-set fallback policy. Existing correctness tests do not replace sustained
+measurements; the next scope may split if the fallback needs a larger design.
 The present LRU policy scans/sorts the cache when pressure scans are due. Profile
 that cost before replacing it with a persistent/incremental LRU structure. Count
 limits are not CPU-time guarantees, and map loading is still synchronous.

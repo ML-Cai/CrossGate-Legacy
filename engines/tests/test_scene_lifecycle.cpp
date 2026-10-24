@@ -586,8 +586,8 @@ TEST_F(DesktopSceneTest, ColdCrowdPublishesClipsAndCanExitWithPendingResources) 
     b.UniqueCharacters=20; // Force uncached work beyond the warmed four-clip set.
     scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);
     ASSERT_LT(benchmark->unique,20);
-    for(int i=0;i<20 && !library_.pendingBytes();++i) manager_.update(&world_);
-    EXPECT_GT(library_.pendingBytes(),0); // CPU running/ready or GPU upload, never published yet.
+    for(int i=0;i<20 && !library_.streamingPending();++i) manager_.update(&world_);
+    EXPECT_TRUE(library_.streamingPending()); // Metadata can occupy the slot with zero RGBA.
     world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice->waitIdle();
     cgl::SceneManagerDestroySystem{}.update(&world_);
     size_t remaining=0;world_.forEach<cgl::component::CrowdActor>([&](auto,auto*){++remaining;});
@@ -607,7 +607,7 @@ TEST_F(DesktopSceneTest, ProgressiveLibraryDeduplicatesBoundsAndCancelsPendingUp
     EXPECT_EQ(progressive.acquireProgressive(request,readers,device,pass),nullptr);
     cgl::component::AssetsReaderState otherReaders{};
     EXPECT_THROW(progressive.acquireProgressive(request,otherReaders,device,pass),std::invalid_argument);
-    ASSERT_GT(progressive.pendingBytes(),0);EXPECT_LE(progressive.pendingBytes(),32*1024*1024);
+    ASSERT_TRUE(progressive.cpuPending());EXPECT_LE(progressive.pendingBytes(),32*1024*1024);
     EXPECT_EQ(progressive.usage().clips,0);EXPECT_EQ(progressive.usage().pendingBytes,progressive.pendingBytes());
     EXPECT_THROW(progressive.setTextureBudget(1),std::invalid_argument);
     std::shared_ptr<const cgl::AnimationClip> clip;
@@ -620,7 +620,7 @@ TEST_F(DesktopSceneTest, ProgressiveLibraryDeduplicatesBoundsAndCancelsPendingUp
     EXPECT_EQ(progressive.acquireProgressive(request,readers,device,pass),clip);
     const cgl::AnimationRequest next{100000,0,1};
     EXPECT_EQ(progressive.acquireProgressive(next,readers,device,pass),nullptr);
-    ASSERT_GT(progressive.pendingBytes(),0);
+    ASSERT_TRUE(progressive.cpuPending());
     progressive.cancelPending();EXPECT_EQ(progressive.pendingBytes(),0);
     EXPECT_EQ(progressive.acquireProgressive(next,readers,device,pass),nullptr);
     progressive.clear();EXPECT_EQ(progressive.pendingBytes(),0);
@@ -771,7 +771,7 @@ TEST_F(DesktopSceneTest, IdleCacheTrimWaitsForDrawsPreservesPinsAndReloads) {
         EXPECT_GT(cache.trimUnused(0),0);EXPECT_TRUE(weak.expired());EXPECT_EQ(cache.usage().clips,1);
     }
     EXPECT_EQ(cache.acquireProgressive({100000,2,0},readers,device,pass),nullptr);
-    EXPECT_GT(cache.pendingBytes(),0);EXPECT_EQ(cache.trimUnused(0),0);EXPECT_GT(cache.pendingBytes(),0);
+    EXPECT_TRUE(cache.cpuPending());EXPECT_EQ(cache.trimUnused(0),0);EXPECT_TRUE(cache.cpuPending());
     cache.cancelPending();std::weak_ptr<const cgl::AnimationClip> pinned=pin;pin.reset();
     EXPECT_GT(cache.trimUnused(0),0);EXPECT_TRUE(pinned.expired());EXPECT_EQ(cache.usage().rgbaBytes,0);
     EXPECT_EQ(cache.usage().evictions,4);cache.clear();
@@ -1104,13 +1104,18 @@ TEST_F(DesktopSceneTest, ProgressiveReuseAtFullBudgetPreservesOtherPendingDecode
     ASSERT_GT(library_.retireUnused(0,sync->progress.submitted),0);
     EXPECT_THROW(library_.acquire(request,readers,nullptr,pass),std::invalid_argument);
     EXPECT_EQ(library_.usage().reusedClips,0);EXPECT_FALSE(weak.expired());
-    EXPECT_EQ(library_.acquireProgressive(other,readers,device,pass),nullptr);ASSERT_TRUE(library_.waitingForBudget());
+    while(!library_.waitingForBudget() && std::chrono::steady_clock::now()<deadline) {
+        EXPECT_EQ(library_.acquireProgressive(other,readers,device,pass),nullptr);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(library_.waitingForBudget());
     auto restored=library_.acquireProgressive(request,readers,device,pass);
     ASSERT_NE(restored,nullptr);EXPECT_EQ(restored.get(),address);
     EXPECT_EQ(library_.usage().rgbaBytes,bytes);EXPECT_EQ(library_.usage().retiredBytes,0);
     EXPECT_EQ(library_.pendingBytes(),0);EXPECT_TRUE(library_.waitingForBudget());
     restored.reset();library_.setTextureBudget(bytes+32ull*1024*1024);
     EXPECT_EQ(library_.acquireProgressive(other,readers,device,pass),nullptr);
+    while(!library_.pendingBytes() && std::chrono::steady_clock::now()<deadline) std::this_thread::sleep_for(std::chrono::milliseconds(1));
     const auto pending=library_.pendingBytes();ASSERT_GT(pending,0);
     library_.retireUnused(0,sync->progress.submitted);
     restored=library_.acquireProgressive(request,readers,device,pass);
@@ -1252,7 +1257,7 @@ TEST_F(DesktopSceneTest, RemoteVisibleDemandDiscardsPrefetchCpuWorkBeforeAnyUplo
     const auto outer=cgl::ScreenToMap({-100,300},camera,viewport);
     remote.apply(world_,{1,{{1,outer,0}}},placeholder);
     remote.update(world_,library_,readers,device,pass,camera,viewport);
-    ASSERT_GT(library_.pendingBytes(),0);ASSERT_FALSE(library_.uploadPending());
+    ASSERT_TRUE(library_.cpuPending());ASSERT_FALSE(library_.uploadPending());
     remote.apply(world_,{2,{{1,outer,0},{2,{10,10},1}}},placeholder);
     remote.update(world_,library_,readers,device,pass,camera,viewport);
     EXPECT_EQ(library_.discardedDecodes(),1);EXPECT_EQ(library_.findReady(prefetch),nullptr);
@@ -1271,12 +1276,12 @@ TEST_F(DesktopSceneTest, RemoteVisibleDemandDiscardsPrefetchCpuWorkBeforeAnyUplo
         remote.update(world_,library_,readers,device,pass,camera,viewport);
         remote.apply(world_,{++i,{}},placeholder);
         remote.update(world_,library_,readers,device,pass,camera,viewport);
-        while(library_.pendingBytes() && std::chrono::steady_clock::now()<deadline) {
+        while(library_.streamingPending() && std::chrono::steady_clock::now()<deadline) {
             library_.maintainStreaming(0,0);std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         ASSERT_EQ(library_.pendingBytes(),0);
     }
-    while(library_.pendingBytes() && std::chrono::steady_clock::now()<deadline) {
+    while(library_.streamingPending() && std::chrono::steady_clock::now()<deadline) {
         library_.maintainStreaming(0,0);std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     EXPECT_EQ(library_.pendingBytes(),0);EXPECT_EQ(library_.findReady(prefetch),nullptr);
@@ -1299,4 +1304,75 @@ TEST_F(DesktopSceneTest, NonblockingDiscardNeverCancelsSubmittedGpuUpload) {
     }
     ASSERT_NE(clip,nullptr);EXPECT_EQ(cache.pendingBytes(),0);EXPECT_EQ(cache.usage().clips,1);
     device->waitIdle();clip.reset();cache.clear();EXPECT_EQ(cache.usage().clips,0);
+}
+
+TEST_F(DesktopSceneTest, BackgroundMetadataKeepsZeroByteSlotAndCancelsWithoutOwnerWait) {
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    cgl::AnimationLibrary cache;
+    {
+        // The owner holds reader access; background metadata must not block it.
+        std::unique_lock held(*readers.queryMutex);
+        EXPECT_EQ(cache.acquireProgressive({100000,0,0},readers,device,pass),nullptr);
+        ASSERT_TRUE(cache.cpuPending());EXPECT_EQ(cache.pendingBytes(),0);
+        EXPECT_EQ(cache.acquireProgressive({100000,1,0},readers,device,pass),nullptr);
+        EXPECT_THROW(cache.setTextureBudget(cache.usage().budgetBytes-1),std::invalid_argument);
+        EXPECT_TRUE(cache.discardUnsubmitted());EXPECT_EQ(cache.pendingBytes(),0);
+        EXPECT_EQ(cache.loadTimings().completed,0);EXPECT_EQ(cache.cancelledLoads(),1);
+    }
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
+    while(cache.cpuPending() && std::chrono::steady_clock::now()<deadline) {
+        cache.maintainStreaming(0,0);std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    EXPECT_FALSE(cache.cpuPending());EXPECT_EQ(cache.pendingBytes(),0);EXPECT_EQ(cache.usage().clips,0);EXPECT_EQ(cache.failedLoads(),0);
+}
+TEST_F(DesktopSceneTest, BackgroundDecodeReservesExactRgbaAndRecordsOnlySuccessfulReadiness) {
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    const cgl::AnimationRequest request{100000,0,0};cgl::AnimationBuilder planner;
+    const auto required=planner.requiredBytes(request,readers);ASSERT_LT(required,cgl::AnimationDecodeWorker::MaxBytes);
+    cgl::AnimationLibrary cache;cache.setTextureBudget(required);
+    EXPECT_EQ(cache.acquireProgressive(request,readers,device,pass),nullptr);
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while(!cache.pendingBytes() && std::chrono::steady_clock::now()<deadline) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ASSERT_TRUE(cache.cpuPending());ASSERT_EQ(cache.pendingBytes(),required);EXPECT_FALSE(cache.uploadPending());
+    EXPECT_EQ(cache.loadTimings().completed,0);
+    std::shared_ptr<const cgl::AnimationClip> clip;
+    while(!clip && std::chrono::steady_clock::now()<deadline) {
+        clip=cache.acquireProgressive(request,readers,device,pass);
+        EXPECT_LE(cache.usage().rgbaBytes+cache.pendingBytes()+cache.usage().retiredBytes,required);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(clip,nullptr);EXPECT_EQ(cache.pendingBytes(),0);EXPECT_FALSE(cache.cpuPending());
+    EXPECT_EQ(cache.usage().rgbaBytes,required);const auto times=cache.loadTimings();
+    EXPECT_EQ(times.completed,1);EXPECT_EQ(times.count,1);EXPECT_GT(times.meanMs,0);
+    EXPECT_GE(times.meanMs,times.cpuMeanMs);EXPECT_GT(times.uploadWaitMeanMs,0);
+    EXPECT_EQ(cache.acquireProgressive(request,readers,device,pass),clip);EXPECT_EQ(cache.loadTimings().completed,1);
+    EXPECT_EQ(cache.cancelledLoads(),0);EXPECT_EQ(cache.failedLoads(),0);
+    cache.cancelPending();EXPECT_EQ(cache.cancelledLoads(),0); // No active load to cancel.
+    device->waitIdle();clip.reset();cache.clear();EXPECT_EQ(cache.loadTimings().completed,0);
+}
+TEST_F(DesktopSceneTest, BackgroundInsufficientTotalBudgetFailsBeforeAnyPixelRead) {
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    const auto version=cgl::CrossGateVersion::CG_VERSION_Classic;
+    const auto before=readers.pGfxDataReader[version]->cacheStatistics().fileReadCalls;
+    cgl::AnimationLibrary cache;cache.setTextureBudget(1);bool failed=false;
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
+    while(!failed && std::chrono::steady_clock::now()<deadline) {
+        try {EXPECT_EQ(cache.acquireProgressive({100000,0,0},readers,device,pass),nullptr);}
+        catch(const std::runtime_error&) {failed=true;}
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(failed);EXPECT_EQ(cache.failedLoads(),1);EXPECT_EQ(cache.cancelledLoads(),0);
+    EXPECT_EQ(cache.loadTimings().completed,0);EXPECT_EQ(cache.pendingBytes(),0);EXPECT_FALSE(cache.cpuPending());
+    EXPECT_EQ(cache.usage().clips,0);EXPECT_FALSE(cache.waitingForBudget());
+    EXPECT_EQ(readers.pGfxDataReader[version]->cacheStatistics().fileReadCalls,before);
+    cache.cancelPending();EXPECT_EQ(cache.cancelledLoads(),0);
 }

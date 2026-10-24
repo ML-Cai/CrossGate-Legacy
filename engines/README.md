@@ -452,3 +452,10 @@ within each region, and retains only current snapshot demand. Stale CPU decode o
 prefetch displaced by visible work is cooperatively discarded without blocking
 updates. Its reservation stays charged until CPU completion. Submitted GPU uploads
 finish normally; scene exit retains the blocking cleanup/lifetime boundary.
+
+Background animation loads plan metadata on the worker before reserving the exact
+RGBA payload. A metadata slot can be occupied with zero pending bytes; use CPU/
+streaming pending state for cleanup. Budget shrink is rejected while CPU admission
+is outstanding. Background load wall-time telemetry separates successful rolling
+latencies from cancellation/failure counts; it does not measure server-demand or
+GPU-timestamp latency. See docs/build-and-test.md for field definitions.

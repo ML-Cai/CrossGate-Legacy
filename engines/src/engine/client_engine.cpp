@@ -215,6 +215,7 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
     auto emitTelemetry=[&](std::ostream& out) {
         const auto summary=telemetry->frames.summary();
         const auto animations=animationLibrary_.usage();const auto maps=mapLibrary_.usage();
+        const auto loads=animationLibrary_.loadTimings();
         const auto* swap=pRenderDevState_->pSwapchain.get();
         const auto* loading=pEcs->getSingleton<cgl::component::SceneLoadProgress>();
         out << "{\n\"status\":\"" << (anyStateError()?"scene_error":"complete") << "\","
@@ -235,6 +236,12 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             << ",\"animation_retired_clips\":" << animations.retiredClips
             << ",\"animation_reused_clips\":" << animations.reusedClips
             << ",\"map_reuses\":" << maps.reusedMaps << ",\"outline_reuses\":" << maps.reusedOutlines
+            << ",\"animation_cpu_pending\":" << (animationLibrary_.cpuPending()?"true":"false")
+            << ",\"animation_load_samples\":" << loads.count << ",\"animation_load_completed\":" << loads.completed
+            << ",\"animation_load_mean_ms\":" << loads.meanMs << ",\"animation_load_p95_ms\":" << loads.p95Ms
+            << ",\"animation_load_p99_ms\":" << loads.p99Ms << ",\"animation_load_max_ms\":" << loads.maxMs
+            << ",\"animation_cpu_service_mean_ms\":" << loads.cpuMeanMs << ",\"animation_upload_wait_mean_ms\":" << loads.uploadWaitMeanMs
+            << ",\"animation_load_cancelled\":" << animationLibrary_.cancelledLoads() << ",\"animation_load_failed\":" << animationLibrary_.failedLoads()
             << ",\"animation_discarded_decodes\":" << animationLibrary_.discardedDecodes()
             << ",\"animation_budget_deferrals\":" << animations.budgetDeferrals
             << ",\"animation_waiting_for_budget\":" << (animations.waitingForBudget?"true":"false")
