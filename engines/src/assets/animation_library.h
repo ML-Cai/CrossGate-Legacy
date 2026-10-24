@@ -26,13 +26,19 @@ public:
     std::shared_ptr<const AnimationClip> acquire(const AnimationRequest& request,
         component::AssetsReaderState& readers, graphics::IDevice* device, graphics::IRenderPass* pass);
     // Serialized render-thread path: returns nullptr until upload completion.
-    // At most one pending clip (<=32 MiB decoded RGBA, <=4 MiB staging).
+    // One GPU upload plus one optional CPU preparation; combined RGBA <=32 MiB,
+    // with <=4 MiB staging. Both reservations count against the texture budget.
     // Different requests return nullptr while that slot is occupied; retry later.
     // Background metadata/decode is enabled by default; poll once per frame.
     // Metadata occupies the slot with zero pixel bytes; cpuPending is authoritative.
     // Reader storage must outlive clear()/destruction. All GPU work stays here.
     std::shared_ptr<const AnimationClip> acquireProgressive(const AnimationRequest& request,
         component::AssetsReaderState& readers, graphics::IDevice* device, graphics::IRenderPass* pass, bool backgroundDecode=true);
+    // Optional owner-thread lookahead while another clip uploads. Never submits GPU
+    // work. One worker slot, no queue; false means no slot/room or already cached.
+    bool prepareNext(const AnimationRequest& request,component::AssetsReaderState& readers);
+    // Nonblocking CPU-only cancellation, including lookahead during an upload.
+    void discardPrepared() noexcept;
     // Scene entry may defer synchronous acquisition while older ownership occupies
     // capacity. It supports the normal 256 MiB clip limit, without a worker job.
     std::shared_ptr<const AnimationClip> acquireForScene(const AnimationRequest& request,
@@ -41,8 +47,7 @@ public:
         return clips_.find(request);
     }
     uint64_t pendingBytes() const noexcept {
-        if(!pending_) return decoder_.reservedBytes();
-        const auto& c=pending_->second;return uint64_t(c->width)*c->height*c->frameCount*4;
+        return uploadBytes()+decoder_.reservedBytes();
     }
     struct Usage {size_t clips=0;uint64_t rgbaBytes=0,pendingBytes=0,budgetBytes=0,evictions=0,evictedBytes=0,retiredBytes=0;size_t retiredClips=0;uint64_t budgetDeferrals=0;bool waitingForBudget=false;uint64_t reusedClips=0;};
     Usage usage() const noexcept {
@@ -58,7 +63,7 @@ public:
     uint64_t cancelledLoads() const noexcept {return cancelledLoads_;}
     uint64_t failedLoads() const noexcept {return failedLoads_;}
     // Cancellation/scene exit can wait for the one already-submitted chunk.
-    void cancelPending() noexcept { cancelLoadTiming();budgetWait_.reset(); decoder_.cancel(); decodeDiscarding_=false; decodeRequest_.reset(); decodeReaders_=nullptr; pending_.reset(); builder_.clear(); }
+    void cancelPending() noexcept { cancelLoadTiming();cancelPreparedTiming();budgetWait_.reset(); decoder_.cancel(); decodeDiscarding_=false; decodeRequest_.reset(); decodeReaders_=nullptr; pending_.reset(); builder_.clear(); }
     // A running metadata/decode job uses an admission snapshot: shrinking waits
     // until the CPU slot is collected/cancelled. Increasing is safe (retry if needed).
     void setTextureBudget(uint64_t bytes) {
@@ -97,7 +102,7 @@ public:
     void maintainStreaming(uint64_t submitted,uint64_t completed,bool allowEviction=true);
     // Release scene/entity references and wait for GPU work before clearing.
     void clear() noexcept {
-        loadStarted_.reset();loadTimings_.clear();cancelledLoads_=failedLoads_=0;
+        loadStarted_.reset();preparedStarted_.reset();loadTimings_.clear();cancelledLoads_=failedLoads_=0;
         budgetWait_.reset();budgetDeferrals_=0;pressureCooldown_=0;
         decoder_.stop(); decodeDiscarding_=false; discardedDecodes_=0; decodeRequest_.reset(); decodeReaders_=nullptr;
         pending_.reset(); // Waits for only its own submitted chunk, if any.
@@ -110,11 +115,17 @@ public:
 private:
     using Clock=std::chrono::steady_clock;
     struct StartedLoad {AnimationRequest request;Clock::time_point start,uploadStart{};double cpuMs=0;};
-    std::optional<StartedLoad> loadStarted_;
+    std::optional<StartedLoad> loadStarted_,preparedStarted_;
     LoadTelemetry loadTimings_;
     uint64_t cancelledLoads_=0,failedLoads_=0;
     void cancelLoadTiming() noexcept {if(loadStarted_) {++cancelledLoads_;loadStarted_.reset();}}
+    void cancelPreparedTiming() noexcept {if(preparedStarted_) {++cancelledLoads_;preparedStarted_.reset();}}
     void finishLoadTiming();
+    bool submitDecode(const AnimationRequest&,component::AssetsReaderState&,uint64_t available);
+    uint64_t uploadBytes() const noexcept {
+        if(!pending_) return 0;
+        const auto& c=pending_->second;return uint64_t(c->width)*c->height*c->frameCount*4;
+    }
     struct BudgetWait {AnimationRequest request;uint64_t requiredBytes;};
     std::optional<BudgetWait> budgetWait_;
     uint64_t budgetDeferrals_=0;

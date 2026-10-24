@@ -63,3 +63,13 @@ TEST(AppearanceScheduler, ExactFitAndSharedAppearanceUseOneBudgetRequirement) {
     EXPECT_EQ(s.size(),2);EXPECT_EQ(s.select(1,10),1);EXPECT_FALSE(s.select(1,9));
     EXPECT_EQ(s.select(1,11),2);
 }
+
+TEST(AppearanceScheduler, LookaheadExcludesUploadingKeyWithoutChangingAgeOrBudget) {
+    cgl::AppearanceScheduler s;
+    s.update({{1,0,1},{2,0,10},{3,1,0}},0,20);
+    EXPECT_EQ(s.select(1,20),1);EXPECT_EQ(s.select(1,20,1),2);
+    s.defer(2,21);EXPECT_EQ(s.select(2,20,1),3);
+    EXPECT_EQ(s.select(300,21,1),2);
+    EXPECT_EQ(s.select(301,21),1);EXPECT_EQ(s.size(),3);
+    EXPECT_FALSE(s.update({},302,21));EXPECT_FALSE(s.select(303,21,1));
+}

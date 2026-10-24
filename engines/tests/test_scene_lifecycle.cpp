@@ -1591,3 +1591,141 @@ TEST_F(DesktopSceneTest, BudgetBlockedVisibleClipDoesNotStarveSmallerVisibleClip
     remote.clear(world_);EXPECT_EQ(remote.budgetDeferred,0);library_.cancelPending();device->waitIdle();library_.collectRetired(UINT64_MAX);
     library_.trimUnused(baseline);EXPECT_EQ(library_.usage().rgbaBytes,baseline);
 }
+
+TEST_F(DesktopSceneTest, PreparedDecodeOverlapsUploadWithinCombinedReservation) {
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    const cgl::AnimationRequest first{100000,0,0},next{100000,1,0};
+    cgl::AnimationBuilder planner;
+    const auto a=planner.requiredBytes(first,readers),b=planner.requiredBytes(next,readers);
+    ASSERT_LE(a+b,cgl::AnimationDecodeWorker::MaxBytes);
+    cgl::AnimationLibrary cache;cache.setTextureBudget(a+b);
+    EXPECT_FALSE(cache.prepareNext(next,readers)); // Only overlap an existing upload.
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while(!cache.uploadPending() && std::chrono::steady_clock::now()<deadline) {
+        cache.acquireProgressive(first,readers,device,pass);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(cache.uploadPending());ASSERT_TRUE(cache.prepareNext(next,readers));
+    EXPECT_FALSE(cache.prepareNext(first,readers));EXPECT_FALSE(cache.prepareNext(next,readers));
+    while(cache.pendingBytes()!=a+b && std::chrono::steady_clock::now()<deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ASSERT_TRUE(cache.cpuPending());ASSERT_EQ(cache.pendingBytes(),a+b);
+    EXPECT_TRUE(cache.loading(first));EXPECT_TRUE(cache.loading(next));
+    EXPECT_THROW(cache.setTextureBudget(a+b-1),std::invalid_argument);
+    EXPECT_FALSE(cache.discardUnsubmitted()); // Submitted upload survives.
+    std::shared_ptr<const cgl::AnimationClip> one,two;
+    while(!two && std::chrono::steady_clock::now()<deadline) {
+        if(!one) one=cache.acquireProgressive(first,readers,device,pass);
+        else two=cache.acquireProgressive(next,readers,device,pass);
+        const auto u=cache.usage();EXPECT_LE(u.rgbaBytes+u.retiredBytes+u.pendingBytes,a+b);
+        EXPECT_LE(u.pendingBytes,cgl::AnimationDecodeWorker::MaxBytes);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(one,nullptr);ASSERT_NE(two,nullptr);EXPECT_NE(one,two);
+    EXPECT_EQ(cache.loadTimings().completed,2);
+    EXPECT_GE(cache.loadTimings().meanMs,cache.loadTimings().cpuMeanMs);
+    EXPECT_EQ(cache.failedLoads(),0);EXPECT_EQ(cache.cancelledLoads(),0);
+    EXPECT_FALSE(cache.streamingPending());EXPECT_EQ(cache.pendingBytes(),0);
+    device->waitIdle();one.reset();two.reset();cache.clear();
+    EXPECT_EQ(cache.usage().rgbaBytes,0);EXPECT_EQ(cache.pendingBytes(),0);
+}
+TEST_F(DesktopSceneTest, CancellingPreparedMetadataNeverBlocksOrCancelsUpload) {
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    const cgl::AnimationRequest first{100000,0,0},next{100000,1,0};
+    cgl::AnimationLibrary cache;cache.acquireProgressive(first,readers,device,pass,false);
+    const auto bytes=cache.pendingBytes();ASSERT_GT(bytes,0);
+    cache.setTextureBudget(bytes);EXPECT_FALSE(cache.prepareNext(next,readers)); // No free budget.
+    cache.setTextureBudget(bytes+32ull*1024*1024);
+    std::shared_ptr<const cgl::AnimationClip> one;
+    {
+        std::unique_lock held(*readers.queryMutex);
+        ASSERT_TRUE(cache.prepareNext(next,readers));EXPECT_EQ(cache.pendingBytes(),bytes);
+        cache.discardPrepared();EXPECT_FALSE(cache.loading(next));EXPECT_TRUE(cache.uploadPending());
+        EXPECT_FALSE(cache.discardUnsubmitted());
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+        while(!one && std::chrono::steady_clock::now()<deadline) {
+            one=cache.acquireProgressive(first,readers,device,pass);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        EXPECT_NE(one,nullptr); // Progress continues even if cancelled CPU access is draining.
+    }
+    cache.cancelPending();EXPECT_FALSE(cache.streamingPending());EXPECT_EQ(cache.pendingBytes(),0);
+    EXPECT_EQ(cache.cancelledLoads(),1);EXPECT_EQ(cache.discardedDecodes(),1);EXPECT_EQ(cache.failedLoads(),0);
+    EXPECT_EQ(cache.findReady(next),nullptr);
+    // Reuse after cancellation must not inherit its timing, result or reader plan.
+    std::shared_ptr<const cgl::AnimationClip> two;
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while(!two && std::chrono::steady_clock::now()<deadline) {
+        two=cache.acquireProgressive(next,readers,device,pass);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(two,nullptr);EXPECT_EQ(cache.loadTimings().completed,1);
+    device->waitIdle();one.reset();two.reset();cache.clear();EXPECT_EQ(cache.pendingBytes(),0);
+}
+
+TEST_F(DesktopSceneTest, ReplacedSnapshotDiscardsLookaheadButFinishesSubmittedAppearance) {
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    auto placeholder=library_.findReady({101406,0,5});ASSERT_NE(placeholder,nullptr);
+    const cgl::AnimationRequest first{100000,0,0},next{100000,1,0};
+    cgl::RemoteCharacters remote({first,next});
+    cgl::component::MapCamera camera;camera.center={10,10};const cgl::Viewport viewport{0,0,800,600};
+    remote.apply(world_,{1,{{1,{10,10},0},{2,{11,10},1}}},placeholder);
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while(!library_.uploadPending() && std::chrono::steady_clock::now()<deadline) {
+        remote.update(world_,library_,readers,device,pass,camera,viewport);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(library_.uploadPending());ASSERT_TRUE(library_.cpuPending());
+    ASSERT_TRUE(library_.loading(first));ASSERT_TRUE(library_.loading(next));
+    remote.apply(world_,{2,{}},placeholder);
+    remote.update(world_,library_,readers,device,pass,camera,viewport);
+    EXPECT_FALSE(library_.loading(next));EXPECT_EQ(library_.discardedDecodes(),1);
+    while(library_.streamingPending() && std::chrono::steady_clock::now()<deadline) {
+        library_.maintainStreaming(0,0);remote.update(world_,library_,readers,device,pass,camera,viewport);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    EXPECT_FALSE(library_.streamingPending());EXPECT_NE(library_.findReady(first),nullptr);
+    EXPECT_EQ(library_.findReady(next),nullptr);EXPECT_EQ(library_.pendingBytes(),0);
+    EXPECT_EQ(library_.failedLoads(),0);EXPECT_EQ(library_.cancelledLoads(),1);
+    remote.clear(world_);
+}
+
+TEST_F(DesktopSceneTest, PreparedAdmissionMissPreservesUploadAndRecoversWithExactBudget) {
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    const cgl::AnimationRequest first{100000,0,0},next{100000,1,0};
+    cgl::AnimationBuilder planner;
+    const auto a=planner.requiredBytes(first,readers),b=planner.requiredBytes(next,readers);
+    cgl::AnimationLibrary cache;cache.setTextureBudget(a+b-1);
+    cache.acquireProgressive(first,readers,device,pass,false);
+    ASSERT_TRUE(cache.prepareNext(next,readers));
+    std::shared_ptr<const cgl::AnimationClip> one,two;
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while(!cache.waitingForBudget() && std::chrono::steady_clock::now()<deadline) {
+        if(!one) one=cache.acquireProgressive(first,readers,device,pass);
+        else two=cache.acquireProgressive(next,readers,device,pass);
+        const auto u=cache.usage();EXPECT_LE(u.rgbaBytes+u.retiredBytes+u.pendingBytes,a+b-1);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(one,nullptr);EXPECT_EQ(two,nullptr);ASSERT_EQ(cache.waitingBytes(next),b);
+    EXPECT_FALSE(cache.streamingPending());EXPECT_EQ(cache.failedLoads(),0);EXPECT_EQ(cache.pendingBytes(),0);
+    cache.setTextureBudget(a+b);
+    while(!two && std::chrono::steady_clock::now()<deadline) {
+        two=cache.acquireProgressive(next,readers,device,pass);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(two,nullptr);EXPECT_EQ(cache.failedLoads(),0);EXPECT_EQ(cache.cancelledLoads(),0);
+    EXPECT_EQ(cache.loadTimings().completed,1);EXPECT_EQ(cache.usage().rgbaBytes,a+b);
+    device->waitIdle();one.reset();two.reset();cache.clear();EXPECT_EQ(cache.pendingBytes(),0);
+}

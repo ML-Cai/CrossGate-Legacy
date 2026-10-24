@@ -39,10 +39,10 @@ public:
     bool hasDeferred() const noexcept {
         return std::any_of(waiting_.begin(),waiting_.end(),[](const auto& item){return item.second.requiredBytes.has_value();});
     }
-    std::optional<size_t> select(uint64_t nowMs,uint64_t capacity) const {
+    std::optional<size_t> select(uint64_t nowMs,uint64_t capacity,std::optional<size_t> exclude=std::nullopt) const {
         const Entry* best=nullptr;
         for(const auto& [key,entry]:waiting_) {
-            if(entry.requiredBytes && *entry.requiredBytes>capacity) continue;
+            if(exclude==key || (entry.requiredBytes && *entry.requiredBytes>capacity)) continue;
             if(!best || before(entry,*best,nowMs)) best=&entry;
         }
         return best?std::optional<size_t>(best->demand.appearance):std::nullopt;

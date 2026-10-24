@@ -19,7 +19,7 @@ public:
     explicit RemoteCharacters(std::vector<AnimationRequest> catalog):catalog_(std::move(catalog)) {}
     void clear(ECSCore& world) {
         for(const auto& [id,entity]:entities_) world.destroyEntity(entity);
-        entities_.clear(); placeholder_.reset(); visible=readyVisible=outer=readyOuter=0; sequence_=0; active_.reset(); budgetOwner_.reset(); budgetDeferred=0; failed_.clear();scheduler_.clear();demands_.clear();observations_.clear();capacity_=nextCapacityProbe_=0;
+        entities_.clear(); placeholder_.reset(); visible=readyVisible=outer=readyOuter=0; sequence_=0; active_.reset(); prepared_.reset(); budgetOwner_.reset(); budgetDeferred=0; failed_.clear();scheduler_.clear();demands_.clear();observations_.clear();capacity_=nextCapacityProbe_=0;
     }
     void apply(ECSCore& world,const CharacterSnapshot& packet,std::shared_ptr<const AnimationClip> placeholder) {
         if(packet.sequence<=sequence_) return;
@@ -97,6 +97,12 @@ public:
             if(library.waitingBytes(catalog_[*budgetOwner_])) library.discardUnsubmitted();
             budgetOwner_.reset();
         }
+        // CPU lookahead has its own identity. Never cancel the submitted upload
+        // when the next snapshot drops/reprioritizes the prepared appearance.
+        if(prepared_ && scheduler_.shouldSupersede(*prepared_,scheduler_.select(now,capacity_,active_))) {
+            library.discardPrepared();prepared_.reset();
+        }
+        if(!active_ && prepared_) {active_=prepared_;prepared_.reset();}
         if(active_ && !library.streamingPending()) {
             if(const auto required=library.waitingBytes(catalog_[*active_])) {
                 if(scheduler_.contains(*active_)) {
@@ -119,7 +125,11 @@ public:
             if(library.acquireProgressive(catalog_[*active_],readers,device,pass)) {completed=active_;active_.reset();}
         } catch(const std::exception& error) {
             LOGE("Character appearance failed: " << error.what());
-            failed_.insert(*active_);library.cancelPending();active_.reset();
+            failed_.insert(*active_);library.cancelPending();active_.reset();prepared_.reset();
+        }
+        if(active_ && library.uploadPending() && !prepared_) {
+            const auto next=scheduler_.select(now,capacity_,active_);
+            if(next && library.prepareNext(catalog_[*next],readers)) prepared_=next;
         }
         if(telemetry) {
             for(auto& o:observations_) {
@@ -139,7 +149,7 @@ private:
     std::vector<AppearanceObservation> observations_;
     std::vector<AnimationRequest> catalog_;
     std::map<uint64_t,Entity> entities_;
-    std::optional<size_t> active_,budgetOwner_;
+    std::optional<size_t> active_,prepared_,budgetOwner_;
     std::set<size_t> failed_;
     uint64_t sequence_=0,capacity_=0,nextCapacityProbe_=0;
 };

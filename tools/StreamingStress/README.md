@@ -198,3 +198,18 @@ restart the same scripted workload, compare its fingerprint/displacement, verify
 entity/clip cleanup, and demonstrate bounded placeholders under a pinned visible
 working set larger than the available budget. Run the normal full/ASan suites for
 broader lifetime and renderer validation.
+
+## Bounded preparation
+
+Remote streaming may prepare one next appearance on the CPU while the previous
+appearance uploads. The combined uploading payload and CPU reservation remain
+limited to 32 MiB and count toward the configured animation budget. GPU staging
+remains at most 4 MiB. A tighter budget can fall back to serial preparation;
+there is no unbounded decode queue or extra worker per actor.
+
+`animation_pending_reserved_bytes` includes both slots. `animation_cpu_pending` remains
+true during zero-byte metadata work and cancellation draining. Successful loader
+latency starts at selection/preparation, so lookahead can include waiting for the
+previous upload; compare complete demand latency, coverage, censored outcomes and
+frame costs rather than interpreting loader time alone as throughput.
+See [validation and reproduction](../../docs/bounded-animation-preparation-validation.md).
