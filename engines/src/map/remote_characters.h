@@ -6,6 +6,8 @@
 #include "engine/ecs.h"
 #include "cgl/trace/logger.h"
 #include <set>
+#include <chrono>
+#include "map/appearance_scheduler.h"
 
 namespace cgl {
 namespace component { struct RemoteCharacter { uint64_t serverId; size_t appearance; }; }
@@ -16,7 +18,7 @@ public:
     explicit RemoteCharacters(std::vector<AnimationRequest> catalog):catalog_(std::move(catalog)) {}
     void clear(ECSCore& world) {
         for(const auto& [id,entity]:entities_) world.destroyEntity(entity);
-        entities_.clear(); sequence_=0; active_.reset(); failed_.clear();
+        entities_.clear(); sequence_=0; active_.reset(); failed_.clear();scheduler_.clear();demands_.clear();
     }
     void apply(ECSCore& world,const CharacterSnapshot& packet,std::shared_ptr<const AnimationClip> placeholder) {
         if(packet.sequence<=sequence_) return;
@@ -53,7 +55,7 @@ public:
     void update(ECSCore& world,AnimationLibrary& library,component::AssetsReaderState& readers,
                 graphics::IDevice* device,graphics::IRenderPass* pass,
                 const component::MapCamera& camera,const Viewport& viewport) {
-        int bestRegion=2; double bestDistance=0; std::optional<size_t> candidate;
+        auto& demands=demands_;demands.clear();demands.reserve(entities_.size());
         visible=readyVisible=outer=readyOuter=0;
         for(const auto& [id,entity]:entities_) {
             auto* tag=world.getComponent<component::RemoteCharacter>(entity);
@@ -69,17 +71,15 @@ public:
             if(ready || region<0 || failed_.contains(tag->appearance)) continue;
             const auto p=MapToScreen(cell,camera,viewport);
             const double distance=std::hypot(p.x-viewport.width*.5,p.y-viewport.height*.5);
-            if(region<bestRegion || (region==bestRegion && distance<bestDistance)) {
-                bestRegion=region;bestDistance=distance;candidate=tag->appearance;
-            }
+            demands.push_back({tag->appearance,region,distance});
         }
-        // Finish an in-flight clip even if its actor left. Cancelling a submitted
-        // chunk on every snapshot could stall the frame. No unbounded FIFO exists.
-        // A budget wait owns no submitted upload. If its actor disappeared or a
-        // nearer visible candidate supersedes it, switch without a GPU cancel wait.
-        if(active_ && library.waitingForBudget() && candidate!=active_) {
-            library.cancelPending();active_=candidate;
-        }
+        const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+        const auto candidate=scheduler_.update(demands,now);
+        // Only stale CPU work or prefetch displaced by visible demand is cancelled.
+        // Keep same-region active work stable; nearer actors must not cause thrash.
+        if(active_ && scheduler_.shouldSupersede(*active_,candidate) && library.discardUnsubmitted())
+            active_.reset();
         if(!active_) active_=candidate;
         if(!active_) return;
         try {
@@ -91,6 +91,8 @@ public:
     }
     size_t visible=0,readyVisible=0,outer=0,readyOuter=0;
 private:
+    std::vector<AppearanceScheduler::Demand> demands_;
+    AppearanceScheduler scheduler_;
     std::vector<AnimationRequest> catalog_;
     std::map<uint64_t,Entity> entities_;
     std::optional<size_t> active_;

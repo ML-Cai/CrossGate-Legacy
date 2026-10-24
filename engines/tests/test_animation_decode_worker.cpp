@@ -64,3 +64,36 @@ TEST(AnimationDecodeWorkerTest, ErrorsAndOversizedResultsReleaseReservationOnTak
     ASSERT_TRUE(worker.submit([](const auto&){cgl::AnimationPixels p;p.rgba.reserve(64);p.rgba.resize(1);return p;},32));
     result=take(worker);ASSERT_TRUE(result);EXPECT_TRUE(result->error);EXPECT_TRUE(result->pixels.rgba.empty());
 }
+
+TEST(AnimationDecodeWorkerTest, NonblockingCancelKeepsReservationUntilCpuTaskActuallyExits) {
+    cgl::AnimationDecodeWorker worker;
+    std::promise<void> entered,release;auto started=entered.get_future();auto gate=release.get_future().share();
+    auto token=std::make_shared<int>(1);std::weak_ptr<int> weak=token;
+    ASSERT_TRUE(worker.submit([&,keep=std::move(token)](const auto& cancelled) {
+        entered.set_value();gate.wait();
+        EXPECT_TRUE(cancelled.load());cgl::AnimationPixels p;p.rgba={1};return p;
+    },32));
+    const auto status=started.wait_for(2s);
+    if(status!=std::future_status::ready) release.set_value();
+    ASSERT_EQ(status,std::future_status::ready);
+    worker.requestCancel(); // Must return before release; a blocking cancel deadlocks this test.
+    EXPECT_FALSE(worker.collectCancelled());EXPECT_EQ(worker.reservedBytes(),32);EXPECT_FALSE(weak.expired());
+    EXPECT_FALSE(worker.submit([](const auto&){return cgl::AnimationPixels{};},32));
+    EXPECT_FALSE(worker.tryTake());release.set_value();
+    const auto deadline=std::chrono::steady_clock::now()+2s;
+    bool collected=false;
+    while(!(collected=worker.collectCancelled()) && std::chrono::steady_clock::now()<deadline) std::this_thread::sleep_for(1ms);
+    ASSERT_TRUE(collected);EXPECT_EQ(worker.reservedBytes(),0);EXPECT_TRUE(weak.expired());EXPECT_FALSE(worker.tryTake());
+    ASSERT_TRUE(worker.submit([](const auto&){cgl::AnimationPixels p;p.rgba={2};return p;},32));
+    auto result=take(worker);ASSERT_TRUE(result);EXPECT_EQ(result->pixels.rgba,(std::vector<uint8_t>{2}));
+}
+TEST(AnimationDecodeWorkerTest, RepeatedNonblockingCancelReclaimsQueuedOrRunningWork) {
+    cgl::AnimationDecodeWorker worker;
+    for(int i=0;i<100;++i) {
+        ASSERT_TRUE(worker.submit([](const auto&){cgl::AnimationPixels p;p.rgba.resize(32);return p;},32));
+        worker.requestCancel();worker.requestCancel();
+        const auto deadline=std::chrono::steady_clock::now()+2s;
+        while(!worker.collectCancelled() && std::chrono::steady_clock::now()<deadline) std::this_thread::sleep_for(1ms);
+        EXPECT_EQ(worker.reservedBytes(),0);EXPECT_FALSE(worker.tryTake());
+    }
+}
