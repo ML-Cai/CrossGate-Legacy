@@ -13,8 +13,9 @@ struct CharacterPresence { uint64_t id; MapPoint cell; size_t appearance; };
 struct CharacterSnapshot { uint64_t sequence=0; std::vector<CharacterPresence> actors; };
 class LocalCharacterFeed {
 public:
-    explicit LocalCharacterFeed(size_t appearances, uint32_t seed=0xC61) : appearances_(appearances), random_(seed) {
-        if(!appearances) throw std::invalid_argument("Empty character catalog");
+    explicit LocalCharacterFeed(size_t appearances, uint32_t seed=0xC61,size_t visible=128,size_t prefetch=160)
+        : appearances_(appearances),visible_(visible),prefetch_(prefetch),random_(seed) {
+        if(!appearances || visible>1024 || prefetch>1024-visible) throw std::invalid_argument("Empty character catalog");
     }
     static int region(MapPoint cell,const component::MapCamera& camera,const Viewport& viewport) {
         const auto p=MapToScreen(cell,camera,viewport);
@@ -34,7 +35,7 @@ public:
             if(r>=0) cells[r].push_back(cell);
         }
         CharacterSnapshot result; result.sequence=snapshot_.sequence+1;
-        const size_t targets[2]={std::min(size_t(128),cells[0].size()*10),std::min(size_t(160),cells[1].size()*10)};
+        const size_t targets[2]={std::min(visible_,cells[0].size()*10),std::min(prefetch_,cells[1].size()*10)};
         size_t counts[2]={};
         std::map<std::pair<int,int>,size_t> occupancy;
         if(!replace) for(const auto& actor:snapshot_.actors) {
@@ -65,7 +66,7 @@ public:
         return snapshot_;
     }
 private:
-    size_t appearances_;
+    size_t appearances_,visible_,prefetch_;
     std::mt19937 random_;
     uint64_t nextId_=0;
     CharacterSnapshot snapshot_;

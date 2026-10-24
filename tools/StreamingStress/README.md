@@ -1,0 +1,119 @@
+# Native streaming movement/churn stress
+
+This tool runs **cgl-client**, not a Python renderer or server. It uses the engine's
+normal map, movement, snapshot, streaming and Vulkan paths. Python only creates
+INI files, runs the executable and validates its JSON report.
+
+## Run
+
+Build the client with the normal `dev` preset first. From the repository root:
+
+```powershell
+python tools/StreamingStress/run_stress.py --client build/dev/bin/cgl-client.exe --root C:/CrossGate-Legacy --budgets 16 64 512 --frames 6000
+```
+
+For larger interest snapshots (asset catalog must contain enough valid characters):
+
+```powershell
+python tools/StreamingStress/run_stress.py --client build/dev/bin/cgl-client.exe --root C:/CrossGate-Legacy --budgets 64 512 --visible 512 --prefetch 512 --catalog 2048 --frames 12000 --replace-frames 1200 --output build/stress1024
+```
+
+`--visible` is the on-screen target; `--prefetch` is the outer band of a 1.5-view
+rectangle, **not another full viewport**. Counts sum to at most 1024 and occupancy
+is capped at ten remote snapshot actors per grid (the local player is additional). Map edges/small maps can provide fewer cells.
+For 1024 on-screen targets without outer prefetch, use `--visible 1024 --prefetch 0`.
+Appearances are distinct within a snapshot when enough catalog entries exist;
+entries can be reused across successive snapshots. Counts are targets, not proof
+that every requested appearance is ready. Catalog enumeration fails explicitly if
+the installed corpus cannot provide the configured distinct targets.
+
+The default is 128 visible + 160 prefetch actors, catalog limit 1024, seed 3169,
+6000 world updates, 240 updates per square-route leg and complete replacement every
+600 updates. World movement/animation advances by a fixed 16.666667 ms simulated step; frame and
+CPU/GPU timing stay real. Simulated time can run much faster than wall time: this
+is an aggressive frame-driven demand workload, not a real-time network model.
+Existing cell interpolation, facing and camera-follow behavior remain in use.
+The script overrides WASD/N during the run. Do not resize the window, restart it
+with R, change the corpus, or otherwise interact when comparing workloads.
+
+The client closes automatically after exactly `StressFrames` ready-world updates.
+No `--frames` CLI cap is needed; a smaller external cap/manual close is detected as
+incomplete. Stress mode requires ServerDemo and a telemetry report. It is disabled
+by default (`StressFrames=0`), preserving interactive WASD/N operation.
+
+## Outputs and interpretation
+
+Each run gets unique INI/JSON/log files under `build/streaming-stress` (or `--output`).
+`summary.json` contains successful cases completed so far and is replaced for a new
+invocation; individual run files remain. A failed/timeout child is reaped rather
+than left running. `--timeout` defaults to 180 wall seconds per case. Standard
+Python suffices; if `psutil` is already available, the tool also samples process
+working set every 20 ms, retaining only 128 tail observations and a peak scalar. Tail samples can include normal shutdown/reclamation.
+Without it, process memory values are null. These are sampled CPU process values,
+not dedicated GPU residency and not a leak detector.
+
+The tool checks scene/script completion, update counts, movement/replacement,
+reported animation-budget accounting and valid coverage/timing counters. Across
+budgets it compares a non-cryptographic snapshot fingerprint of server IDs,
+appearance indexes and MAP positions. This validates workload repeatability for
+the **same binary/platform/corpus**, not asset contents, driver scheduling or
+identical asynchronous completion order. Different implementations of shuffle or
+manual input can change the fingerprint. No frame-time/quality pass threshold is
+invented by the tool: raw measurements remain available for review.
+
+Key JSON fields:
+
+- `lifetime_fps`, `lifetime_frame_max_ms`, `lifetime_frames_over_33ms`: all accepted
+  gameplay frame samples (over-33ms follows the existing 1000/30 ms threshold); startup/loading frames follow the existing exclusion.
+  `frame_p95_ms`/`frame_p99_ms` remain the final rolling 512-frame window.
+- `stream_frames`, `stress_configured_frames`, `stress_completed`: script progress.
+  `status=complete` means a clean client run, **not full appearance coverage**.
+- `stream_snapshots`, `stream_replacements`, `stream_snapshot_fingerprint`: feed
+  workload. The fingerprint is a decimal string to preserve all 64 bits in JS.
+- `stream_visible_samples`, `stream_ready_visible_samples`: sums over world updates;
+  their ratio measures actor-update coverage, not wall-time-weighted coverage.
+  `stream_missing_visible_frames` counts updates with any unresolved visible actor.
+- `stream_visible`/`stream_ready_visible`, `stream_prefetch`/`stream_ready_prefetch`:
+  final counts, including a potentially fresh replacement on the last update.
+- `stream_budget_wait_frames`: updates with an animation admission budget wait.
+- `stream_peak_accounted_bytes`, `stream_peak_retired_bytes`,
+  `stream_peak_pending_bytes`: observed per-update high water marks; they can miss
+  brief between-update changes. Animation accounting is ready + retired + reserved
+  RGBA. It excludes map textures, staging, driver overhead and CPU reader caches.
+- `stream_player_x/y`, `stream_travel_cells`: final MAP position and cumulative
+  frame-end displacement. Turns within one update can make this slightly less
+  than the integrated path length.
+- The background-load timing/cancellation/failure fields from PR #67 remain in the
+  report. Oversized-for-budget clips can count as permanent load failures; not
+  every failure implies a corrupt source file. Pending work at the final scripted
+  update is expected; normal shutdown waits/cancels/releases it after reporting.
+
+## Current over-budget behavior
+
+The current fallback keeps entity identities and a shared placeholder until an
+appearance is ready. It retains already-held visible/prefetch clips and does not
+forcibly free live GPU allocations. Temporary pressure waits/retries; intrinsically
+oversized clips fail and keep their placeholder. A pinned working set larger than
+the budget may therefore leave actors unresolved indefinitely. The tool records
+that loss of quality rather than treating it as successful streaming or removing
+actors to inflate FPS. Choosing which prefetch/far-visible pins to release is a
+separate policy change, informed by these measurements.
+
+Native standalone example: `bin/configs/streaming-stress100.ini` (64 MiB). Adjust the
+asset root, then run `cgl-client.exe --settings <path-to-ini>`; its report path is
+relative to the process working directory. Ordinary interactive demo configs can
+also set AnimationBudgetMiB, VisibleActors, PrefetchActors, CatalogLimit and Seed
+without enabling the scripted route.
+
+## Tests
+
+```powershell
+ctest --test-dir build/dev -R "StreamingStress|Configurable1024|ScriptedServerChurn|VisibleWorkingSetOverBudget|streaming_stress_runner|LongRunOverwrites" --output-on-failure
+```
+
+Headless tests validate schedule boundaries, limits, 1024-appearance seeded churn,
+settings loading, bounded lifetime telemetry and report rejection. Vulkan tests
+restart the same scripted workload, compare its fingerprint/displacement, verify
+entity/clip cleanup, and demonstrate bounded placeholders under a pinned visible
+working set larger than the available budget. Run the normal full/ASan suites for
+broader lifetime and renderer validation.

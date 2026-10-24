@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include "map/local_character_feed.h"
 #include "map/server_demo_refresh.h"
+#include "map/streaming_stress.h"
+#include <limits>
 #include <set>
 TEST(LocalCharacterFeed, CompleteSnapshotAndExpandedInterest) {
     cgl::LocalCharacterFeed feed(512);
@@ -79,4 +81,43 @@ TEST(ServerDemoRefresh, MovementThresholdUsesScreenDistanceAndZoom) {
     // Opposite map axes move vertically, where the half-margin is 90 pixels.
     EXPECT_FALSE(cgl::ServerDemoRefreshDue({{421,304},1},previous,viewport,0,false));
     EXPECT_TRUE(cgl::ServerDemoRefreshDue({{422,303},1},previous,viewport,0,false));
+}
+
+TEST(StreamingStress, ValidatesLimitsAndSchedulesExactFrameBoundaries) {
+    EXPECT_NO_THROW(cgl::ValidateDemoLimits(16,512,512,2048));
+    EXPECT_THROW(cgl::ValidateDemoLimits(15,128,160,512),std::invalid_argument);
+    EXPECT_THROW(cgl::ValidateDemoLimits(512,1024,1,2048),std::invalid_argument);
+    EXPECT_THROW(cgl::ValidateDemoLimits(512,128,160,128),std::invalid_argument);
+    EXPECT_THROW(cgl::StreamingStress(0,2,3,20),std::invalid_argument);
+    EXPECT_THROW(cgl::StreamingStress(8,0,3,20),std::invalid_argument);
+    EXPECT_THROW(cgl::StreamingStress(8,2,0,20),std::invalid_argument);
+    EXPECT_THROW(cgl::StreamingStress(8,2,3,std::numeric_limits<double>::quiet_NaN()),std::invalid_argument);
+    cgl::StreamingStress route(8,2,3,20);
+    EXPECT_EQ(route.frames(),8);
+    EXPECT_THROW(route.at(0),std::out_of_range);
+    EXPECT_THROW(route.at(9),std::out_of_range);
+    EXPECT_EQ(route.at(1).x,1);EXPECT_EQ(route.at(2).x,1);EXPECT_EQ(route.at(3).y,1);
+    EXPECT_EQ(route.at(5).x,-1);EXPECT_EQ(route.at(7).y,-1);EXPECT_DOUBLE_EQ(route.at(8).seconds,.02);
+    for(uint64_t i=1;i<=8;++i) EXPECT_EQ(route.at(i).replace,i==3 || i==6);
+}
+TEST(LocalCharacterFeed, Configurable1024ActorChurnIsDistinctBoundedAndReproducible) {
+    cgl::LocalCharacterFeed first(2048,42,512,512),second(2048,42,512,512);
+    cgl::component::MapCamera camera{{420,305},1};const cgl::Viewport viewport(0,0,1280,720);
+    for(int step=0;step<16;++step) {
+        camera.center.x+=1;camera.center.y+=.5;
+        const auto& a=first.next(camera,viewport,840,610,step%3==0);
+        const auto& b=second.next(camera,viewport,840,610,step%3==0);
+        ASSERT_EQ(a.actors.size(),1024);ASSERT_EQ(b.actors.size(),a.actors.size());EXPECT_EQ(a.sequence,b.sequence);
+        std::set<size_t> appearances;std::map<std::pair<int,int>,int> cells;size_t visible=0;
+        for(size_t i=0;i<a.actors.size();++i) {
+            const auto& actor=a.actors[i];const auto& other=b.actors[i];
+            EXPECT_EQ(actor.id,other.id);EXPECT_EQ(actor.appearance,other.appearance);
+            EXPECT_DOUBLE_EQ(actor.cell.x,other.cell.x);EXPECT_DOUBLE_EQ(actor.cell.y,other.cell.y);
+            EXPECT_TRUE(appearances.insert(actor.appearance).second);
+            EXPECT_LE(++cells[std::make_pair(int(actor.cell.x),int(actor.cell.y))],10);
+            if(cgl::LocalCharacterFeed::region(actor.cell,camera,viewport)==0) ++visible;
+        }
+        EXPECT_EQ(visible,512);
+    }
+    EXPECT_THROW(cgl::LocalCharacterFeed(2048,42,1024,1),std::invalid_argument);
 }

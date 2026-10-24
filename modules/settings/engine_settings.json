@@ -157,7 +157,18 @@
                 "Description": "Preload idle+walk, then switch the entire crowd every second without frame-loop uploads."
             }
         ],
-        "ServerDemo": [{"Name":"Enabled","Type":"bool","Default":"false","ExportToINI":true,"Description":"Local server snapshot simulator: 128 visible actors and a 1.5x interest region."}],
+        "ServerDemo": [
+            {"Name":"Enabled","Type":"bool","Default":"false","ExportToINI":true,"Description":"Local server snapshot simulator with a 1.5x interest region."},
+            {"Name":"AnimationBudgetMiB","Type":"uint32_t","Default":"512","ExportToINI":true,"Description":"Animation RGBA budget, 16..1024 MiB; excludes map and driver overhead."},
+            {"Name":"VisibleActors","Type":"uint32_t","Default":"128","ExportToINI":true,"Description":"Visible snapshot target; visible plus prefetch at most 1024."},
+            {"Name":"PrefetchActors","Type":"uint32_t","Default":"160","ExportToINI":true,"Description":"Outer 1.5-view snapshot target; at most ten actors per cell."},
+            {"Name":"CatalogLimit","Type":"uint32_t","Default":"512","ExportToINI":true,"Description":"Metadata appearance catalog limit, 1..4096; must cover actor targets."},
+            {"Name":"Seed","Type":"uint32_t","Default":"3169","ExportToINI":true,"Description":"Local snapshot random seed."},
+            {"Name":"StressFrames","Type":"uint32_t","Default":"0","ExportToINI":true,"Description":"Zero keeps interactive mode; otherwise auto-walk and stop after 1..1000000 world updates."},
+            {"Name":"StressLegFrames","Type":"uint32_t","Default":"240","ExportToINI":true,"Description":"Automated square-route leg length, 1..6000 world updates."},
+            {"Name":"StressReplaceFrames","Type":"uint32_t","Default":"600","ExportToINI":true,"Description":"Automated full snapshot replacement interval, 1..60000 updates."},
+            {"Name":"StressStepMs","Type":"float","Default":"16.666667","ExportToINI":true,"Description":"Fixed simulated movement step, greater than zero and at most 100 ms; frame timing remains real."}
+        ],
         "Telemetry": [
             {"Name":"Enabled","Type":"bool","Default":"false","ExportToINI":true,"Description":"Enable bounded rolling CPU frame/resource diagnostics."},
             {"Name":"ReportPath","Type":"std::string","Default":"","ExportToINI":true,"Description":"Optional JSON summary written on exit when telemetry is enabled."}

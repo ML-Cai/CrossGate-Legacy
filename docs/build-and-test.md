@@ -445,3 +445,20 @@ while submitting/cancelling background metadata, compare exact reservation with
 actual RGBA usage, verify success-only timing, and reject a total budget of one
 byte before any graphics pixel-file reads. The existing sixteen low-budget
 appearance batches still verify eventual frame-fence recovery and teardown.
+
+## Repeatable movement and snapshot churn
+
+See [StreamingStress](../tools/StreamingStress/README.md) for the native CLI runner,
+INI fields, reports and limits. ServerDemo.AnimationBudgetMiB is now configurable
+(16..1024 MiB, default 512); visible/prefetch counts, catalog limit and random seed
+are also explicit. StressFrames defaults to zero. An enabled script uses fixed
+movement/snapshot simulation time and real CPU/GPU/frame timing, then closes after
+the configured number of world updates. It requires a telemetry report and does
+not coexist with the crowd benchmark. Manual WASD/N remain the default.
+
+Lifetime frame FPS/max/over-33ms counters supplement the existing rolling window,
+so early spikes cannot disappear when a long run overwrites the last 512 samples.
+Scene-owned streaming diagnostics use scalar storage and are removed on exit.
+The Python runner retains a bounded process-memory tail when psutil is present;
+it does not measure driver VRAM. Low-budget cases report unresolved actors and
+budget waits; clean process/script completion is not full-quality readiness.

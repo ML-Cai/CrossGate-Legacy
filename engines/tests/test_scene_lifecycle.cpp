@@ -1,3 +1,4 @@
+#include "map/streaming_stress.h"
 #include "assets/map_library.h"
 #include "assets/character_catalog.h"
 #include "benchmark/crowd_benchmark.h"
@@ -1375,4 +1376,80 @@ TEST_F(DesktopSceneTest, BackgroundInsufficientTotalBudgetFailsBeforeAnyPixelRea
     EXPECT_EQ(cache.usage().clips,0);EXPECT_FALSE(cache.waitingForBudget());
     EXPECT_EQ(readers.pGfxDataReader[version]->cacheStatistics().fileReadCalls,before);
     cache.cancelPending();EXPECT_EQ(cache.cancelledLoads(),0);
+}
+
+TEST_F(DesktopSceneTest, ScriptedServerChurnMovesAndRestartsWithoutLeakingEntities) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.map.FilePath="map/0/100.dat";settings.animation.SerialNum=100000;
+    auto& demo=settings.serverdemo;demo.Enabled=true;demo.AnimationBudgetMiB=16;
+    demo.VisibleActors=8;demo.PrefetchActors=8;demo.CatalogLimit=32;demo.Seed=42;
+    demo.StressFrames=96;demo.StressLegFrames=24;demo.StressReplaceFrames=16;demo.StressStepMs=20;
+    library_.setTextureBudget(16ull*1024*1024);
+    auto* window=world_.getSingleton<cgl::component::WindowHandle>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* sync=world_.getSingleton<cgl::component::PrimaryRenderSyncObjects>();
+    uint64_t fingerprint=0;double travel=0;
+    for(int epoch=0;epoch<2;++epoch) {
+        window->windowShouldClose=false;
+        if(epoch) world_.getSingleton<cgl::component::SceneState>()->nextScene=cgl::SceneTypes::MapScene;
+        ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::MapScene));
+        auto* stats=world_.getSingleton<cgl::component::StreamingDiagnostics>();ASSERT_NE(stats,nullptr);
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+        while(stats->frames<demo.StressFrames && std::chrono::steady_clock::now()<deadline) {
+            world_.getSingleton<cgl::component::FrameTime>()->deltaSeconds=1; // Script must override real delta/input.
+            world_.getSingleton<cgl::component::KeyboardInputState>()->moveY=-1;
+            library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
+            manager_.update(&world_);draw_.update(&world_);
+            ASSERT_NE(world_.getSingleton<cgl::component::SceneState>()->state,cgl::StateTypes::ERROR);
+        }
+        ASSERT_EQ(stats->frames,96);EXPECT_TRUE(window->windowShouldClose);
+        EXPECT_EQ(stats->replacements,7);EXPECT_GE(stats->snapshots,7);
+        EXPECT_GT(stats->travelCells,7);EXPECT_LT(stats->travelCells,8);EXPECT_LE(stats->peakAccountedBytes,16ull*1024*1024);
+        EXPECT_LE(stats->readyVisibleSamples,stats->visibleSamples);EXPECT_GT(stats->visibleSamples,0);
+        size_t count=0;world_.forEach<cgl::component::RemoteCharacter>([&](auto,auto*){++count;});EXPECT_EQ(count,16);
+        if(!epoch) {fingerprint=stats->fingerprint;travel=stats->travelCells;}
+        else {EXPECT_EQ(stats->fingerprint,fingerprint);EXPECT_DOUBLE_EQ(stats->travelCells,travel);}
+        device->waitIdle();
+    }
+    std::weak_ptr<const cgl::AnimationClip> player=library_.findReady({100000,0,0});EXPECT_FALSE(player.expired());
+    cgl::SceneManagerDestroySystem{}.update(&world_);
+    EXPECT_EQ(world_.getSingleton<cgl::component::StreamingDiagnostics>(),nullptr);
+    size_t count=0;world_.forEach<cgl::component::RemoteCharacter>([&](auto,auto*){++count;});EXPECT_EQ(count,0);
+    EXPECT_FALSE(library_.cpuPending());EXPECT_EQ(library_.pendingBytes(),0);library_.clear();EXPECT_TRUE(player.expired());
+}
+
+TEST_F(DesktopSceneTest, VisibleWorkingSetOverBudgetKeepsEntitiesAndPlaceholders) {
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.animation.SerialNum=101406;settings.animation.Direction=0;settings.animation.Motion=5;
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    auto* sync=world_.getSingleton<cgl::component::PrimaryRenderSyncObjects>();
+    auto catalog=cgl::ReadCharacterCatalog(readers,4);ASSERT_EQ(catalog.size(),4);
+    cgl::AnimationBuilder planner;uint64_t largest=0,total=0;
+    for(const auto& key:catalog) {const auto bytes=planner.requiredBytes(key,readers);largest=std::max(largest,bytes);total+=bytes;}
+    ASSERT_GT(total,largest);const auto baseline=library_.usage().rgbaBytes;library_.setTextureBudget(baseline+largest);
+    auto placeholder=library_.findReady({101406,0,5});ASSERT_NE(placeholder,nullptr);
+    cgl::RemoteCharacters remote(catalog);cgl::component::MapCamera camera{{10,10},1};const cgl::Viewport viewport{0,0,800,600};
+    remote.apply(world_,{1,{{1,{10,10},0},{2,{10,10},1},{3,{10,10},2},{4,{10,10},3}}},placeholder);
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while(!library_.waitingForBudget() && std::chrono::steady_clock::now()<deadline) {
+        remote.update(world_,library_,readers,device,pass,camera,viewport);draw_.update(&world_);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(library_.waitingForBudget());ASSERT_GT(remote.readyVisible,0);ASSERT_LT(remote.readyVisible,4);
+    for(int i=0;i<64;++i) {
+        library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
+        remote.update(world_,library_,readers,device,pass,camera,viewport);draw_.update(&world_);
+        const auto u=library_.usage();EXPECT_LE(u.rgbaBytes+u.retiredBytes+u.pendingBytes,u.budgetBytes);
+    }
+    size_t count=0,placeholders=0;
+    world_.forEach<cgl::component::RemoteCharacter,cgl::component::Sprite>([&](auto,auto*,auto* sprite) {
+        ++count;ASSERT_NE(sprite->clip,nullptr);if(sprite->clip==placeholder) ++placeholders;
+    });
+    EXPECT_EQ(count,4);EXPECT_GT(placeholders,0);EXPECT_EQ(remote.visible,4);EXPECT_LT(remote.readyVisible,4);
+    EXPECT_EQ(library_.failedLoads(),0); // Temporary pressure must not poison appearances.
+    remote.clear(world_);library_.cancelPending();EXPECT_FALSE(library_.cpuPending());
+    EXPECT_GT(library_.trimUnused(baseline),0);EXPECT_EQ(library_.usage().rgbaBytes,baseline);
 }

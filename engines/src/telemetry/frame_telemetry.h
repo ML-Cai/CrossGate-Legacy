@@ -19,6 +19,7 @@ struct FrameSummary {
     size_t count=0;uint64_t total=0;
     double fps=0,meanMs=0,p50Ms=0,p95Ms=0,p99Ms=0,maxMs=0,updateMs=0,renderMs=0,sortMs=0;
     size_t over33ms=0;
+    double lifetimeFps=0,lifetimeMaxMs=0;uint64_t lifetimeOver33ms=0;
 };
 // Fixed storage: no allocation on push, sorting or snapshot. Summary is a rolling
 // window; lifetime sample count is separate. All durations are CPU wall times.
@@ -28,11 +29,15 @@ public:
     bool add(FrameSample sample) noexcept {
         for(double v:{sample.frameMs,sample.updateMs,sample.renderMs,sample.sortMs})
             if(!std::isfinite(v) || v<0) return false;
+        lifetimeMs_+=sample.frameMs;lifetimeMaxMs_=std::max(lifetimeMaxMs_,sample.frameMs);
+        if(sample.frameMs>1000.0/30) ++lifetimeOver33ms_;
         samples_[next_]=sample;next_=(next_+1)%Capacity;count_=std::min(count_+1,Capacity);++total_;
         return true;
     }
     FrameSummary summary() const {
         FrameSummary result;result.count=count_;result.total=total_;
+        result.lifetimeFps=lifetimeMs_>0?1000.0*total_/lifetimeMs_:0;
+        result.lifetimeMaxMs=lifetimeMaxMs_;result.lifetimeOver33ms=lifetimeOver33ms_;
         std::array<double,Capacity> frames{};
         for(size_t i=0;i<count_;++i) {
             const auto& s=samples_[i];frames[i]=s.frameMs;
@@ -48,10 +53,10 @@ public:
         result.updateMs/=count_;result.renderMs/=count_;result.sortMs/=count_;
         return result;
     }
-    void clear() noexcept {count_=next_=0;total_=0;}
+    void clear() noexcept {count_=next_=0;total_=0;lifetimeMs_=lifetimeMaxMs_=0;lifetimeOver33ms_=0;}
 private:
     std::array<FrameSample,Capacity> samples_{};
-    size_t count_=0,next_=0;uint64_t total_=0;
+    size_t count_=0,next_=0;uint64_t total_=0,lifetimeOver33ms_=0;double lifetimeMs_=0,lifetimeMaxMs_=0;
 };
 namespace component {
 struct RuntimeTelemetry {FrameTelemetry frames;FrameSample rendering;};

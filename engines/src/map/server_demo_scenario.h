@@ -2,6 +2,7 @@
 #include "map/remote_characters.h"
 #include "cgl/assets/map_layout_reader.h"
 #include <chrono>
+#include "map/streaming_stress.h"
 namespace cgl {
 // Owns simulated remote entities. The scene clears them before destroying this
 // object, then cancels the engine library slot before readers can be replaced.
@@ -9,10 +10,14 @@ class ServerDemoScenario {
 public:
     explicit ServerDemoScenario(AnimationLibrary& animations):animations_(animations) {}
     void enter(ECSCore* world,const MapLayout& layout,Entity character);
+    StressMovement movement(ECSCore* world,double x,double y,double seconds);
     void update(ECSCore* world,const Viewport& viewport);
     void clear(ECSCore* world);
 private:
     void sendSnapshot(ECSCore* world,const Viewport& viewport,bool replace);
+    std::optional<StreamingStress> stress_;
+    StressMovement movement_;uint64_t lastBatchFrame_=0;
+    MapPoint previousPosition_;
     AnimationLibrary& animations_;
     std::unique_ptr<LocalCharacterFeed> feed_;
     std::unique_ptr<RemoteCharacters> remote_;

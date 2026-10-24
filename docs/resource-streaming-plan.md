@@ -1,18 +1,18 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #66 (visible-demand scheduling and nonblocking CPU cancellation).
+Current base: merged PR #67 (exact background reservations and load timing).
 This is an estimate of independently reviewable changes, not a claim that the
 remaining features already exist. Each PR must run on its merged develop base.
 
 | Priority | PR scope | Required validation |
 | --- | --- | --- |
-| Current | Exact worker-side metadata reservation and bounded background-load latency diagnostics | Zero-byte occupied-slot safety; budget snapshot/shrink rules; cancellation/error cleanup; real Vulkan payload accounting; full normal/ASan and native regression |
-| Next | Sustained movement/churn harness, configurable demo budgets and over-budget display policy | Warm/cold FPS p95/p99/max, request/demand latency distinction, cancellation distributions, pending/retired plateaus, repeated teardown, separately measured process memory and GPU residency |
+| Current | Repeatable movement/snapshot churn runner, configurable demo budgets/counts and coverage/high-water diagnostics | Seeded workload equality across budgets; fixed-step route/restart; default interactive regression; bounded placeholders under pinned pressure; full normal/ASan and native measurements |
+| Next | Choose and implement over-budget quality policy: prefetch pin release, far-visible residency and demand-to-ready observability | Same churn traces; quality/latency/FPS tradeoffs; no stale ownership or early GPU release; separately measured process memory and GPU residency where available |
 
 Resource work is estimated at **2-3 PRs including the current change**.
-Admission/timing is separated from sustained churn measurement and the visible
-working-set fallback policy. Existing correctness tests do not replace sustained
-measurements; the next scope may split if the fallback needs a larger design.
+The measurement harness is separate from residency/quality policy. Existing
+placeholders are now measured explicitly; a clean run does not imply all visible
+appearances fit. The next scope may split if residency needs a larger design.
 The present LRU policy scans/sorts the cache when pressure scans are due. Profile
 that cost before replacing it with a persistent/incremental LRU structure. Count
 limits are not CPU-time guarantees, and map loading is still synchronous.

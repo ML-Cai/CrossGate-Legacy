@@ -111,8 +111,8 @@ public:
             return;
         }
         auto* input = world->getSingleton<cgl::component::KeyboardInputState>();
-        cgl::UpdateMapWorld(*world,character_,map_->layout.width,map_->layout.height,
-            input->moveX,input->moveY,seconds);
+        const auto move=serverDemo_?serverDemo_->movement(world,input->moveX,input->moveY,seconds):cgl::StressMovement{input->moveX,input->moveY,seconds,false};
+        cgl::UpdateMapWorld(*world,character_,map_->layout.width,map_->layout.height,move.x,move.y,move.seconds);
         const auto& window = *world->getSingleton<cgl::component::WindowHandle>();
         const cgl::Viewport viewport(0,0,window.width,window.height);
         if(serverDemo_) {
