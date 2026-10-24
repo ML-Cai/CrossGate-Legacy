@@ -90,14 +90,24 @@ Key JSON fields:
 
 ## Current over-budget behavior
 
-The current fallback keeps entity identities and a shared placeholder until an
-appearance is ready. It retains already-held visible/prefetch clips and does not
-forcibly free live GPU allocations. Temporary pressure waits/retries; intrinsically
-oversized clips fail and keep their placeholder. A pinned working set larger than
-the budget may therefore leave actors unresolved indefinitely. The tool records
-that loss of quality rather than treating it as successful streaming or removing
-actors to inflate FPS. Choosing which prefetch/far-visible pins to release is a
-separate policy change, informed by these measurements.
+The fallback keeps entity identities and a shared placeholder until an appearance
+is ready. Actors whose foot point or ready image bounds intersect the viewport pin their
+clip through Sprite. Outer-band actors keep CPU identity/position data and warm
+cache-only clips; fully off-screen actors release their clip pins as well.
+Entering the viewport reuses a ready clip on the next update, otherwise shows the
+placeholder while loading. `ready_prefetch` reports cache readiness, not an outer
+Sprite ownership guarantee. Image bounds use the same offset, size, scale and intersection test as the renderer;
+snapshot interest and coverage counters retain their existing foot-point definition.
+
+Eviction still runs only under actual admission pressure with bounded maintenance
+and submission/completion serials. Releasing a Sprite reference does not bypass
+GPU completion or force immediate destruction. A key shared by visible and outer
+actors remains protected by its visible owners. No blocking GPU waits were added.
+Temporary pressure waits/retries; intrinsically oversized clips fail and keep
+their placeholder. A visible working set larger than the budget can still leave
+actors unresolved indefinitely: choosing far-visible victims or lower-detail
+representations remains separate work. Cache-only prefetch may be evicted before
+it is used; this deliberately prioritizes retaining visible appearances.
 
 Native standalone example: `bin/configs/streaming-stress100.ini` (64 MiB). Adjust the
 asset root, then run `cgl-client.exe --settings <path-to-ini>`; its report path is
@@ -108,7 +118,7 @@ without enabling the scripted route.
 ## Tests
 
 ```powershell
-ctest --test-dir build/dev -R "StreamingStress|Configurable1024|ScriptedServerChurn|VisibleWorkingSetOverBudget|streaming_stress_runner|LongRunOverwrites" --output-on-failure
+ctest --test-dir build/dev -R "StreamingStress|Configurable1024|ScriptedServerChurn|VisibleWorkingSetOverBudget|PrefetchDoesNotPin|streaming_stress_runner|LongRunOverwrites" --output-on-failure
 ```
 
 Headless tests validate schedule boundaries, limits, 1024-appearance seeded churn,
