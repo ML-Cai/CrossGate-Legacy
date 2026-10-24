@@ -11,6 +11,18 @@ class ReportValidation(unittest.TestCase):
             lifetime_fps=500,lifetime_frame_max_ms=40,frame_p99_ms=3)
     def test_partial_coverage_is_measurement_not_false_completion(self):
         self.assertEqual(validate_report(self.report(),16,600,600),.25)
+    def test_deferred_counters_are_optional_for_old_clients_and_bounded(self):
+        report=self.report()
+        report.update(stream_budget_deferred_appearances=2,stream_peak_budget_deferred_appearances=1024,stream_budget_deferred_frames=600)
+        self.assertEqual(validate_report(report,16,600,600),.25)
+        for key,value in [("stream_budget_deferred_appearances",1025),("stream_peak_budget_deferred_appearances",1),
+                          ("stream_budget_deferred_frames",601),("stream_budget_deferred_frames",-1),
+                          ("stream_budget_deferred_appearances",1.5)]:
+            invalid=dict(report);invalid[key]=value
+            with self.subTest(key=key),self.assertRaises(ValueError):
+                validate_report(invalid,16,600,600)
+        del report["stream_budget_deferred_frames"]
+        with self.assertRaises(ValueError):validate_report(report,16,600,600)
     def test_wrong_replacement_cadence_is_rejected(self):
         with self.assertRaises(ValueError):
             validate_report(self.report(),16,600,300)

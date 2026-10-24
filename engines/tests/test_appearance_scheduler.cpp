@@ -36,3 +36,30 @@ TEST(AppearanceScheduler, BoundedReplacementNeverQueuesOldSnapshots) {
     EXPECT_THROW(s.update(std::vector<cgl::AppearanceScheduler::Demand>(1025),1100),std::invalid_argument);
     EXPECT_EQ(s.size(),1024);
 }
+
+TEST(AppearanceScheduler, BudgetMissAllowsSmallerDemandAndRecoversWithoutLosingAge) {
+    cgl::AppearanceScheduler s;
+    const std::vector<cgl::AppearanceScheduler::Demand> demand{{1,0,1},{2,0,10},{3,1,0}};
+    EXPECT_EQ(s.update(demand,0,20),1);
+    s.defer(1,30);EXPECT_TRUE(s.hasDeferred());
+    EXPECT_EQ(s.select(1,20),2); // Same-region fitting demand bypasses the large one.
+    s.defer(2,21);EXPECT_EQ(s.select(2,20),3);
+    s.defer(3,25);EXPECT_FALSE(s.select(3,20));
+    EXPECT_EQ(s.update(demand,300,30),1); // Original age and visible priority survive.
+    EXPECT_EQ(s.select(301,29),2);
+}
+TEST(AppearanceScheduler, DeferredMetadataOnlyLivesWithCurrentUnresolvedSnapshot) {
+    cgl::AppearanceScheduler s;
+    EXPECT_EQ(s.update({{1,0,1}},0,1),1); // Unknown cost gets one metadata attempt.
+    s.defer(1,2);EXPECT_FALSE(s.select(1,1));
+    EXPECT_FALSE(s.update({},2,1));EXPECT_FALSE(s.hasDeferred());
+    EXPECT_EQ(s.update({{1,0,1}},3,1),1); // Ready/removed keys lose stale cost.
+    s.defer(99,100);EXPECT_FALSE(s.hasDeferred());
+    s.defer(1,2);s.clear();EXPECT_FALSE(s.hasDeferred());EXPECT_EQ(s.size(),0);
+}
+TEST(AppearanceScheduler, ExactFitAndSharedAppearanceUseOneBudgetRequirement) {
+    cgl::AppearanceScheduler s;
+    s.update({{1,1,1},{1,0,20},{2,0,1}},0,0);s.defer(1,10);s.defer(2,11);
+    EXPECT_EQ(s.size(),2);EXPECT_EQ(s.select(1,10),1);EXPECT_FALSE(s.select(1,9));
+    EXPECT_EQ(s.select(1,11),2);
+}

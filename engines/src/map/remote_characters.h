@@ -18,7 +18,7 @@ public:
     explicit RemoteCharacters(std::vector<AnimationRequest> catalog):catalog_(std::move(catalog)) {}
     void clear(ECSCore& world) {
         for(const auto& [id,entity]:entities_) world.destroyEntity(entity);
-        entities_.clear(); placeholder_.reset(); visible=readyVisible=outer=readyOuter=0; sequence_=0; active_.reset(); failed_.clear();scheduler_.clear();demands_.clear();
+        entities_.clear(); placeholder_.reset(); visible=readyVisible=outer=readyOuter=0; sequence_=0; active_.reset(); budgetOwner_.reset(); budgetDeferred=0; failed_.clear();scheduler_.clear();demands_.clear();capacity_=nextCapacityProbe_=0;
     }
     void apply(ECSCore& world,const CharacterSnapshot& packet,std::shared_ptr<const AnimationClip> placeholder) {
         if(packet.sequence<=sequence_) return;
@@ -84,11 +84,32 @@ public:
         }
         const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count());
-        const auto candidate=scheduler_.update(demands,now);
+        // Scan reference ownership at most four times/second during pressure.
+        // This is eventual capacity, not permission to reuse in-flight memory.
+        if(now>=nextCapacityProbe_ && (library.waitingForBudget() || scheduler_.hasDeferred())) {
+            capacity_=library.eventualAdmissionBytes();nextCapacityProbe_=now+250;
+        }
+        auto candidate=scheduler_.update(demands,now,capacity_);
+        if(budgetOwner_ && !scheduler_.contains(*budgetOwner_)) {
+            if(library.waitingBytes(catalog_[*budgetOwner_])) library.discardUnsubmitted();
+            budgetOwner_.reset();
+        }
+        if(active_ && !library.streamingPending()) {
+            if(const auto required=library.waitingBytes(catalog_[*active_])) {
+                if(scheduler_.contains(*active_)) {
+                    scheduler_.defer(*active_,*required);budgetOwner_=active_;
+                } else library.discardUnsubmitted();
+                active_.reset();
+                candidate=scheduler_.select(now,capacity_);
+            }
+        }
+        // Keep the last budget wait when no candidate fits: normal maintenance
+        // can still reclaim idle payload. Another candidate replaces it on acquire.
         // Only stale CPU work or prefetch displaced by visible demand is cancelled.
         // Keep same-region active work stable; nearer actors must not cause thrash.
         if(active_ && scheduler_.shouldSupersede(*active_,candidate) && library.discardUnsubmitted())
             active_.reset();
+        budgetDeferred=scheduler_.blockedCount(capacity_);
         if(!active_) active_=candidate;
         if(!active_) return;
         try {
@@ -98,15 +119,15 @@ public:
             failed_.insert(*active_);library.cancelPending();active_.reset();
         }
     }
-    size_t visible=0,readyVisible=0,outer=0,readyOuter=0;
+    size_t visible=0,readyVisible=0,outer=0,readyOuter=0,budgetDeferred=0;
 private:
     std::shared_ptr<const AnimationClip> placeholder_;
     std::vector<AppearanceScheduler::Demand> demands_;
     AppearanceScheduler scheduler_;
     std::vector<AnimationRequest> catalog_;
     std::map<uint64_t,Entity> entities_;
-    std::optional<size_t> active_;
+    std::optional<size_t> active_,budgetOwner_;
     std::set<size_t> failed_;
-    uint64_t sequence_=0;
+    uint64_t sequence_=0,capacity_=0,nextCapacityProbe_=0;
 };
 }
