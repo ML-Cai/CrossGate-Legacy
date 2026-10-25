@@ -49,14 +49,6 @@ set_target_properties(test_crowd_benchmark PROPERTIES RUNTIME_OUTPUT_DIRECTORY $
 gtest_discover_tests(test_crowd_benchmark WORKING_DIRECTORY ${CGL_BIN_PATH}
     PROPERTIES LABELS "unit" TIMEOUT 60)
 
-# Background decode scheduling/lifetime tests have no window or Vulkan dependency.
-add_executable(test_animation_decode_worker test_animation_decode_worker.cpp ../src/assets/animation_decode_worker.cpp)
-target_include_directories(test_animation_decode_worker PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
-target_link_libraries(test_animation_decode_worker PRIVATE GTest::gtest_main Threads::Threads cgl::common)
-set_target_properties(test_animation_decode_worker PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
-gtest_discover_tests(test_animation_decode_worker WORKING_DIRECTORY ${CGL_BIN_PATH}
-    PROPERTIES LABELS "unit\;memory" TIMEOUT 60)
-
 add_executable(test_local_character_feed test_local_character_feed.cpp)
 target_include_directories(test_local_character_feed PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 target_link_libraries(test_local_character_feed PRIVATE GTest::gtest_main cgl::common)
@@ -79,37 +71,9 @@ set_target_properties(test_frame_telemetry PROPERTIES RUNTIME_OUTPUT_DIRECTORY $
 gtest_discover_tests(test_frame_telemetry WORKING_DIRECTORY ${CGL_BIN_PATH}
     PROPERTIES LABELS "unit\;memory" TIMEOUT 60)
 
-add_executable(test_idle_resource_cache test_idle_resource_cache.cpp)
-target_include_directories(test_idle_resource_cache PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
-target_link_libraries(test_idle_resource_cache PRIVATE GTest::gtest_main)
-set_target_properties(test_idle_resource_cache PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
-gtest_discover_tests(test_idle_resource_cache WORKING_DIRECTORY ${CGL_BIN_PATH}
-    PROPERTIES LABELS "unit\;memory" TIMEOUT 60)
-
-add_executable(test_scene_animation_load test_scene_animation_load.cpp)
-target_include_directories(test_scene_animation_load PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
-target_link_libraries(test_scene_animation_load PRIVATE GTest::gtest_main cgl::graphics cgl::assets cgl::common)
-set_target_properties(test_scene_animation_load PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
-gtest_discover_tests(test_scene_animation_load WORKING_DIRECTORY ${CGL_BIN_PATH}
-    PROPERTIES LABELS "unit\;memory" TIMEOUT 60)
-
-add_executable(test_appearance_scheduler test_appearance_scheduler.cpp)
-target_include_directories(test_appearance_scheduler PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
-target_link_libraries(test_appearance_scheduler PRIVATE GTest::gtest_main)
-set_target_properties(test_appearance_scheduler PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
-gtest_discover_tests(test_appearance_scheduler WORKING_DIRECTORY ${CGL_BIN_PATH}
-    PROPERTIES LABELS "unit\;memory" TIMEOUT 60)
-
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_test(NAME streaming_stress_runner COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/StreamingStress/test_stress_runner.py)
 set_tests_properties(streaming_stress_runner PROPERTIES LABELS "unit;python;memory" TIMEOUT 60)
-
-add_executable(test_appearance_demand_telemetry test_appearance_demand_telemetry.cpp)
-target_include_directories(test_appearance_demand_telemetry PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
-target_link_libraries(test_appearance_demand_telemetry PRIVATE GTest::gtest_main)
-set_target_properties(test_appearance_demand_telemetry PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
-gtest_discover_tests(test_appearance_demand_telemetry WORKING_DIRECTORY ${CGL_BIN_PATH}
-    PROPERTIES LABELS "unit\;memory" TIMEOUT 60)
 
 # One process/device for all cycles; the wrapper samples only quiescent checkpoints.
 add_test(NAME resource_lifecycle_soak COMMAND ${Python3_EXECUTABLE}
@@ -120,3 +84,6 @@ set_tests_properties(resource_lifecycle_soak PROPERTIES WORKING_DIRECTORY ${CGL_
 
 add_test(NAME lifecycle_soak_runner COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/LifecycleSoak/test_runner.py)
 set_tests_properties(lifecycle_soak_runner PROPERTIES LABELS "unit;python;memory" TIMEOUT 30)
+
+include(${CMAKE_SOURCE_DIR}/cmake/HeadlessCoreTests.cmake)
+cgl_add_headless_core_tests("${CMAKE_SOURCE_DIR}" "${CGL_BIN_PATH}")
