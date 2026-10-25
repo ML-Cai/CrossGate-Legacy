@@ -27,7 +27,7 @@ public:
     MapScene(cgl::MapLibrary& maps, cgl::AnimationLibrary& animations)
         : IScene(cgl::SceneTypes::MapScene), maps_(maps), animations_(animations) {}
     void onEnter(cgl::ECSCore* world) noexcept override {
-        const auto loadStart = std::chrono::steady_clock::now();
+        const auto loadStart = std::chrono::steady_clock::now();entryStarted_=loadStart;
         if (auto* b=world->getSingleton<cgl::component::CrowdBenchmark>()) *b={};
         try {
             const auto& settings = *world->getSingleton<cgl::component::EngineState>()->settings;
@@ -51,21 +51,12 @@ public:
             auto& render = *world->getSingleton<cgl::component::RenderDeviceState>();
             auto* pass = world->getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
             auto& readers = *world->getSingleton<cgl::component::AssetsReaderState>();
-            map_ = maps_.acquire(std::filesystem::path(settings.general.EngineRootPath) / settings.map.FilePath,
-                readers, render.pDevice.get(), pass);
-            const cgl::MapPoint center{double(map_->layout.width / 2), double(map_->layout.height / 2)};
-            world->addSingleton<cgl::component::MapCamera>(center, scale);
-            world->addSingleton<cgl::component::MapHover>();
-            outline_ = maps_.acquireHoverOutline(scale, render.pDevice.get(), pass);
-            if (auto* benchmark = world->getSingleton<cgl::component::CrowdBenchmark>()) {
-                crowdScenario_=std::make_unique<cgl::CrowdScenario>(animations_);
-                crowdScenario_->enter(world,map_->layout,*benchmark);
-                benchmark->loadMs = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-loadStart).count();
-                benchmark->ready = true;ready_=true;
-                cgl::UpdateAnimations(*world,0);
-                return;
-            }
-            advanceEntry(world);
+            scale_=scale;mapPath_=std::filesystem::path(settings.general.EngineRootPath)/settings.map.FilePath;
+            map_=world->getSingleton<cgl::component::CrowdBenchmark>() ?
+                maps_.acquire(mapPath_,readers,render.pDevice.get(),pass) :
+                maps_.acquireProgressive(mapPath_,readers,render.pDevice.get(),pass);
+            if(!map_) {showMapProgress(world);return;}
+            initializeMap(world);
         } catch (const std::exception& error) {
             if (auto* b=world->getSingleton<cgl::component::CrowdBenchmark>())
                 b->loadMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-loadStart).count();
@@ -77,6 +68,7 @@ public:
         if(crowdScenario_) crowdScenario_->clear(world);
         if(serverDemo_) serverDemo_->clear(world);
         crowdScenario_.reset();serverDemo_.reset();
+        maps_.cancelPending();
         animations_.cancelPending();
         if (character_) world->destroyEntity(character_);
         character_ = 0;ready_=false;load_.reset();
@@ -96,7 +88,15 @@ public:
                 input->restartSceneRequested=false;
                 world->getSingleton<cgl::component::SceneState>()->nextScene=cgl::SceneTypes::MapScene;return;
             }
-            try {advanceEntry(world);} catch(const std::exception& error) {
+            try {
+                if(!map_) {
+                    auto* device=world->getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+                    auto* pass=world->getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+                    map_=maps_.acquireProgressive(mapPath_,*world->getSingleton<cgl::component::AssetsReaderState>(),device,pass);
+                    if(!map_) {showMapProgress(world);return;}
+                    initializeMap(world);
+                } else advanceEntry(world);
+            } catch(const std::exception& error) {
                 cgl::RaiseError(world->getSingleton<cgl::component::SceneState>(),"Map scene failed: ",error.what());
             }
             return;
@@ -151,6 +151,30 @@ public:
         }
     }
 private:
+    void showMapProgress(cgl::ECSCore* world) {
+        const auto p=maps_.progress();
+        if(p.completed==lastMapCompleted_ && p.total==lastMapTotal_) return;
+        lastMapCompleted_=p.completed;lastMapTotal_=p.total;
+        world->getSingleton<cgl::component::WindowHandle>()->pendingTitle="CGL | Loading map "+
+            (p.total?std::to_string(p.completed)+"/"+std::to_string(p.total):std::string("metadata"));
+    }
+    void initializeMap(cgl::ECSCore* world) {
+        auto* device=world->getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+        auto* pass=world->getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+        const cgl::MapPoint center{double(map_->layout.width / 2), double(map_->layout.height / 2)};
+        world->addSingleton<cgl::component::MapCamera>(center, scale_);
+        world->addSingleton<cgl::component::MapHover>();
+        outline_ = maps_.acquireHoverOutline(scale_, device, pass);
+        if (auto* benchmark = world->getSingleton<cgl::component::CrowdBenchmark>()) {
+            crowdScenario_=std::make_unique<cgl::CrowdScenario>(animations_);
+            crowdScenario_->enter(world,map_->layout,*benchmark);
+            benchmark->loadMs = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-entryStarted_).count();
+            benchmark->ready = true;ready_=true;
+            cgl::UpdateAnimations(*world,0);
+            return;
+        }
+        advanceEntry(world);
+    }
     void advanceEntry(cgl::ECSCore* world) {
         auto& render=*world->getSingleton<cgl::component::RenderDeviceState>();
         auto* pass=world->getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
@@ -197,7 +221,11 @@ private:
     std::shared_ptr<const cgl::MapResources> map_;
     std::shared_ptr<const cgl::MapHoverOutline> outline_;
     cgl::SceneAnimationLoad load_;
+    std::filesystem::path mapPath_;
+    double scale_=1;
+    std::chrono::steady_clock::time_point entryStarted_;
     size_t lastProgress_=std::numeric_limits<size_t>::max();
+    size_t lastMapCompleted_=std::numeric_limits<size_t>::max(),lastMapTotal_=std::numeric_limits<size_t>::max();
     uint32_t facing_=0;
     bool ready_=false,serverDemoEnabled_=false;
     cgl::Entity character_ = 0;

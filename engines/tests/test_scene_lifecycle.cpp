@@ -186,6 +186,21 @@ protected:
             glfwDestroyWindow(static_cast<GLFWwindow*>(window->nativeHandle));
         glfwTerminate();
     }
+    bool waitMapPrepared() {
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
+        while(!world_.getSingleton<cgl::component::MapCamera>() && std::chrono::steady_clock::now()<deadline) {
+            manager_.update(&world_);
+            if(world_.getSingleton<cgl::component::SceneState>()->state==cgl::StateTypes::ERROR) return false;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return world_.getSingleton<cgl::component::MapCamera>()!=nullptr;
+    }
+    bool mapReady() {
+        const auto* scene=world_.getSingleton<cgl::component::SceneState>();
+        const auto* loading=world_.getSingleton<cgl::component::SceneLoadProgress>();
+        return scene->scene && scene->scene->sceneType()==cgl::SceneTypes::MapScene &&
+            world_.getSingleton<cgl::component::MapCamera>() && (!loading || loading->ready);
+    }
     bool enterReadyScene(cgl::SceneTypes type) {
         const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
         auto* scene=world_.getSingleton<cgl::component::SceneState>();
@@ -283,7 +298,7 @@ TEST_F(DesktopSceneTest, MapObjectsAndCharacterRestartWithoutEntityOrUploadLeaks
     world_.getSingleton<cgl::component::EngineState>()->settings->map.FilePath = "map/0/2100.dat";
     auto* scene = world_.getSingleton<cgl::component::SceneState>();
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
-    while ((!scene->scene || scene->scene->sceneType() != cgl::SceneTypes::MapScene) &&
+    while (!mapReady() &&
            std::chrono::steady_clock::now() < deadline) {
         manager_.update(&world_);
         ASSERT_NE(scene->state, cgl::StateTypes::ERROR) << scene->lastError;
@@ -445,7 +460,7 @@ TEST_F(DesktopSceneTest, HouseFrontWallUsesNativeFootprintForActorOcclusion) {
     settings.map.FilePath="map/0/2100.dat"; settings.animation.SerialNum=100000;
     auto* scene=world_.getSingleton<cgl::component::SceneState>();
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
-    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::MapScene) &&
+    while (!mapReady() &&
         std::chrono::steady_clock::now()<deadline) {
         manager_.update(&world_);
         ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
@@ -524,7 +539,7 @@ TEST_F(DesktopSceneTest, LargeMap100UsesMultipleAtlasesAndReusesThemOnRestart) {
     settings.animation.SerialNum=100000;
     auto* scene=world_.getSingleton<cgl::component::SceneState>();
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
-    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::MapScene) &&
+    while (!mapReady() &&
           std::chrono::steady_clock::now()<deadline) {
         manager_.update(&world_);
         ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
@@ -664,7 +679,7 @@ TEST_F(DesktopSceneTest, ServerSnapshotsKeepMovementAndReleaseRemoteEntities) {
     library_.setTextureBudget(512ull*1024*1024);
     auto* scene=world_.getSingleton<cgl::component::SceneState>();
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
-    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::MapScene) && std::chrono::steady_clock::now()<deadline) {
+    while (!mapReady() && std::chrono::steady_clock::now()<deadline) {
         manager_.update(&world_);
         ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -720,7 +735,7 @@ TEST_F(DesktopSceneTest, SwitchBetweenServerDemoAndCrowdReleasesPreviousModeEnti
     settings.serverdemo.Enabled=true;library_.setTextureBudget(512ull*1024*1024);
     auto* scene=world_.getSingleton<cgl::component::SceneState>();
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
-    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::MapScene) && std::chrono::steady_clock::now()<deadline) {
+    while (!mapReady() && std::chrono::steady_clock::now()<deadline) {
         manager_.update(&world_);
         ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -822,7 +837,7 @@ TEST_F(DesktopSceneTest, TransitionMaintenanceEvictsAfterExitAndReloadsBeforeDra
     settings.map.FilePath="map/0/100.dat";settings.animation.SerialNum=100000;
     auto* scene=world_.getSingleton<cgl::component::SceneState>();
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
-    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::MapScene) && std::chrono::steady_clock::now()<deadline) {
+    while (!mapReady() && std::chrono::steady_clock::now()<deadline) {
         manager_.update(&world_);ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -842,6 +857,7 @@ TEST_F(DesktopSceneTest, TransitionMaintenanceEvictsAfterExitAndReloadsBeforeDra
         map=maps_.acquire(std::filesystem::path(settings.general.EngineRootPath)/settings.map.FilePath,readers,device,pass);
         draw_.update(&world_);scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);
         ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::MapScene));
         EXPECT_EQ(library_.usage().clips,16);EXPECT_EQ(maps_.usage().maps,1);
         draw_.update(&world_);
     }
@@ -854,7 +870,7 @@ TEST_F(DesktopSceneTest, DeferredRetirementFollowsActualFrameFencesAndRetainsBud
     settings.map.FilePath="map/0/100.dat";settings.animation.SerialNum=100000;
     auto* scene=world_.getSingleton<cgl::component::SceneState>();
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
-    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::MapScene) && std::chrono::steady_clock::now()<deadline) {
+    while (!mapReady() && std::chrono::steady_clock::now()<deadline) {
         manager_.update(&world_);ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -868,6 +884,7 @@ TEST_F(DesktopSceneTest, DeferredRetirementFollowsActualFrameFencesAndRetainsBud
     for(int round=0;round<3;++round) {
         if(round) {scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);}
         ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+        ASSERT_TRUE(waitMapPrepared());
         std::vector<std::weak_ptr<const cgl::AnimationClip>> clips;
         world_.forEach<cgl::component::Sprite>([&](auto,auto* sprite){clips.push_back(sprite->clip);});
         std::weak_ptr<const cgl::MapResources> map=maps_.acquire(
@@ -1065,7 +1082,7 @@ TEST_F(DesktopSceneTest, ReenterMapAtExactAnimationBudgetReusesRetiredGpuObjects
     settings.map.FilePath="map/0/100.dat";settings.animation.SerialNum=100000;
     auto* scene=world_.getSingleton<cgl::component::SceneState>();
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
-    while((!scene->scene || scene->scene->sceneType()!=cgl::SceneTypes::MapScene) && std::chrono::steady_clock::now()<deadline) {
+    while (!mapReady() && std::chrono::steady_clock::now()<deadline) {
         manager_.update(&world_);ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -1174,6 +1191,7 @@ TEST_F(DesktopSceneTest, NewCharacterSceneWaitsForOldFramesWithoutPublishingPart
     settings.animation.SerialNum=serial;
     auto* scene=world_.getSingleton<cgl::component::SceneState>();scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);
     ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+    ASSERT_TRUE(waitMapPrepared());
     auto* progress=world_.getSingleton<cgl::component::SceneLoadProgress>();ASSERT_NE(progress,nullptr);
     EXPECT_FALSE(progress->ready);EXPECT_EQ(progress->total,16);EXPECT_EQ(progress->requiredBytes,required);
     auto count=[&]{size_t n=0;world_.forEach<cgl::component::Sprite>([&](auto,auto*){++n;});return n;};
@@ -1214,6 +1232,7 @@ TEST_F(DesktopSceneTest, PartialSceneAdmissionCanRestartAndCancelWithoutLeakingP
     settings.map.FilePath="map/0/100.dat";settings.animation.SerialNum=100000;
     auto* scene=world_.getSingleton<cgl::component::SceneState>();scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);
     ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+    ASSERT_TRUE(waitMapPrepared());
     auto* progress=world_.getSingleton<cgl::component::SceneLoadProgress>();ASSERT_NE(progress,nullptr);
     ASSERT_FALSE(progress->ready);EXPECT_EQ(progress->completed,15);ASSERT_TRUE(library_.waitingForBudget());
     std::weak_ptr<const cgl::AnimationClip> partial=library_.findReady({100000,0,0});ASSERT_FALSE(partial.expired());
@@ -1840,6 +1859,82 @@ TEST_F(DesktopSceneTest, LateMapDecodeFailurePublishesNoPartialCacheAndCanReload
     EXPECT_EQ(static_cast<cgl::graphics::vulkan::Device*>(device)->validationErrorCount(),0);
 }
 
+TEST_F(DesktopSceneTest, ProgressiveMapCancelsReaderWaitAndSubmittedUploadThenReusesSlot) {
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    const auto root=std::filesystem::path(world_.getSingleton<cgl::component::EngineState>()->settings->general.EngineRootPath);
+    cgl::MapLibrary cache;
+    for(unsigned i=0;i<3;++i) {
+        std::unique_lock held(*readers.queryMutex);
+        EXPECT_EQ(cache.acquireProgressive(root/"map/0/100.dat",readers,device,pass),nullptr);
+        EXPECT_TRUE(cache.progress().cpuPending);EXPECT_EQ(cache.progress().workingBytes,0);
+        EXPECT_THROW(cache.acquireProgressive(root/"map/0/2100.dat",readers,device,pass),std::logic_error);
+        cache.cancelPending(); // Must not wait for the held reader lock.
+        EXPECT_FALSE(cache.progress().loading);EXPECT_EQ(cache.usage().pendingBytes,0);
+    }
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
+    while(!cache.progress().uploadPending && std::chrono::steady_clock::now()<deadline) {
+        cache.acquireProgressive(root/"map/0/100.dat",readers,device,pass);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(cache.progress().uploadPending);EXPECT_LE(cache.progress().workingBytes,32ull*1024*1024);
+    EXPECT_EQ(cache.usage().maps,0);cache.cancelPending();
+    EXPECT_FALSE(cache.progress().loading);EXPECT_EQ(cache.usage().pendingBytes,0);EXPECT_EQ(cache.usage().maps,0);
+    std::shared_ptr<const cgl::MapResources> map;
+    bool sawCpu=false,sawUpload=false,sawCompletedPage=false;
+    while(!map && std::chrono::steady_clock::now()<deadline) {
+        map=cache.acquireProgressive(root/"map/0/100.dat",readers,device,pass);
+        const auto p=cache.progress();sawCpu|=p.cpuPending;sawUpload|=p.uploadPending;sawCompletedPage|=p.completed>0;
+        EXPECT_LE(p.workingBytes,32ull*1024*1024);EXPECT_LE(p.pendingBytes,256ull*1024*1024);
+        if(!map) EXPECT_EQ(cache.usage().maps,0);
+        draw_.update(&world_);std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(map,nullptr);EXPECT_TRUE(sawCpu);EXPECT_TRUE(sawUpload);EXPECT_TRUE(sawCompletedPage);
+    EXPECT_EQ(map->layout.width,840);EXPECT_EQ(map->layout.height,610);EXPECT_EQ(map->renderers.size(),2);
+    EXPECT_EQ(map->rgbaBytes,40330752);EXPECT_EQ(cache.usage().pendingBytes,0);EXPECT_FALSE(cache.progress().loading);
+    EXPECT_EQ(cache.acquireProgressive(root/"map/0/100.dat",readers,device,pass),map);
+    ASSERT_EQ(device->waitIdle(),cgl::Results::Success);map.reset();cache.clear();EXPECT_EQ(cache.usage().maps,0);
+}
+
+TEST_F(DesktopSceneTest, ProgressiveMapFailureClearsPartialPagesAndSceneExitCancelsLoading) {
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    const auto root=std::filesystem::path(world_.getSingleton<cgl::component::EngineState>()->settings->general.EngineRootPath);
+    constexpr auto version=cgl::CrossGateVersion::CG_VERSION_Classic;
+    uint32_t failId=0;
+    {
+        std::lock_guard lock(*readers.queryMutex);cgl::MapLayout layout;
+        ASSERT_EQ(cgl::IMapLayoutReader::create()->read(root/"map/0/100.dat",&layout),cgl::Results::Success);
+        cgl::MapBuilder plan(std::move(layout),*readers.pGfxInfoReader[version],*readers.pPaletteReader);
+        for(const auto& [id,image]:plan.data().images) if(image.atlasIndex==1) {failId=id;break;}
+    }
+    ASSERT_NE(failId,0);
+    auto proxy=std::make_unique<MapDecodeFailure>(std::move(readers.pGfxDataReader[version]),failId);
+    auto* injected=proxy.get();readers.pGfxDataReader[version]=std::move(proxy);
+    cgl::MapLibrary cache;bool failed=false,sawPage=false;
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
+    while(!failed && std::chrono::steady_clock::now()<deadline) {
+        try {EXPECT_EQ(cache.acquireProgressive(root/"map/0/100.dat",readers,device,pass),nullptr);}
+        catch(const std::runtime_error&) {failed=true;}
+        sawPage|=cache.progress().completed>0;std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    cache.cancelPending();
+    EXPECT_TRUE(failed);EXPECT_TRUE(sawPage);EXPECT_EQ(injected->failures,1);
+    auto original=std::move(injected->source);readers.pGfxDataReader[version]=std::move(original);
+    EXPECT_FALSE(cache.progress().loading);EXPECT_EQ(cache.usage().pendingBytes,0);EXPECT_EQ(cache.usage().maps,0);
+    // Leave a real map scene while its background preparation is in flight.
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;settings.map.FilePath="map/0/100.dat";
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();scene->nextScene=cgl::SceneTypes::MapScene;
+    manager_.update(&world_);EXPECT_TRUE(maps_.progress().loading);
+    cgl::SceneManagerDestroySystem{}.update(&world_);
+    EXPECT_FALSE(maps_.progress().loading);EXPECT_EQ(maps_.usage().pendingBytes,0);
+    EXPECT_EQ(world_.getSingleton<cgl::component::MapCamera>(),nullptr);
+}
+
 TEST_F(DesktopSceneTest, ResourceLifecycleReturnsToQuiescentBaseline) {
     ASSERT_TRUE(world_.getSingleton<cgl::component::EngineState>()->settings->display.Validation)
         << "Lifecycle soak requires Display.Validation=true";
@@ -1916,6 +2011,7 @@ TEST_F(DesktopSceneTest, ResourceLifecycleReturnsToQuiescentBaseline) {
         ASSERT_EQ(a.retiredClips,0);ASSERT_FALSE(library_.streamingPending());ASSERT_FALSE(library_.waitingForBudget());
         ASSERT_EQ(m.maps+m.outlines+m.pages+m.retiredMaps+m.retiredOutlines,0);
         ASSERT_EQ(m.rgbaBytes+m.outlineBytes+m.retiredMapBytes+m.retiredOutlineBytes,0);
+        ASSERT_EQ(m.pendingBytes+m.workingBytes,0);ASSERT_FALSE(m.loading);ASSERT_FALSE(m.cpuPending);ASSERT_FALSE(m.uploadPending);
         size_t sprites=0,remote=0;
         world_.forEach<cgl::component::Sprite>([&](auto,auto*){++sprites;});
         world_.forEach<cgl::component::RemoteCharacter>([&](auto,auto*){++remote;});

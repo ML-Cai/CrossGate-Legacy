@@ -5,6 +5,7 @@
 #include "cgl/assets/graphics_data_reader.h"
 #include "cgl/assets/palette_reader.h"
 #include <utility>
+#include <atomic>
 
 namespace cgl {
 struct MapPagePixels {
@@ -18,15 +19,17 @@ struct MapPagePixels {
 // be destroyed after the last buildPage. Concurrent calls are not an API guarantee.
 class MapBuilder {
 public:
-    MapBuilder(MapLayout layout, IGraphicsInfoReader& info, IPaletteReader& palette);
+    MapBuilder(MapLayout layout, IGraphicsInfoReader& info, IPaletteReader& palette,
+        const std::atomic_bool* cancelled=nullptr);
     MapBuilder(const MapBuilder&) = delete;
     MapBuilder& operator=(const MapBuilder&) = delete;
     MapBuilder(MapBuilder&&) noexcept = default;
     MapBuilder& operator=(MapBuilder&&) noexcept = default;
     const MapData& data() const noexcept { return data_; }
     size_t pageCount() const noexcept { return pages_.size(); }
+    uint64_t pageBytes(size_t index) const { const auto& p=pages_.at(index);return uint64_t(p.width)*p.height*4; }
     MapPagePixels buildPage(size_t index, IGraphicsDataReader& reader,
-        uint64_t maxBytes = 32ull*1024*1024) const;
+        uint64_t maxBytes = 32ull*1024*1024,const std::atomic_bool* cancelled=nullptr) const;
     // Consume metadata after the last page. Further page requests are invalid.
     MapData takeData() && {
         pages_.clear();infos_.clear();
