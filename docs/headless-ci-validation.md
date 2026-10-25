@@ -47,9 +47,39 @@ See [build and test](build-and-test.md#sdk-free-core-ci) for commands. On the
 Windows development host, independent ordinary and ASan builds each pass
 **46/46**, using only the test submodule and Python interpreter. The ordinary
 full desktop suite passes **287/287** after migrating the target definitions.
-Hosted results and final desktop ASan verification are recorded below.
+Full desktop MSVC ASan also passes **286/286**. Hosted results follow below.
 
 No renderer/resource policy or game behavior is changed. Existing GPU/corpus,
 Python binding and repeated lifecycle tests still require their normal local
 validation lane. Linux success here establishes portability of this selected
 subset, not an Android/Linux client port or browser client.
+
+
+## Hosted evidence
+
+[Hosted run 40184991978](https://github.com/ML-Cai/CrossGate-Legacy/actions/runs/40184991978)
+validates code commit `3b4cb5675aa892cfa02a48aaecb6569dc1824780`:
+
+| Runner | ASan | CTest passed | Skipped | Uploaded diagnostics |
+| --- | --- | ---: | ---: | --- |
+| Windows 2022 | OFF | 46/46 | 0 | Verified |
+| Windows 2022 | ON | 46/46 | 0 | Verified |
+| Ubuntu 24.04 | OFF | 46/46 | 0 | Verified |
+| Ubuntu 24.04 | ON | 46/46 | 0 | Verified |
+
+All four jobs conclude success. All four artifact archives were retrieved and
+inspected: their JUnit reports each contain 46 tests, zero failures and zero
+skips, with configure/build/test logs retained. The Linux jobs request
+`detect_leaks=1:halt_on_error=1`; this does not replace race detection or GPU
+resource validation. No application assets or desktop dependencies were installed
+by these jobs.
+
+Local full desktop timings: ordinary 287/287 in 64.15 s; MSVC ASan 286/286 in
+269.03 s. Standalone MSVC ordinary 46/46 in 2.25 s; ASan 46/46 in 3.73 s.
+These are test-suite durations, not game performance comparisons.
+
+Ignored local evidence: `build/headless{,-asan}-*.log`,
+`build/core-ci-{dev,asan}-tests.log`, `build/headless{,-asan}/results.xml` and
+`build/ci-hosted/*.zip`. CI logs/artifacts live on the linked run for their
+configured retention period; the committed table records the observed outcomes.
+The PR's current checks remain authoritative for later commits/runs.

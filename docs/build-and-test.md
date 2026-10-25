@@ -511,3 +511,7 @@ GPU runner are used. Linux ASan requests leak detection; Windows MSVC ASan does
 not provide equivalent LeakSanitizer coverage. This lane does not replace local
 Vulkan, real-corpus, Python binding or long-session validation, and does not claim
 a working Linux game client.
+
+
+The initial four-job hosted matrix and local regression results are recorded in
+[headless CI validation](headless-ci-validation.md).
