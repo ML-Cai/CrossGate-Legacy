@@ -1,0 +1,67 @@
+name: Headless core tests
+
+on:
+  pull_request:
+    branches: [develop]
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: ${{ matrix.os }} / ASan ${{ matrix.asan }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+        asan: ['OFF', 'ON']
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+      - id: python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: '3.12'
+      - name: Initialize only the pinned test dependency
+        run: git submodule update --init third_party/googletest
+      - name: Configure, build and test (MSVC)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          if errorlevel 1 exit /b 1
+          cmake -S engines/tests/headless -B build/headless -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCGL_ENABLE_ASAN=${{ matrix.asan }} -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" > configure.log 2>&1
+          if errorlevel 1 exit /b 1
+          cmake --build build/headless --parallel 2 > build.log 2>&1
+          if errorlevel 1 exit /b 1
+          ctest --test-dir build/headless -V --no-tests=error --output-junit results.xml > tests.log 2>&1
+          if errorlevel 1 exit /b 1
+      - name: Configure, build and test (GCC)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cmake -S engines/tests/headless -B build/headless -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCGL_ENABLE_ASAN=${{ matrix.asan }} -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" > configure.log 2>&1
+          cmake --build build/headless --parallel 2 > build.log 2>&1
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 ctest --test-dir build/headless -V --no-tests=error --output-junit results.xml > tests.log 2>&1
+      - name: Retain test and configure/build diagnostics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: headless-${{ matrix.os }}-asan-${{ matrix.asan }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            configure.log
+            build.log
+            tests.log
+            build/headless/results.xml
+            build/headless/Testing/Temporary/
+            build/headless/CMakeFiles/CMakeConfigureLog.yaml
