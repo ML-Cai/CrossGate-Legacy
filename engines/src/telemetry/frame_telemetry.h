@@ -16,7 +16,7 @@ inline double TimingPercentileSorted(std::span<const double> sorted,double p) {
     if(!std::isfinite(p) || p<=0 || p>1) throw std::invalid_argument("Invalid percentile");
     return sorted.empty()?0:sorted[size_t(std::ceil(p*sorted.size()))-1];
 }
-struct FrameSample {double frameMs=0,updateMs=0,renderMs=0,sortMs=0;uint32_t actors=0,drawCalls=0;double fenceWaitMs=0,recordMs=0;};
+struct FrameSample {double frameMs=0,updateMs=0,renderMs=0,sortMs=0;uint32_t actors=0,drawCalls=0;double fenceWaitMs=0,recordMs=0;uint32_t fallbackMarkers=0;};
 struct FrameSummary {
     size_t count=0;uint64_t total=0;
     double fps=0,meanMs=0,p50Ms=0,p95Ms=0,p99Ms=0,maxMs=0,updateMs=0,renderMs=0,sortMs=0;

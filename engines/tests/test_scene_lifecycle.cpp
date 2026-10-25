@@ -1467,11 +1467,20 @@ TEST_F(DesktopSceneTest, VisibleWorkingSetOverBudgetKeepsEntitiesAndPlaceholders
         remote.update(world_,library_,readers,device,pass,camera,viewport);draw_.update(&world_);
         const auto u=library_.usage();EXPECT_LE(u.rgbaBytes+u.retiredBytes+u.pendingBytes,u.budgetBytes);
     }
-    size_t count=0,placeholders=0;
-    world_.forEach<cgl::component::RemoteCharacter,cgl::component::Sprite>([&](auto,auto*,auto* sprite) {
-        ++count;ASSERT_NE(sprite->clip,nullptr);if(sprite->clip==placeholder) ++placeholders;
+    size_t count=0,placeholders=0,deferred=0;
+    world_.forEach<cgl::component::RemoteCharacter,cgl::component::Sprite>([&](auto,auto* tag,auto* sprite) {
+        ++count;ASSERT_NE(sprite->clip,nullptr);
+        if(tag->state==cgl::component::AppearanceState::Deferred) ++deferred;
+        if(sprite->clip==placeholder) {
+            ++placeholders;EXPECT_FALSE(tag->presented);
+            EXPECT_NE(tag->state,cgl::component::AppearanceState::Ready);
+            EXPECT_NE(tag->state,cgl::component::AppearanceState::Failed);
+        } else {
+            EXPECT_TRUE(tag->presented);EXPECT_EQ(tag->state,cgl::component::AppearanceState::Ready);
+        }
     });
     EXPECT_EQ(count,4);EXPECT_GT(placeholders,0);EXPECT_EQ(remote.visible,4);EXPECT_LT(remote.readyVisible,4);
+    EXPECT_GT(deferred,0);
     EXPECT_EQ(library_.failedLoads(),0); // Temporary pressure must not poison appearances.
     remote.clear(world_);library_.cancelPending();EXPECT_FALSE(library_.cpuPending());
     EXPECT_GT(library_.trimUnused(baseline),0);EXPECT_EQ(library_.usage().rgbaBytes,baseline);
@@ -1740,6 +1749,49 @@ TEST_F(DesktopSceneTest, PreparedAdmissionMissPreservesUploadAndRecoversWithExac
     device->waitIdle();one.reset();two.reset();cache.clear();EXPECT_EQ(cache.pendingBytes(),0);
 }
 
+
+TEST_F(DesktopSceneTest, RemoteAppearanceStateSurvivesFailureAndSnapshotReplacementWithoutTelemetry) {
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    auto placeholder=library_.findReady({101406,0,5});ASSERT_NE(placeholder,nullptr);
+    cgl::RemoteCharacters remote({{100000,0,0},{UINT32_MAX,0,0},{101406,0,5}});
+    cgl::component::MapCamera camera{{10,10},1};const cgl::Viewport viewport{0,0,800,600};
+    remote.apply(world_,{1,{{1,{10,10},0}}},placeholder);
+    cgl::component::RemoteCharacter* tag=nullptr;
+    world_.forEach<cgl::component::RemoteCharacter>([&](auto,auto* value){tag=value;});
+    ASSERT_NE(tag,nullptr);EXPECT_EQ(tag->state,cgl::component::AppearanceState::Queued);EXPECT_FALSE(tag->presented);
+    {
+        std::unique_lock held(*readers.queryMutex);
+        remote.update(world_,library_,readers,device,pass,camera,viewport);
+        EXPECT_EQ(tag->state,cgl::component::AppearanceState::Loading);EXPECT_FALSE(tag->presented);
+    }
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(20);
+    while(tag->state!=cgl::component::AppearanceState::Ready && std::chrono::steady_clock::now()<deadline) {
+        remote.update(world_,library_,readers,device,pass,camera,viewport);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_EQ(tag->state,cgl::component::AppearanceState::Ready);EXPECT_TRUE(tag->presented);EXPECT_EQ(remote.readyVisible,1);
+    remote.apply(world_,{2,{{1,{10,10},1}}},placeholder);
+    EXPECT_EQ(tag->state,cgl::component::AppearanceState::Queued);EXPECT_FALSE(tag->presented);
+    while(tag->state!=cgl::component::AppearanceState::Failed && std::chrono::steady_clock::now()<deadline) {
+        remote.update(world_,library_,readers,device,pass,camera,viewport);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_EQ(tag->state,cgl::component::AppearanceState::Failed);EXPECT_FALSE(tag->presented);EXPECT_EQ(remote.readyVisible,0);
+    const auto failed=library_.failedLoads();EXPECT_EQ(failed,1);
+    for(unsigned i=0;i<8;++i) remote.update(world_,library_,readers,device,pass,camera,viewport);
+    EXPECT_EQ(library_.failedLoads(),failed); // A failed appearance does not restart every frame.
+    remote.apply(world_,{3,{{1,{10,10},2}}},placeholder);
+    remote.update(world_,library_,readers,device,pass,camera,viewport);
+    EXPECT_EQ(tag->state,cgl::component::AppearanceState::Ready);EXPECT_TRUE(tag->presented);
+    EXPECT_EQ(remote.readyVisible,1); // Matching requested appearance is ready even if it shares the placeholder pointer.
+    remote.apply(world_,{4,{{1,{1000,1000},2}}},placeholder);
+    remote.update(world_,library_,readers,device,pass,camera,viewport);
+    EXPECT_EQ(tag->state,cgl::component::AppearanceState::Ready);EXPECT_FALSE(tag->presented);
+    remote.clear(world_);library_.cancelPending();EXPECT_FALSE(library_.streamingPending());
+}
 
 TEST_F(DesktopSceneTest, ResourceLifecycleReturnsToQuiescentBaseline) {
     ASSERT_TRUE(world_.getSingleton<cgl::component::EngineState>()->settings->display.Validation)

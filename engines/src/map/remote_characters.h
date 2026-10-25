@@ -9,9 +9,9 @@
 #include <chrono>
 #include "map/appearance_scheduler.h"
 #include "telemetry/appearance_demand_telemetry.h"
+#include "map/remote_character_components.h"
 
 namespace cgl {
-namespace component { struct RemoteCharacter { uint64_t serverId; size_t appearance; }; }
 // Scene-owned bridge from complete snapshots to ECS. It owns entity identities,
 // never GPU resources; engine ready/retired ownership covers submitted GPU work.
 class RemoteCharacters {
@@ -49,6 +49,7 @@ public:
                     world.getComponent<component::Sprite>(found->second)->clip=placeholder;
                     *world.getComponent<component::AnimationPlayer>(found->second)={};
                     tag->appearance=actor.appearance;
+                    tag->state=component::AppearanceState::Queued;tag->presented=false;
                 }
             }
         }
@@ -75,6 +76,8 @@ public:
                 {p.x+ready->offsetX*camera.scale,p.y+ready->offsetY*camera.scale},
                 ready->width,ready->height,camera.scale,viewport);
             const auto presented=ready && (region==0 || intersects) ? ready : placeholder_;
+            tag->presented=ready && (region==0 || intersects);
+            tag->state=ready ? component::AppearanceState::Ready : component::AppearanceState::Queued;
             if(sprite->clip!=presented) {
                 sprite->clip=presented; *world.getComponent<component::AnimationPlayer>(entity)={};
             }
@@ -130,6 +133,17 @@ public:
         if(active_ && library.uploadPending() && !prepared_) {
             const auto next=scheduler_.select(now,capacity_,active_);
             if(next && library.prepareNext(catalog_[*next],readers)) prepared_=next;
+        }
+        // Publish readiness even when telemetry is disabled. Ready means the
+        // requested appearance, never the shared compatibility placeholder.
+        for(const auto& [id,entity]:entities_) {
+            auto* tag=world.getComponent<component::RemoteCharacter>(entity);
+            if(tag->state==component::AppearanceState::Ready) continue;
+            if(failed_.contains(tag->appearance)) tag->state=component::AppearanceState::Failed;
+            else if(scheduler_.blocked(tag->appearance,capacity_) || library.waitingBytes(catalog_[tag->appearance]))
+                tag->state=component::AppearanceState::Deferred;
+            else if(library.loading(catalog_[tag->appearance]) || completed==tag->appearance)
+                tag->state=component::AppearanceState::Loading;
         }
         if(telemetry) {
             for(auto& o:observations_) {

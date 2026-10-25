@@ -1,22 +1,29 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #81 (same-process lifecycle soak validation). Each follow-up
+Current base: merged PR #82 (SDK-free Windows/Linux CI). Each follow-up
 must run independently on its merged develop base. Scope is selected from actual
 profiles, not a commitment to speculative abstractions.
 
 | Priority | PR scope | Required validation |
 | --- | --- | --- |
-| Current | CPU-only CI build/test lane | Shared native test registry, SDK-free builds, Windows/Linux ordinary and ASan jobs, retained failure artifacts |
-| Then | Explicit visible-appearance readiness policy | Priority/fallback behavior, coverage, pending demand age and no premature resource release |
+| Complete (#82) | CPU-only CI build/test lane | Shared native test registry, SDK-free builds, Windows/Linux ordinary and ASan jobs, retained failure artifacts |
+| Current | Explicit visible-appearance readiness policy | Priority/fallback behavior, coverage, pending demand age and no premature resource release |
 | Then | Progressive map loading | Separate CPU loading from bounded GPU submission, cancellation and failure recovery; preserve a working native client |
 | Profile-driven | Further recording/batching or graph optimization | Same resources, painter order, comparable frame/GPU costs and explicit buffer lifetimes |
 
 The earlier 2-3 PR rendering estimate is superseded by this functional sequence.
-The soak/tooling PR is merged. Keep hosted CI dependency/build changes separate
+The soak/tooling and CPU-only CI PRs are merged. Keep hosted CI dependency/build changes separate
 from resource readiness and map-loading behavior.
 Readiness policy is a separate PR; progressive map loading may need two steps
 (CPU data ownership, then upload scheduling). Do not promise a fixed total while
 those interfaces are still being established.
+
+The readiness change preserves visible-first selection, same-region stability,
+budget-fit selection and existing aging. It represents unresolved remote actors
+with a shared ground marker and publishes queued/loading/deferred/failed/ready
+state separately from whether a ready clip is actually pinned for presentation.
+It does not rotate visible victims or guarantee full coverage under an oversized
+visible working set. See [fallback validation](visible-appearance-fallback-validation.md).
 
 #73 raises appearance readiness consistently in the measured large cases but does
 not uniformly improve FPS or successful latency tails. More ready actors also

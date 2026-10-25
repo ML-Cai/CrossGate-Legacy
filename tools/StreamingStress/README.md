@@ -175,7 +175,13 @@ must still wait. Leaving the demand set drops remembered costs and clears obsole
 budget waits. Already displayed visible owners remain stable to avoid upload churn.
 
 Temporary pressure waits/retries; intrinsically oversized clips fail and keep
-their placeholder. A visible working set larger than the budget can still leave
+their ground marker. Unresolved remote actors share the scene's cached yellow
+diamond outline instead of displaying the player's appearance. Markers are drawn
+after ground tiles and before world objects, while cursor hover remains an overlay.
+`drawn_actors_last_frame` excludes these markers; `fallback_markers_last_frame`
+counts their clipped draw submissions (which may still be covered by buildings).
+Neither counter measures unobscured pixels. Ready coverage retains its existing
+ground-anchor definition. A visible working set larger than the budget can still leave
 actors unresolved indefinitely: choosing far-visible victims or lower-detail
 representations remains separate work. Cache-only prefetch may be evicted before
 it is used; this deliberately prioritizes retaining visible appearances.

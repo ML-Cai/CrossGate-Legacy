@@ -149,8 +149,11 @@ for interactive performance testing. Enable `Display.Validation` for diagnostics
   prefetch margin. Existing IDs and world positions inside the interest region
   survive updates; moving the camera can change the visible count between packets.
 - The title shows wall-clock FPS and ready/total visible and prefetch actors.
-  Initial placeholders share the player's clip, then change to the requested
-  appearance when its fenced upload finishes. Map occlusion still applies.
+  Unresolved appearances use shared yellow diamond ground markers, then change
+  to the requested character when its fenced upload finishes. Markers sit below
+  world objects; the cursor's matching diamond remains an overlay. They are not
+  counted as ready characters or `drawn_actors_last_frame`;
+  `fallback_markers_last_frame` reports their actual recorded draw count.
 
 This is a local server simulator, with no network dependency. Its CPU-only
 `LocalCharacterFeed` produces complete snapshots; `RemoteCharacters` applies IDs,
@@ -165,5 +168,5 @@ contains enough choices; otherwise skins can repeat. It uses a metadata-only cat
 of up to 512 characters. Its cache is bounded by this finite catalog and a 512 MiB
 animation texture payload budget, separate from map textures and driver overhead.
 It is not a production eviction policy for infinitely many server-provided skins.
-Invalid appearance loads are reported and remain placeholders. The geometry test
+Invalid appearance loads are reported and retain their ground markers. The geometry test
 counts ground anchors, not unobscured pixels or sprites extending across an edge.
