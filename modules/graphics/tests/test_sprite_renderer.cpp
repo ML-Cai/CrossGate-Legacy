@@ -437,3 +437,48 @@ TEST_F(SpriteRendererTest, OptionalGpuTimingConsumesOnlyCompletedRecordingsAndRe
         static_cast<vk::CommandBufferList*>(commands_.get())->destroy();
     }
 }
+
+TEST_F(SpriteRendererTest, QuadSharedDiagonalBlendsEachPixelExactlyOnce) {
+    constexpr std::array<uint8_t,4> rgba{255,255,255,128};
+    renderer_=graphics::ISpriteRenderer::create(device_.get(),pass_.get(),1,1,1,rgba);
+    ASSERT_NE(renderer_,nullptr);
+    for(const auto area:{cgl::Viewport{0,0,8,8},cgl::Viewport{2,1,4,6}}) {
+        Pixels pixels{};
+        renderDraw([&](auto* command,const auto&) {
+            renderer_->draw(command,area,0,-.25f,-.25f,8.5f);
+        },&pixels);
+        for(uint32_t y=0;y<side;++y) for(uint32_t x=0;x<side;++x) {
+            const bool inside=x>=uint32_t(area.x) && x<uint32_t(area.x)+area.width &&
+                y>=uint32_t(area.y) && y<uint32_t(area.y)+area.height;
+            const Pixel expected=inside?Pixel{128,128,255,255}:Pixel{0,0,255,255};
+            for(size_t channel=0;channel<4;++channel)
+                EXPECT_NEAR(pixels[y*side+x][channel],expected[channel],1)<<x<<","<<y;
+        }
+    }
+}
+TEST_F(SpriteRendererTest, FractionalAtlasQuadsPreserveUvLayerAndFaintAlphaOnBothTriangles) {
+    const std::array<Pixel,4> colors{{{255,0,0,128},{0,255,0,64},{0,0,255,192},{255,255,255,1}}};
+    const std::array<Pixel,4> blended{{{128,0,127,255},{0,64,191,255},{0,0,255,255},{1,1,255,255}}};
+    std::array<uint8_t,64> rgba{};
+    for(size_t frame=0;frame<2;++frame) for(size_t i=0;i<4;++i) {
+        const auto& color=colors[(i+frame)%4];const size_t offset=(frame*8+(i/2)*4+1+i%2)*4;
+        std::copy(color.begin(),color.end(),rgba.begin()+offset);
+    }
+    renderer_=graphics::ISpriteRenderer::create(device_.get(),pass_.get(),4,2,2,rgba);
+    ASSERT_NE(renderer_,nullptr);
+    for(uint32_t frame=0;frame<2;++frame) {
+        Pixels pixels{};
+        renderDraw([&](auto* command,const auto& area) {
+            renderer_->drawRegion(command,area,frame,{1,0,2,2},.25f,.25f,3.75f);
+        },&pixels);
+        for(size_t y=0;y<side;++y) for(size_t x=0;x<side;++x) {
+            const auto& expected=blended[((y/4)*2+x/4+frame)%4];
+            if(expected[0]==1) {
+                // A one-LSB tolerance alone would also accept a dropped faint texel.
+                EXPECT_EQ(pixels[y*side+x][0],1);EXPECT_EQ(pixels[y*side+x][1],1);
+            }
+            for(size_t channel=0;channel<4;++channel)
+                EXPECT_NEAR(pixels[y*side+x][channel],expected[channel],1)<<x<<","<<y<<", layer "<<frame;
+        }
+    }
+}

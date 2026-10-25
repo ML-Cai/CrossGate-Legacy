@@ -172,7 +172,7 @@ std::optional<double> CommandBuffer::takeGpuTimeAfterCompletion() {
 void CommandBuffer::drawSprite(VkPipeline pipeline,VkPipelineLayout layout,VkDescriptorSet descriptor,const cgl::Viewport& viewport,const float (&push)[9]) {
     bindSpriteState(pipeline,layout,descriptor,viewport);
     vkCmdPushConstants(cmdBuffer_,layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(push),push);
-    vkCmdDraw(cmdBuffer_,6,1,0,0);
+    vkCmdDraw(cmdBuffer_,4,1,0,0);
 }
 
 void CommandBuffer::bindSpriteState(VkPipeline pipeline,VkPipelineLayout layout,VkDescriptorSet descriptor,const cgl::Viewport& viewport) {
