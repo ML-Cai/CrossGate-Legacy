@@ -11,6 +11,7 @@
 #include <vulkan/vulkan_core.h>
 #include <vector>
 #include "cgl/graphics/command_buffer_list.h"
+#include "vulkan/sprite_state_cache.h"
 
 namespace cgl {
 
@@ -37,7 +38,13 @@ class CommandBuffer : public cgl::graphics::ICommandBuffer {
 
     bool prepare();
 
-    VkCommandBuffer commandBuffer() const { return cmdBuffer_; }
+    // Native access invalidates tracked graphics state. If a retained handle
+    // changes state after a sprite draw, invalidate again before the next draw.
+    VkCommandBuffer commandBuffer() const { invalidateGraphicsState();return cmdBuffer_; }
+    void invalidateGraphicsState() const noexcept { spriteState_.invalidate(); }
+    void drawSprite(VkPipeline pipeline,VkPipelineLayout layout,VkDescriptorSet descriptor,const cgl::Viewport& viewport,const float (&push)[9]);
+    struct SpriteBindingStats {uint64_t pipelines=0,descriptors=0,viewports=0;};
+    SpriteBindingStats spriteBindingStats() const noexcept {return spriteBindings_;}
 
  private:
     VkDevice device_;
@@ -45,6 +52,9 @@ class CommandBuffer : public cgl::graphics::ICommandBuffer {
     VkCommandBuffer cmdBuffer_;
     uint32_t idx_;
 
+    void bindSpriteState(VkPipeline pipeline,VkPipelineLayout layout,VkDescriptorSet descriptor,const cgl::Viewport& viewport);
+    mutable SpriteStateCache spriteState_;
+    SpriteBindingStats spriteBindings_;
     bool createCommandBuffer();
 };
 

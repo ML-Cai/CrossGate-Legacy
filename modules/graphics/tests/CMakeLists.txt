@@ -16,7 +16,7 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
     set_target_properties(${EXE_NAME} PROPERTIES FOLDER "tests")
     set_target_properties(${EXE_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 
-    if(EXE_NAME STREQUAL "test_validation_diagnostics")
+    if(EXE_NAME STREQUAL "test_validation_diagnostics" OR EXE_NAME STREQUAL "test_sprite_state_cache")
         gtest_discover_tests(${EXE_NAME} WORKING_DIRECTORY ${CGL_BIN_PATH}
             PROPERTIES LABELS "unit\;memory" TIMEOUT 60)
     else()

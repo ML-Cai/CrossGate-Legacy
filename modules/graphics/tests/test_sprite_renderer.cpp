@@ -127,6 +127,8 @@ protected:
             std::string diagnostic;
             device_->getLastError(&diagnostic);
             EXPECT_EQ(diagnostic, initialDiagnostic_) << "New Vulkan validation error";
+            native_->destroy(); // Check through device-child cleanup, not only the last diagnostic.
+            EXPECT_EQ(native_->validationErrorCount(),0u);
         }
         device_.reset();
         if (window_) glfwDestroyWindow(window_);
@@ -144,8 +146,8 @@ protected:
         }
         return VK_ERROR_FEATURE_NOT_PRESENT;
     }
-    void renderDraw(const std::function<void(graphics::ICommandBuffer*, const cgl::Viewport&)>& draw, Pixels* result) {
-        auto* command = commands_->commandBuffer(0);
+    void renderDraw(const std::function<void(graphics::ICommandBuffer*, const cgl::Viewport&)>& draw, Pixels* result,uint32_t index=0) {
+        auto* command = commands_->commandBuffer(index);
         ASSERT_TRUE(command->reset());
         ASSERT_TRUE(command->begin());
         const cgl::Viewport area(0, 0, side, side);
@@ -349,5 +351,58 @@ TEST_F(SpriteRendererTest, PendingCancellationWaitsForOwnCopyAndRejectsTooSmallC
         auto pending=graphics::ISpriteRenderer::createPending(device_.get(),pass_.get(),2,2,2,
             std::vector<uint8_t>(texture.begin(),texture.end()),8);
         ASSERT_NE(pending,nullptr); // Drop while first chunk may still be submitted.
+    }
+}
+
+TEST_F(SpriteRendererTest, ConsecutiveStateSharingPreservesPixelsAndFreshRecordings) {
+    renderer_=graphics::ISpriteRenderer::create(device_.get(),pass_.get(),2,2,2,texture);
+    auto other=graphics::ISpriteRenderer::create(device_.get(),pass_.get(),2,2,2,texture);
+    ASSERT_NE(renderer_,nullptr);ASSERT_NE(other,nullptr);Pixels pixels{};
+    renderDraw([&](auto* command,const auto& area) {
+        renderer_->drawRegion(command,area,1,{0,0,1,1},0,0,2);
+        renderer_->drawRegion(command,area,99,{0,0,1,1},6,6,2); // Invalid draw changes no bindings.
+        renderer_->drawRegion(command,area,0,{0,0,1,1},2,0,2);
+        other->drawRegion(command,area,1,{0,0,1,1},4,0,2);
+        other->drawRegion(command,area,0,{1,1,1,1},4,2,2);
+        renderer_->drawRegion(command,area,0,{1,0,1,1},4,0,2); // Transparent A over B.
+    },&pixels);
+    EXPECT_EQ(pixels[0],(Pixel{0,255,0,255}));EXPECT_EQ(pixels[2],(Pixel{255,0,0,255}));
+    EXPECT_EQ(pixels[4],(Pixel{0,255,0,255}));EXPECT_EQ(pixels[2*side+4],(Pixel{255,255,255,255}));
+    auto* native=static_cast<vk::CommandBuffer*>(commands_->commandBuffer(0));
+    auto counts=native->spriteBindingStats();EXPECT_EQ(counts.pipelines,1);EXPECT_EQ(counts.descriptors,3);EXPECT_EQ(counts.viewports,1);
+    render(1,&pixels);counts=native->spriteBindingStats();
+    EXPECT_EQ(counts.pipelines,1);EXPECT_EQ(counts.descriptors,1);EXPECT_EQ(counts.viewports,1);
+    EXPECT_EQ(pixels[2*side+2],(Pixel{0,255,0,255}));
+}
+TEST_F(SpriteRendererTest, NativeStateChangesAndViewportSwitchesRebindBeforeDrawing) {
+    renderer_=graphics::ISpriteRenderer::create(device_.get(),pass_.get(),2,2,2,texture);
+    ASSERT_NE(renderer_,nullptr);Pixels pixels{};
+    renderDraw([&](auto* command,const auto& area) {
+        renderer_->drawRegion(command,area,1,{0,0,1,1},0,0,2);
+        const auto raw=static_cast<vk::CommandBuffer*>(command)->commandBuffer();
+        const VkViewport tiny{0,0,1,1,0,1};const VkRect2D clipped{{0,0},{1,1}};
+        vkCmdSetViewport(raw,0,1,&tiny);vkCmdSetScissor(raw,0,1,&clipped);
+        renderer_->drawRegion(command,area,0,{0,0,1,1},4,4,2);
+        vkCmdSetScissor(raw,0,1,&clipped); // Retained raw handle used after tracked work.
+        static_cast<vk::CommandBuffer*>(command)->invalidateGraphicsState();
+        renderer_->drawRegion(command,{2,2,4,4},1,{0,0,1,1},0,0,2);
+        renderer_->drawRegion(command,area,0,{1,1,1,1},6,6,2);
+    },&pixels);
+    EXPECT_EQ(pixels[0],(Pixel{0,255,0,255}));EXPECT_EQ(pixels[4*side+4],(Pixel{255,0,0,255}));
+    EXPECT_EQ(pixels[3*side+3],(Pixel{0,255,0,255}));EXPECT_EQ(pixels[7*side+7],(Pixel{255,255,255,255}));
+    const auto counts=static_cast<vk::CommandBuffer*>(commands_->commandBuffer(0))->spriteBindingStats();
+    EXPECT_EQ(counts.pipelines,3);EXPECT_EQ(counts.descriptors,3);EXPECT_EQ(counts.viewports,4);
+}
+TEST_F(SpriteRendererTest, DifferentCommandBuffersAndReusedSlotsRequireInitialBindings) {
+    commands_=graphics::ICommandBufferList::create(device_.get(),2);ASSERT_NE(commands_,nullptr);
+    renderer_=graphics::ISpriteRenderer::create(device_.get(),pass_.get(),2,2,2,texture);ASSERT_NE(renderer_,nullptr);
+    for(const auto index:{0u,1u,0u}) {
+        Pixels pixels{};renderDraw([&](auto* command,const auto& area) {
+            renderer_->drawRegion(command,area,1,{0,0,1,1},2,2,2);
+            renderer_->drawRegion(command,area,1,{0,0,1,1},4,4,2);
+        },&pixels,index);
+        const auto counts=static_cast<vk::CommandBuffer*>(commands_->commandBuffer(index))->spriteBindingStats();
+        EXPECT_EQ(counts.pipelines,1);EXPECT_EQ(counts.descriptors,1);EXPECT_EQ(counts.viewports,1);
+        EXPECT_EQ(pixels[2*side+2],(Pixel{0,255,0,255}));EXPECT_EQ(pixels[4*side+4],(Pixel{0,255,0,255}));
     }
 }
