@@ -30,6 +30,7 @@ parser.add_argument("--load-during-playback", action="store_true")
 parser.add_argument("--switch-motions", action="store_true")
 parser.add_argument("--validation", action="store_true")
 parser.add_argument("--vsync", action="store_true")
+parser.add_argument("--gpu-timing", action="store_true", help="Enable CPU/GPU telemetry; GPU queries are optional per device")
 args = parser.parse_args()
 densities = [int(value) for value in args.densities.split(",")]
 if (not densities or any(d < 1 or d > 10 for d in densities) or args.repeats < 1
@@ -68,6 +69,8 @@ FilePath={args.map}
 VSync={str(args.vsync).lower()}
 Validation={str(args.validation).lower()}
 ViewportScale=1.0
+[Telemetry]
+Enabled={str(args.gpu_timing).lower()}
 [Benchmark]
 ActorsPerCell={density}
 UniqueCharacters={args.unique}
@@ -121,6 +124,16 @@ ReportPath={report_path.as_posix()}
                                 and (args.vsync or data["uncapped_verified"])
                                 and (not args.load_during_playback or data.get("cold_load_count")==args.unique-1)
                                 and (not args.switch_motions or data.get("motion_switches",0)>0))
+        if args.gpu_timing:
+            slots = data.get("gpu_supported_slots", 0)
+            count = data.get("gpu_window_samples", 0)
+            values = [data.get(key) for key in ("gpu_mean_ms", "gpu_p95_ms", "gpu_max_ms")]
+            data["gpu_timing_valid"] = (data.get("gpu_timing_requested") is True
+                and isinstance(slots, int) and slots >= 0
+                and isinstance(count, int) and 0 <= count <= 512
+                and ((slots == 0 and count == 0 and all(v is None for v in values))
+                     or (slots > 0 and count > 0 and all(isinstance(v, (int, float)) and math.isfinite(v) and v >= 0 for v in values))))
+            data["valid_sample"] = data["valid_sample"] and data["gpu_timing_valid"]
         runs.append(data)
         print(name, {key: data.get(key) for key in
                      ("status", "actors", "unique_resources", "present_mode", "fps", "frame_p99_ms", "frame_max_ms", "valid_sample")}, flush=True)

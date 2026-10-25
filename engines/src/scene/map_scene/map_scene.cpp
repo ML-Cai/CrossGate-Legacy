@@ -135,8 +135,11 @@ public:
             const auto hovered=benchmark ? std::optional<cgl::MapCellCoord>{} :
                 cgl::ResolveMapHover(pointerInput(world),camera,viewport,map_->layout);
             const auto stats=renderer_.draw(*world,*map_,camera,hovered,outline_.get(),command,viewport);
-            if(auto* telemetry=world->getSingleton<cgl::component::RuntimeTelemetry>())
-                telemetry->rendering={0,0,0,stats.sortMs,stats.drawnActors,stats.drawCalls};
+            if(auto* telemetry=world->getSingleton<cgl::component::RuntimeTelemetry>()) {
+                telemetry->rendering.sortMs=stats.sortMs;
+                telemetry->rendering.actors=stats.drawnActors;
+                telemetry->rendering.drawCalls=stats.drawCalls;
+            }
             if(benchmark) {
                 benchmark->drawnActors=stats.drawnActors;
                 benchmark->drawCalls=stats.drawCalls;

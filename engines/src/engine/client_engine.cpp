@@ -239,7 +239,9 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             << ",\"lifetime_fps\":" << summary.lifetimeFps << ",\"lifetime_frame_max_ms\":" << summary.lifetimeMaxMs << ",\"lifetime_frames_over_33ms\":" << summary.lifetimeOver33ms
             << ",\"update_mean_ms\":" << summary.updateMs << ",\"render_loop_mean_ms\":" << summary.renderMs
             << ",\"sort_mean_ms\":" << summary.sortMs << ",\"drawn_actors_last_frame\":" << telemetry->rendering.actors
-            << ",\"draw_calls_last_frame\":" << telemetry->rendering.drawCalls
+            << ",\"draw_calls_last_frame\":" << telemetry->rendering.drawCalls;
+        cgl::WriteTimingDetails(out,telemetry);
+        out
             << ",\"animation_clips\":" << animations.clips << ",\"animation_rgba_bytes\":" << animations.rgbaBytes
             << ",\"animation_retired_bytes\":" << animations.retiredBytes
             << ",\"animation_retired_clips\":" << animations.retiredClips
@@ -366,7 +368,7 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
         const auto* swap = pRenderDevState_->pSwapchain.get();
         const char* status = anyStateError() ? "scene_error" :
             samples.frame.size() == settings.benchmark.SampleFrames && benchmark->unique == settings.benchmark.UniqueCharacters ? "complete" : "incomplete";
-        samples.write(settings,*benchmark,swap ? swap->presentModeName() : "unavailable",status);
+        samples.write(settings,*benchmark,swap ? swap->presentModeName() : "unavailable",status,telemetry);
         LOGI("Benchmark " << status << ": FPS=" << (samples.frame.empty()?0:1000/cgl::CrowdSamples::mean(samples.frame)));
     }
 }

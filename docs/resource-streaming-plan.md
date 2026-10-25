@@ -1,13 +1,13 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #74 (reused sort scratch and disjoint-prefix indexing). Each follow-up
+Current base: merged PR #75 (reuse consecutive sprite bindings). Each follow-up
 must run independently on its merged develop base. Scope is selected from actual
 profiles, not a commitment to speculative abstractions.
 
 | Priority | PR scope | Required validation |
 | --- | --- | --- |
-| Current | Reuse consecutive sprite bindings within each command-buffer recording | Headless transition tests; actual pixel readback and binding counts; native interop invalidation; recording/slot resets; full normal/ASan and uncapped fixed-crowd/streaming comparisons |
-| Next | Profile remaining recording versus GPU work before choosing order-preserving batching/instancing | Same ready resources and actor counts, transparent order, frame-local buffer lifetimes, actual Vulkan validation and long-frame costs |
+| Current | Optional GPU timestamps and CPU fence/record phases to distinguish remaining costs | Headless clock/window tests; completed-slot query/readback/teardown validation; full normal/ASan; diagnostic-disabled/enabled native comparisons |
+| Next, if supported by profiles | Investigate CPU sorting/recording; trial order-preserving batching where profiles justify it | Same ready resources and actor counts, transparent order, frame-local buffer lifetimes, actual Vulkan validation and long-frame costs |
 | If warranted | Refine capacity/working-allowance backpressure and long-session residency from traces | Completed/censored misses, coverage, pending ages, exact accounting and process/device memory measurements |
 
 Estimate: **2-3 PRs including the current change** for this near-term work, depending
@@ -50,3 +50,13 @@ The command-buffer binding optimization and native interop contract are recorded
 [sprite command state validation](sprite-command-state-validation.md). Raw Vulkan
 state changes through retained handles require explicit invalidation before the
 next tracked sprite draw; UI/custom native recorders must preserve this boundary.
+
+GPU timing scope, sample semantics and final native results are recorded in
+[GPU frame timing validation](gpu-frame-timing-validation.md). Diagnostic-disabled
+execution keeps query pools and timestamp commands out of the normal path.
+
+The fixed-crowd profile currently shows roughly 5.8-5.9 ms CPU recording,
+3.6-3.7 ms of benchmark sorting, 3.1 ms GPU interval and 0.01 ms frame-slot fence
+wait on the development host. These are overlapping/independent windows, not
+additive costs or a universal GPU classification. Prioritize the measured CPU
+path and preserve the GPU timing control for future rendering comparisons.

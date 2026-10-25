@@ -222,3 +222,31 @@ The final available ASan scene/builder subset passed 17/17, including strengthen
 uncached-scene cancellation and the background library path. The final guard's
 oversized-capacity rejection was verified by the normal CPU worker tests; no final
 ASan worker result is claimed.
+
+## Optional GPU frame timing
+
+Add `--gpu-timing` to enable the existing `[Telemetry] Enabled=true` diagnostics.
+Without it, no timestamp query pools are created. For example:
+
+```powershell
+python tools/benchmarks/crowd_benchmark.py --exe build/dev/bin/cgl-client.exe --root C:/CrossGate-Legacy --output-dir build/gpu-crowd --densities 10 --unique 1024 --repeats 3 --gpu-timing
+```
+
+Reports add `gpu_mean_ms`, `gpu_p95_ms`, `gpu_max_ms`, supported command-buffer
+slots and valid/missing sample counts. Unsupported queues have no GPU samples;
+GPU durations are JSON `null`, not zero. The runner accepts unsupported devices,
+but rejects an enabled, supported run with no completed timing samples. Use enough
+frames to reuse a submitted slot (the default warmup/sample lengths do).
+`cpu_fence_wait_mean_ms` measures the existing frame-slot fence wait;
+`cpu_record_mean_ms` covers reset and command recording, including world sorting.
+These phase timings require telemetry and are null when disabled.
+
+GPU timestamps bracket graphics command execution, excluding presentation and
+host-side work. They are not GPU utilization or displayed FPS. Results are read
+only after the existing fence completes, without an added GPU wait. CPU and GPU
+windows independently retain at most 512 samples. GPU results arrive on slot
+reuse; the last submitted slots are not flushed for reporting. The GPU window
+can include warmup if fewer than 512 subsequent samples exist. Instrumentation
+has a cost; compare disabled/enabled runs. See
+[GPU timing validation](../../docs/gpu-frame-timing-validation.md) for measurements
+and lifecycle/clock limitations.

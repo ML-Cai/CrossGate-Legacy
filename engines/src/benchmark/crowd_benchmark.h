@@ -55,7 +55,7 @@ struct CrowdSamples {
         return TimingPercentileSorted(v,p);
     }
     void write(const Settings& settings, const component::CrowdBenchmark& state,
-               const char* mode, const char* status) const {
+               const char* mode, const char* status,const component::RuntimeTelemetry* telemetry=nullptr) const {
         std::ofstream out(settings.benchmark.ReportPath);
         if (!out) throw std::runtime_error("Cannot open benchmark report");
         const double avg = mean(frame);
@@ -97,7 +97,7 @@ struct CrowdSamples {
             << ",\"load_during_playback\":" << (settings.benchmark.LoadDuringPlayback?"true":"false")
             << ",\"frame_times_ms\":[";
         for(size_t i=0;i<frame.size();++i) { if(i) out << ','; out << frame[i]; }
-        out << "]\n}\n";
+        out << "]";WriteTimingDetails(out,telemetry);out << "\n}\n";
         out.flush();
         if (!out) throw std::runtime_error("Could not write benchmark report");
     }

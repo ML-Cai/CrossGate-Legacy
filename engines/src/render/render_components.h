@@ -49,6 +49,7 @@ struct RenderSyncObjects {
     cgl::graphics::ISemaphore::Ptr pImageAvailableSemaphore;
     cgl::graphics::IFence::Ptr pFence;
     uint64_t submissionSerial = 0;
+    bool gpuProfiled=false;
 };
 
 // -----------------------------------------------------------------------------

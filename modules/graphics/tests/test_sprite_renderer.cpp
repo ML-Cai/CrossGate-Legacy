@@ -6,6 +6,7 @@
 #include <limits>
 #include <functional>
 #include <chrono>
+#include <cmath>
 #include <thread>
 #include "cgl/graphics/sprite_renderer.h"
 #include "vulkan/device.h"
@@ -404,5 +405,35 @@ TEST_F(SpriteRendererTest, DifferentCommandBuffersAndReusedSlotsRequireInitialBi
         const auto counts=static_cast<vk::CommandBuffer*>(commands_->commandBuffer(index))->spriteBindingStats();
         EXPECT_EQ(counts.pipelines,1);EXPECT_EQ(counts.descriptors,1);EXPECT_EQ(counts.viewports,1);
         EXPECT_EQ(pixels[2*side+2],(Pixel{0,255,0,255}));EXPECT_EQ(pixels[4*side+4],(Pixel{0,255,0,255}));
+    }
+}
+
+TEST_F(SpriteRendererTest, OptionalGpuTimingConsumesOnlyCompletedRecordingsAndReleasesPools) {
+    renderer_=graphics::ISpriteRenderer::create(device_.get(),pass_.get(),2,2,2,texture);
+    ASSERT_NE(renderer_,nullptr);
+    for(int cycle=0;cycle<4;++cycle) {
+        commands_=graphics::ICommandBufferList::create(device_.get(),2);
+        ASSERT_NE(commands_,nullptr);
+        for(uint32_t slot=0;slot<2;++slot) {
+            auto* command=commands_->commandBuffer(slot);
+            EXPECT_FALSE(command->gpuTimingEnabled());
+            EXPECT_FALSE(command->takeGpuTimeAfterCompletion());
+            if(!command->enableGpuTiming()) GTEST_SKIP()<<"Queue timestamps unavailable";
+            EXPECT_TRUE(command->enableGpuTiming());
+            EXPECT_FALSE(command->takeGpuTimeAfterCompletion());
+            for(int repeat=0;repeat<3;++repeat) {
+                Pixels pixels{};
+                renderDraw([&](auto* cmd,const auto& area){renderer_->draw(cmd,area,0,2,2,2);},&pixels,slot);
+                const auto ms=command->takeGpuTimeAfterCompletion();
+                ASSERT_TRUE(ms);EXPECT_TRUE(std::isfinite(*ms));EXPECT_GE(*ms,0);
+                EXPECT_FALSE(command->takeGpuTimeAfterCompletion());
+                EXPECT_EQ(pixels[2*side+2],(Pixel{255,0,0,255}));
+            }
+            ASSERT_TRUE(command->reset());ASSERT_TRUE(command->begin());ASSERT_TRUE(command->end());
+            // Discard an unsubmitted recording; no host read of its queries.
+            ASSERT_TRUE(command->reset());EXPECT_FALSE(command->takeGpuTimeAfterCompletion());
+        }
+        static_cast<vk::CommandBufferList*>(commands_.get())->destroy();
+        static_cast<vk::CommandBufferList*>(commands_.get())->destroy();
     }
 }

@@ -15,6 +15,8 @@
 #include "engine/ecs.h"
 #include "engine/error_system.h"
 #include "engine/engine_components.h"
+#include "telemetry/frame_telemetry.h"
+#include <chrono>
 
 using cgl::component::RenderDeviceState;
 using cgl::component::FrameRenderState;
@@ -66,6 +68,10 @@ void cgl::FrameRenderDrawSystem::init(cgl::ECSCore* pECS) {
         }
     }
 
+    if(auto* telemetry=pECS->getSingleton<cgl::component::RuntimeTelemetry>()) {
+        for(uint32_t i=0;i<pFrame_->pCmdBufferList->bufferCount();++i)
+            if(pFrame_->pCmdBufferList->commandBuffer(i)->enableGpuTiming()) ++telemetry->gpuSlots;
+    }
     // switch to render stage
     updater_ = &FrameRenderDrawSystem::render;
 }
@@ -93,12 +99,22 @@ void cgl::FrameRenderDrawSystem::render(cgl::ECSCore* pECS) {
         return;
     }
 
+    auto* telemetry=pECS->getSingleton<cgl::component::RuntimeTelemetry>();
+    using Clock=std::chrono::steady_clock;
+    const auto waitStart=telemetry?Clock::now():Clock::time_point{};
      // Wait fence valid
     if (pSyncObj->pFence->wait() == false) {
         cgl::RaiseError(pFrameRenderState_, "Failed to wait the fence");
         return;
     }
 
+    if(telemetry) telemetry->rendering.fenceWaitMs=std::chrono::duration<double,std::milli>(Clock::now()-waitStart).count();
+    // Read only this slot's completed, successful recording, before fence/reset reuse.
+    if(pSyncObj->submissionSerial) {
+        const auto gpu=pCmdBuffer->takeGpuTimeAfterCompletion();
+        if(telemetry && pSyncObj->gpuProfiled) telemetry->gpu.add(gpu);
+        pSyncObj->gpuProfiled=false;
+    }
     pSyncObjs_->progress.didComplete(pSyncObj->submissionSerial);
 
     // acquire image index from swapchain to choose the frame buffer.
@@ -119,6 +135,7 @@ void cgl::FrameRenderDrawSystem::render(cgl::ECSCore* pECS) {
         return;
     }
 
+    const auto recordStart=telemetry?Clock::now():Clock::time_point{};
     // reset objects
     if ((pSyncObj->pFence->reset()) == false ||
         (pCmdBuffer->reset() == false)) {
@@ -150,6 +167,7 @@ void cgl::FrameRenderDrawSystem::render(cgl::ECSCore* pECS) {
         return;
     }
 
+    if(telemetry) telemetry->rendering.recordMs=std::chrono::duration<double,std::milli>(Clock::now()-recordStart).count();
     // submit the rendering
     if (pDevice->graphicsQueue()->submit(
             pCmdBuffer,
@@ -162,6 +180,10 @@ void cgl::FrameRenderDrawSystem::render(cgl::ECSCore* pECS) {
     }
 
     pSyncObj->submissionSerial=pSyncObjs_->progress.didSubmit();
+    const auto* scene=pECS->getSingleton<cgl::component::SceneState>();
+    const auto* loading=pECS->getSingleton<cgl::component::SceneLoadProgress>();
+    pSyncObj->gpuProfiled=telemetry && pCmdBuffer->gpuTimingEnabled() && scene->scene &&
+        scene->scene->sceneType()!=cgl::SceneTypes::InitScene && (!loading || loading->ready);
 
     // present
     if (pDevice->presentQueue()->present(
