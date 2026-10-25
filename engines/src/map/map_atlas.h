@@ -4,7 +4,7 @@
 #include <optional>
 #include <vector>
 #include <unordered_set>
-#include "cgl/graphics/sprite_renderer.h"
+#include "cgl/graphics/sprite_region.h"
 
 namespace cgl {
 struct MapImageSize { uint16_t id; uint32_t width, height; };
