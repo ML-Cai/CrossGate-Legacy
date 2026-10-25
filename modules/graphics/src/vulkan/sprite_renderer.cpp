@@ -57,7 +57,7 @@ bool SpritePipeline::prepare(VkRenderPass pass) {
     stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT; stages[1].module = fragment;
     VkPipelineVertexInputStateCreateInfo input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
     VkPipelineInputAssemblyStateCreateInfo assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
-    assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
     VkPipelineViewportStateCreateInfo viewport{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
     viewport.viewportCount = viewport.scissorCount = 1;
     VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};

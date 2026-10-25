@@ -1,12 +1,12 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #76 (optional GPU/CPU phase timing). Each follow-up
+Current base: merged PR #77 (preserve ready-node order with hierarchical membership). Each follow-up
 must run independently on its merged develop base. Scope is selected from actual
 profiles, not a commitment to speculative abstractions.
 
 | Priority | PR scope | Required validation |
 | --- | --- | --- |
-| Current | Reduce ready-node scheduling cost while preserving exact map painter order | Headless priority membership and exhaustive graph/reference tests; explicit scratch release; full normal/ASan; interleaved native CPU/GPU-timed crowd and moving-map streaming comparisons |
+| Current | Reduce redundant sprite vertices with equivalent four-vertex quads | Actual pixel coverage/diagonal, alpha, UV/layer and viewport readback; full normal/ASan; interleaved GPU-timed crowd plus moving streaming comparisons |
 | Next, if supported by profiles | Investigate CPU sorting/recording; trial order-preserving batching where profiles justify it | Same ready resources and actor counts, transparent order, frame-local buffer lifetimes, actual Vulkan validation and long-frame costs |
 | If warranted | Refine capacity/working-allowance backpressure and long-session residency from traces | Completed/censored misses, coverage, pending ages, exact accounting and process/device memory measurements |
 
@@ -70,3 +70,13 @@ In the current interleaved ready-index comparison, median sorting falls
 roughly 347-348 and frame-slot fence waiting increases. Remaining GPU/backpressure
 therefore matters on this session/workload; select the next batching/recording
 trial from contemporary controls rather than the earlier session alone.
+
+The current equivalent four-vertex quad change and its validation are recorded
+in [sprite quad validation](sprite-quad-validation.md). It preserves the current
+triangle coverage and introduces no buffer, allocation, feature or lifetime.
+
+Current quad measurements show a small 1080p GPU reduction (5.33376 -> 5.26104 ms)
+and FPS 153.575 -> 156.557; 720p FPS direction changes between execution-order
+groups, and streaming FPS does not improve uniformly. Keep gains workload-specific.
+A future per-frame draw-region crop must preserve the full sorting envelope and
+account for CPU metadata ownership/bounds; it belongs in a separate measured PR.
