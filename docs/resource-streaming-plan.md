@@ -1,12 +1,12 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #75 (reuse consecutive sprite bindings). Each follow-up
+Current base: merged PR #76 (optional GPU/CPU phase timing). Each follow-up
 must run independently on its merged develop base. Scope is selected from actual
 profiles, not a commitment to speculative abstractions.
 
 | Priority | PR scope | Required validation |
 | --- | --- | --- |
-| Current | Optional GPU timestamps and CPU fence/record phases to distinguish remaining costs | Headless clock/window tests; completed-slot query/readback/teardown validation; full normal/ASan; diagnostic-disabled/enabled native comparisons |
+| Current | Reduce ready-node scheduling cost while preserving exact map painter order | Headless priority membership and exhaustive graph/reference tests; explicit scratch release; full normal/ASan; interleaved native CPU/GPU-timed crowd and moving-map streaming comparisons |
 | Next, if supported by profiles | Investigate CPU sorting/recording; trial order-preserving batching where profiles justify it | Same ready resources and actor counts, transparent order, frame-local buffer lifetimes, actual Vulkan validation and long-frame costs |
 | If warranted | Refine capacity/working-allowance backpressure and long-session residency from traces | Completed/censored misses, coverage, pending ages, exact accounting and process/device memory measurements |
 
@@ -55,8 +55,18 @@ GPU timing scope, sample semantics and final native results are recorded in
 [GPU frame timing validation](gpu-frame-timing-validation.md). Diagnostic-disabled
 execution keeps query pools and timestamp commands out of the normal path.
 
-The fixed-crowd profile currently shows roughly 5.8-5.9 ms CPU recording,
+The PR #76 fixed-crowd profiling session recorded roughly 5.8-5.9 ms CPU recording,
 3.6-3.7 ms of benchmark sorting, 3.1 ms GPU interval and 0.01 ms frame-slot fence
 wait on the development host. These are overlapping/independent windows, not
 additive costs or a universal GPU classification. Prioritize the measured CPU
 path and preserve the GPU timing control for future rendering comparisons.
+
+The current CPU ready-index optimization and its complete validation are recorded
+in [map ready-order validation](map-ready-order-validation.md). It does not remove
+constraints, cull graph nodes, cap actors or cache geometry across movement.
+
+In the current interleaved ready-index comparison, median sorting falls
+1.45208 -> 1.22359 ms and CPU recording 2.11966 -> 1.90657 ms, while FPS remains
+roughly 347-348 and frame-slot fence waiting increases. Remaining GPU/backpressure
+therefore matters on this session/workload; select the next batching/recording
+trial from contemporary controls rather than the earlier session alone.

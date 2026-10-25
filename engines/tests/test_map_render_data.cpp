@@ -1,6 +1,7 @@
 #include "map/map_atlas.h"
 #include "map/map_render_data.h"
 #include <gtest/gtest.h>
+#include <set>
 #include <random>
 #include <queue>
 
@@ -324,4 +325,43 @@ TEST(MapRenderTest, PrefixBoundsKeepWideEarlierSpritesAndStrictTouchingEdges) {
     input={house,touching};expected=input;
     EXPECT_EQ(sorter.sort(input),ReferenceMapOrder(expected));ExpectSameDrawItems(input,expected);
     EXPECT_TRUE(std::is_sorted(input.begin(),input.end(),cgl::MapDrawLess));
+}
+
+TEST(MapReadyIndicesTest, WordAndHierarchyBoundariesResetAndDuplicateInsertion) {
+    cgl::MapReadyIndices ready;
+    EXPECT_TRUE(ready.empty());EXPECT_EQ(ready.takeFirst(),cgl::MapReadyIndices::None);
+    for(size_t n:{size_t(1),size_t(63),size_t(64),size_t(65),size_t(4095),size_t(4096),size_t(4097),size_t(262145)}) {
+        ready.reset(n);
+        for(size_t i=n;i>0;--i) {ready.insert(i-1);ready.insert(i-1);}
+        for(size_t i=0;i<n;++i) ASSERT_EQ(ready.takeFirst(),i);
+        EXPECT_TRUE(ready.empty());EXPECT_EQ(ready.takeFirst(),cgl::MapReadyIndices::None);
+        ready.insert(n-1);ready.insert(0);EXPECT_EQ(ready.takeFirst(),0);
+        if(n>1) EXPECT_EQ(ready.takeFirst(),n-1);
+    }
+    const auto bytes=ready.retainedBytes();ASSERT_GT(bytes,0);
+    ready.reset(0);EXPECT_TRUE(ready.empty());EXPECT_EQ(ready.retainedBytes(),bytes);
+    ready.reset(65);ready.insert(64);EXPECT_EQ(ready.takeFirst(),64);
+    ready.clear();EXPECT_EQ(ready.retainedBytes(),0);EXPECT_TRUE(ready.empty());ready.clear();
+}
+TEST(MapReadyIndicesTest, RandomInsertAndExtractMatchesOrderedSet) {
+    cgl::MapReadyIndices ready;std::mt19937 random(77);
+    for(size_t n:{size_t(65),size_t(4097),size_t(20000)}) {
+        ready.reset(n);std::set<size_t> expected;
+        for(size_t step=0;step<100000;++step) {
+            if(random()%3) {const size_t index=random()%n;ready.insert(index);expected.insert(index);}
+            else if(expected.empty()) EXPECT_EQ(ready.takeFirst(),cgl::MapReadyIndices::None);
+            else {ASSERT_EQ(ready.takeFirst(),*expected.begin());expected.erase(expected.begin());}
+            EXPECT_EQ(ready.empty(),expected.empty());
+        }
+        while(!expected.empty()) {ASSERT_EQ(ready.takeFirst(),*expected.begin());expected.erase(expected.begin());}
+    }
+}
+TEST(MapRenderTest, MovingFootprintsAcrossReadyWordBoundariesKeepReferenceOrder) {
+    cgl::MapDrawSorter sorter;std::mt19937 random(77);
+    for(size_t frame=0;frame<40;++frame) {
+        auto input=MixedDrawItems(60+frame%10,random);
+        for(auto& item:input) {item.cell.x+=double(frame)*.125;item.cell.y-=double(frame)*.0625;}
+        std::shuffle(input.begin(),input.end(),random);auto expected=input;
+        EXPECT_EQ(sorter.sort(input),ReferenceMapOrder(expected));ExpectSameDrawItems(input,expected);
+    }
 }
