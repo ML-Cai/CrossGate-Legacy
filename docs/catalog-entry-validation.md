@@ -118,7 +118,8 @@ Validation:
   the growth gate is a test diagnostic, not an engine memory budget.
 - Complete positive native/stress/soak logs contain no Vulkan VUID/validation-error
   or ASan error markers. Windows ASan does not provide LeakSanitizer coverage.
-- Hosted Windows/Linux ordinary/ASan matrix: pending final completion.
+- Hosted Windows/Linux ordinary/ASan jobs run the same SDK-free catalog suite.
+  Current results are available in [PR #86 checks](https://github.com/ML-Cai/CrossGate-Legacy/pull/86/checks).
 
 Ignored evidence lives under `build/entry-profile-{before,after}/`,
 `build/catalog-entry-stress/`, `build/catalog-entry-{soak,mature-soak}/`,
