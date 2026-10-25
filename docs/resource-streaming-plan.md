@@ -1,6 +1,6 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #83 (explicit remote appearance fallback). Each follow-up
+Current base: merged PR #84 (CPU map preparation). Each follow-up
 must run independently on its merged develop base. Scope is selected from actual
 profiles, not a commitment to speculative abstractions.
 
@@ -8,8 +8,9 @@ profiles, not a commitment to speculative abstractions.
 | --- | --- | --- |
 | Complete (#82) | CPU-only CI build/test lane | Shared native test registry, SDK-free builds, Windows/Linux ordinary and ASan jobs, retained failure artifacts |
 | Complete (#83) | Explicit visible-appearance readiness policy | Priority/fallback behavior, coverage, pending demand age and no premature resource release |
-| Current | CPU map preparation boundary | Owned metadata and one-page pixel results, no GPU/window requirements, format fidelity and failed-page cleanup |
-| Then | Progressive map loading | Background preparation and bounded GPU submission, cancellation and failure recovery; preserve a working native client |
+| Complete (#84) | CPU map preparation boundary | Owned metadata and one-page pixel results, no GPU/window requirements, format fidelity and failed-page cleanup |
+| Current | Progressive map loading | Background preparation and bounded GPU submission, cancellation and failure recovery; preserve a working native client |
+| Then | Resource memory/profiling follow-up | Distinguish payload/reservations from physical host/device memory, measure remaining scene-entry stalls and validate dedicated GPUs |
 | Profile-driven | Further recording/batching or graph optimization | Same resources, painter order, comparable frame/GPU costs and explicit buffer lifetimes |
 
 The earlier 2-3 PR rendering estimate is superseded by this functional sequence.
@@ -19,10 +20,10 @@ Progressive map loading proceeds from CPU data ownership to background preparati
 and upload scheduling. Further split those steps if cancellation/lifetime
 boundaries require it; do not promise a fixed total before those interfaces settle.
 
-The CPU map preparation step preserves synchronous scene entry and the existing
-atlas layout. It plans every page from metadata, builds at most one RGBA page at
-a time in the native path and keeps all GPU ownership in MapLibrary. It is the
-prerequisite boundary, not completed background/progressive loading. See
+The CPU map preparation step in #84 preserved synchronous scene entry and the
+existing atlas layout. It plans every page from metadata, builds at most one RGBA
+page at a time and keeps GPU ownership in MapLibrary. Ordinary scenes now build
+on that boundary with progressive loading; the synchronous API remains available. See
 [CPU map preparation validation](map-cpu-preparation-validation.md).
 
 The readiness change preserves visible-first selection, same-region stability,
@@ -56,7 +57,8 @@ The bounded LRU path still scans the cache during throttled pressure maintenance
 but selects only the oldest requested K candidates rather than sorting every idle
 entry. Unbounded trim keeps full sorting. See
 [idle-cache selection validation](idle-cache-selection-validation.md). Count limits are not CPU-time guarantees,
-and map loading remains synchronous. Android/Linux lifecycle/surface adaptation,
+and the benchmark map path remains synchronous. Ordinary map scenes now use
+[progressive map loading](progressive-map-loading-validation.md). Android/Linux lifecycle/surface adaptation,
 CPU-only public APIs/Python bindings, ECS reference safety and UI focus/command
 boundaries remain separate architecture work.
 

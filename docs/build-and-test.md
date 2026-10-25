@@ -483,7 +483,7 @@ CTest executable in fresh processes, which cannot expose same-process buildup.
 
 ## SDK-free core CI
 
-The independent project below builds six native test suites plus two
+The independent project below builds seven native test suites plus two
 Python protocol runners without the desktop project, Vulkan SDK/glslc, GLFW,
 installed game files, Python development headers or NumPy. It is a selected core
 subset, not the entire engine or all `unit` tests. It reuses the same sources and
@@ -493,6 +493,8 @@ The map preparation suite exercises production CPU planning/pixel assembly using
 synthetic reader implementations, including page admission, palette conversion,
 ownership transfer and failure recovery. It links no asset-reader implementation
 or graphics backend and needs no installed game files.
+The map-worker suite checks its single slot, reservation retention, cancellation,
+error recovery and captured-owner lifetime without starting a device/window.
 
 ```powershell
 git submodule update --init third_party/googletest

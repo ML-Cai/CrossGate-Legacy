@@ -47,7 +47,7 @@ class DataReader final:public cgl::IGraphicsDataReader {
 public:
     DataReader():IGraphicsDataReader({nullptr,Classic}) {}
     enum class Mode {Normal,Fail,Null,WrongWidth,WrongHeight,Throw};
-    Mode mode=Mode::Normal;size_t queries=0;bool embedded=false;
+    Mode mode=Mode::Normal;size_t queries=0;bool embedded=false;std::atomic_bool* cancelOnQuery=nullptr;
     std::array<uint8_t,768> palette{};
     cgl::Results load() override {return cgl::Results::Success;}
     void close() noexcept override {}
@@ -57,6 +57,7 @@ public:
     void resetCacheStatistics() noexcept override {}
     cgl::Results query(const cgl::GraphicsResourceInfo& info,cgl::GraphicsResourceData* out) override {
         ++queries;
+        if(cancelOnQuery) cancelOnQuery->store(true);
         if(mode==Mode::Throw) throw std::runtime_error("injected decode exception");
         if(mode==Mode::Fail) return cgl::Results::Fail;
         out->version=Classic;out->width=info.width+(mode==Mode::WrongWidth);out->height=info.height+(mode==Mode::WrongHeight);
@@ -187,4 +188,18 @@ TEST(MapBuilder, EmptyArtworkKeepsLayoutAndNeedsNoAtlasPixels) {
     EXPECT_EQ(builder.pageCount(),0);EXPECT_EQ(builder.data().rgbaBytes,0);
     EXPECT_TRUE(builder.data().images.empty());EXPECT_EQ(builder.data().layout.cells[1].flags,20);
     EXPECT_EQ(info.queries,0);EXPECT_THROW(builder.buildPage(0,data),std::out_of_range);EXPECT_EQ(data.queries,0);
+}
+
+TEST(MapBuilder, CooperativeCancellationPreventsReadsAndDiscardsDecodedPage) {
+    InfoReader info;PaletteReader palette;DataReader data;info.add(123);
+    std::atomic_bool cancelled=true;
+    EXPECT_THROW(cgl::MapBuilder(cgl::MapLayout{1,1,{{123,0,0}}},info,palette,&cancelled),std::runtime_error);
+    EXPECT_EQ(info.queries,0);EXPECT_EQ(palette.reads,0);
+    cancelled=false;cgl::MapBuilder builder({1,1,{{123,0,0}}},info,palette,&cancelled);
+    cancelled=true;EXPECT_THROW(builder.buildPage(0,data,32ull*1024*1024,&cancelled),std::runtime_error);
+    EXPECT_EQ(data.queries,0);
+    cancelled=false;data.cancelOnQuery=&cancelled;
+    EXPECT_THROW(builder.buildPage(0,data,32ull*1024*1024,&cancelled),std::runtime_error);
+    EXPECT_EQ(data.queries,1);cancelled=false;data.cancelOnQuery=nullptr;
+    EXPECT_EQ(builder.buildPage(0,data).rgba.size(),builder.pageBytes(0));
 }

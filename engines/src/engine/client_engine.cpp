@@ -222,6 +222,7 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
     auto lastReport=previous;
     auto emitTelemetry=[&](std::ostream& out) {
         const auto summary=telemetry->frames.summary();
+        const auto loadingSummary=telemetry->loadingFrames.summary();
         const auto animations=animationLibrary_.usage();const auto maps=mapLibrary_.usage();
         const auto loads=animationLibrary_.loadTimings();
         const auto* swap=pRenderDevState_->pSwapchain.get();
@@ -241,6 +242,11 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             << ",\"sort_mean_ms\":" << summary.sortMs << ",\"drawn_actors_last_frame\":" << telemetry->rendering.actors
             << ",\"draw_calls_last_frame\":" << telemetry->rendering.drawCalls
             << ",\"fallback_markers_last_frame\":" << telemetry->rendering.fallbackMarkers;
+        out << ",\"map_loading_samples\":" << loadingSummary.total
+            << ",\"map_loading_fps\":" << loadingSummary.lifetimeFps
+            << ",\"map_loading_frame_p99_ms\":" << loadingSummary.p99Ms
+            << ",\"map_loading_frame_max_ms\":" << loadingSummary.lifetimeMaxMs
+            << ",\"map_loading_update_mean_ms\":" << loadingSummary.updateMs;
         cgl::WriteTimingDetails(out,telemetry);
         out
             << ",\"animation_clips\":" << animations.clips << ",\"animation_rgba_bytes\":" << animations.rgbaBytes
@@ -264,7 +270,13 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             << ",\"map_outline_evictions\":" << maps.evictions
             << ",\"animation_pending_reserved_bytes\":" << animations.pendingBytes << ",\"animation_budget_bytes\":" << animations.budgetBytes
             << ",\"cached_maps\":" << maps.maps << ",\"map_pages\":" << maps.pages
-            << ",\"map_rgba_bytes\":" << maps.rgbaBytes << ",\"outline_rgba_bytes\":" << maps.outlineBytes;
+            << ",\"map_rgba_bytes\":" << maps.rgbaBytes << ",\"outline_rgba_bytes\":" << maps.outlineBytes
+            << ",\"map_pending_bytes\":" << maps.pendingBytes << ",\"map_working_bytes\":" << maps.workingBytes
+            << ",\"map_peak_working_bytes\":" << maps.peakWorkingBytes << ",\"map_peak_pending_bytes\":" << maps.peakPendingBytes
+            << ",\"map_owner_call_max_ms\":" << maps.maxOwnerCallMs
+            << ",\"map_loading\":" << (maps.loading?"true":"false")
+            << ",\"map_cpu_pending\":" << (maps.cpuPending?"true":"false")
+            << ",\"map_upload_pending\":" << (maps.uploadPending?"true":"false");
         if(const auto* stats=pEcs->getSingleton<cgl::component::StreamingDiagnostics>()) {
             const auto demand=stats->demand.summary();
             out
@@ -321,6 +333,7 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
         const bool wasCold = wasReady && settings.benchmark.LoadDuringPlayback &&
             benchmark->unique < settings.benchmark.UniqueCharacters;
         const auto* loading=pEcs->getSingleton<cgl::component::SceneLoadProgress>();
+        const bool wasMapLoading=loading && !loading->ready && pSceneState_->scene && pSceneState_->scene->sceneType()==cgl::SceneTypes::MapScene;
         const bool wasRunning=pSceneState_->scene && pSceneState_->scene->sceneType()!=cgl::SceneTypes::InitScene && (!loading || loading->ready);
         if(auto* sync=pEcs->getSingleton<cgl::component::PrimaryRenderSyncObjects>()) {
             animationLibrary_.maintainStreaming(sync->progress.submitted,sync->progress.completed,settings.cachemaintenance.Enabled);
@@ -337,9 +350,12 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             break;
         }
         const auto end = std::chrono::steady_clock::now();
-        if(telemetry && wasRunning) {
+        const auto* currentLoading=pEcs->getSingleton<cgl::component::SceneLoadProgress>();
+        const bool mapLoading=wasMapLoading || (currentLoading && !currentLoading->ready &&
+            pSceneState_->scene && pSceneState_->scene->sceneType()==cgl::SceneTypes::MapScene);
+        if(telemetry && (wasRunning || mapLoading)) {
             auto ms=[](auto duration){return std::chrono::duration<double,std::milli>(duration).count();};
-            if(end-lastReport>=std::chrono::seconds(2)) {
+            if(wasRunning && end-lastReport>=std::chrono::seconds(2)) {
                 const auto summary=telemetry->frames.summary();
                 const auto usage=animationLibrary_.usage();const auto maps=mapLibrary_.usage();
                 LOGI("Telemetry: FPS=" << summary.fps << ", p99=" << summary.p99Ms << " ms, clips=" << usage.clips
@@ -349,7 +365,7 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             }
             auto sample=telemetry->rendering;
             sample.frameMs=ms(std::chrono::steady_clock::now()-now);sample.updateMs=ms(updateEnd-updateStart);sample.renderMs=ms(end-updateEnd);
-            telemetry->frames.add(sample);
+            if(mapLoading) telemetry->loadingFrames.add(sample);else telemetry->frames.add(sample);
         }
         if (benchmark && wasReady) {
             auto ms=[](auto span){ return std::chrono::duration<double,std::milli>(span).count(); };
