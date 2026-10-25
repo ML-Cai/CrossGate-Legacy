@@ -1,22 +1,29 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #82 (SDK-free Windows/Linux CI). Each follow-up
+Current base: merged PR #83 (explicit remote appearance fallback). Each follow-up
 must run independently on its merged develop base. Scope is selected from actual
 profiles, not a commitment to speculative abstractions.
 
 | Priority | PR scope | Required validation |
 | --- | --- | --- |
 | Complete (#82) | CPU-only CI build/test lane | Shared native test registry, SDK-free builds, Windows/Linux ordinary and ASan jobs, retained failure artifacts |
-| Current | Explicit visible-appearance readiness policy | Priority/fallback behavior, coverage, pending demand age and no premature resource release |
-| Then | Progressive map loading | Separate CPU loading from bounded GPU submission, cancellation and failure recovery; preserve a working native client |
+| Complete (#83) | Explicit visible-appearance readiness policy | Priority/fallback behavior, coverage, pending demand age and no premature resource release |
+| Current | CPU map preparation boundary | Owned metadata and one-page pixel results, no GPU/window requirements, format fidelity and failed-page cleanup |
+| Then | Progressive map loading | Background preparation and bounded GPU submission, cancellation and failure recovery; preserve a working native client |
 | Profile-driven | Further recording/batching or graph optimization | Same resources, painter order, comparable frame/GPU costs and explicit buffer lifetimes |
 
 The earlier 2-3 PR rendering estimate is superseded by this functional sequence.
-The soak/tooling and CPU-only CI PRs are merged. Keep hosted CI dependency/build changes separate
+The soak/tooling, CPU-only CI and readiness PRs are merged. Keep hosted CI dependency/build changes separate
 from resource readiness and map-loading behavior.
-Readiness policy is a separate PR; progressive map loading may need two steps
-(CPU data ownership, then upload scheduling). Do not promise a fixed total while
-those interfaces are still being established.
+Progressive map loading proceeds from CPU data ownership to background preparation
+and upload scheduling. Further split those steps if cancellation/lifetime
+boundaries require it; do not promise a fixed total before those interfaces settle.
+
+The CPU map preparation step preserves synchronous scene entry and the existing
+atlas layout. It plans every page from metadata, builds at most one RGBA page at
+a time in the native path and keeps all GPU ownership in MapLibrary. It is the
+prerequisite boundary, not completed background/progressive loading. See
+[CPU map preparation validation](map-cpu-preparation-validation.md).
 
 The readiness change preserves visible-first selection, same-region stability,
 budget-fit selection and existing aging. It represents unresolved remote actors

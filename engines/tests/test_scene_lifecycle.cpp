@@ -1,5 +1,6 @@
 #include "map/streaming_stress.h"
 #include "assets/map_library.h"
+#include "assets/map_builder.h"
 #include "assets/character_catalog.h"
 #include "benchmark/crowd_benchmark.h"
 #include "map/map_camera.h"
@@ -30,6 +31,22 @@
 #include "vulkan/device.h"
 
 namespace {
+// Inject a late map-page failure while retaining the real decoder/ownership.
+class MapDecodeFailure final:public cgl::IGraphicsDataReader {
+public:
+    MapDecodeFailure(Ptr source,uint32_t id):IGraphicsDataReader(source->createInfo()),source(std::move(source)),id(id) {}
+    Ptr source;uint32_t id;size_t successful=0,failures=0;
+    cgl::Results load() override {return source->load();}
+    void close() noexcept override {source->close();}
+    void setCacheBudget(size_t bytes) noexcept override {source->setCacheBudget(bytes);}
+    void trimCache() noexcept override {source->trimCache();}
+    cgl::ResourceCacheStatistics cacheStatistics() const noexcept override {return source->cacheStatistics();}
+    void resetCacheStatistics() noexcept override {source->resetCacheStatistics();}
+    cgl::Results query(const cgl::GraphicsResourceInfo& info,cgl::GraphicsResourceData* out) override {
+        if(info.mapBasedsIdx.value==id) {++failures;return cgl::Results::Fail;}
+        const auto result=source->query(info,out);if(result==cgl::Results::Success) ++successful;return result;
+    }
+};
 struct Events {
     std::vector<std::string> calls;
     bool requestOnEnter = false;
@@ -1791,6 +1808,36 @@ TEST_F(DesktopSceneTest, RemoteAppearanceStateSurvivesFailureAndSnapshotReplacem
     remote.update(world_,library_,readers,device,pass,camera,viewport);
     EXPECT_EQ(tag->state,cgl::component::AppearanceState::Ready);EXPECT_FALSE(tag->presented);
     remote.clear(world_);library_.cancelPending();EXPECT_FALSE(library_.streamingPending());
+}
+
+TEST_F(DesktopSceneTest, LateMapDecodeFailurePublishesNoPartialCacheAndCanReload) {
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    const auto path=std::filesystem::path(world_.getSingleton<cgl::component::EngineState>()->settings->general.EngineRootPath)/"map/0/100.dat";
+    constexpr auto version=cgl::CrossGateVersion::CG_VERSION_Classic;
+    uint32_t failId=0;
+    {
+        std::lock_guard lock(*readers.queryMutex);
+        cgl::MapLayout layout;ASSERT_EQ(cgl::IMapLayoutReader::create()->read(path,&layout),cgl::Results::Success);
+        cgl::MapBuilder prepared(std::move(layout),*readers.pGfxInfoReader[version],*readers.pPaletteReader);
+        ASSERT_GT(prepared.pageCount(),1);
+        for(const auto& [id,image]:prepared.data().images) if(image.atlasIndex==1) {failId=id;break;}
+    }
+    ASSERT_NE(failId,0);
+    auto proxy=std::make_unique<MapDecodeFailure>(std::move(readers.pGfxDataReader[version]),failId);
+    auto* injected=proxy.get();readers.pGfxDataReader[version]=std::move(proxy);
+    cgl::MapLibrary cache;
+    EXPECT_THROW(cache.acquire(path,readers,device,pass),std::runtime_error);
+    EXPECT_GT(injected->successful,0);EXPECT_EQ(injected->failures,1);
+    EXPECT_EQ(cache.usage().maps,0);EXPECT_EQ(cache.usage().pages,0);EXPECT_EQ(cache.usage().rgbaBytes,0);
+    EXPECT_EQ(cache.usage().retiredMaps,0);
+    auto original=std::move(injected->source);readers.pGfxDataReader[version]=std::move(original);
+    auto map=cache.acquire(path,readers,device,pass);ASSERT_NE(map,nullptr);EXPECT_GT(map->renderers.size(),1);
+    std::weak_ptr<const cgl::MapResources> weak=map;
+    ASSERT_EQ(device->waitIdle(),cgl::Results::Success);map.reset();cache.clear();EXPECT_TRUE(weak.expired());
+    EXPECT_EQ(static_cast<cgl::graphics::vulkan::Device*>(device)->validationErrorCount(),0);
 }
 
 TEST_F(DesktopSceneTest, ResourceLifecycleReturnsToQuiescentBaseline) {

@@ -8,15 +8,10 @@
 #include <vector>
 #include "cgl/assets/map_layout_reader.h"
 #include "cgl/graphics/sprite_renderer.h"
+#include "map/map_data.h"
 
 namespace cgl {
 namespace component { struct AssetsReaderState; }
-struct MapImage {
-    graphics::SpriteRegion source;
-    int32_t offsetX, offsetY;
-    uint8_t tileX = 1, tileY = 1;
-    uint32_t atlasIndex = 0;
-};
 struct MapResources {
     MapLayout layout;
     uint64_t rgbaBytes=0;

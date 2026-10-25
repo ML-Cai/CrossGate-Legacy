@@ -5,6 +5,7 @@
 #include <span>
 #include <vector>
 #include "cgl/common/viewport.h"
+#include "cgl/graphics/sprite_region.h"
 
 namespace cgl::graphics {
 class IDevice;
@@ -12,10 +13,6 @@ class IRenderPass;
 class ICommandBuffer;
 
 enum class SpriteUploadState { Pending, Ready, Failed };
-
-struct SpriteRegion {
-    uint32_t x = 0, y = 0, width = 0, height = 0;
-};
 
 // Immutable, equally sized RGBA8 frames. Upload once, select a layer per draw.
 // Device must outlive the renderer; retire recorded draws before destruction.
