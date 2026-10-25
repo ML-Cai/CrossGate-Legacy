@@ -1,12 +1,12 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #77 (preserve ready-node order with hierarchical membership). Each follow-up
+Current base: merged PR #78 (equivalent four-vertex sprite quads). Each follow-up
 must run independently on its merged develop base. Scope is selected from actual
 profiles, not a commitment to speculative abstractions.
 
 | Priority | PR scope | Required validation |
 | --- | --- | --- |
-| Current | Reduce redundant sprite vertices with equivalent four-vertex quads | Actual pixel coverage/diagonal, alpha, UV/layer and viewport readback; full normal/ASan; interleaved GPU-timed crowd plus moving streaming comparisons |
+| Current | Reject sprite transforms whose computed GPU rectangle overflows | Negative control, no-state-recording check, valid-draw recovery, full normal/ASan and native regression controls |
 | Next, if supported by profiles | Investigate CPU sorting/recording; trial order-preserving batching where profiles justify it | Same ready resources and actor counts, transparent order, frame-local buffer lifetimes, actual Vulkan validation and long-frame costs |
 | If warranted | Refine capacity/working-allowance backpressure and long-session residency from traces | Completed/censored misses, coverage, pending ages, exact accounting and process/device memory measurements |
 
@@ -80,3 +80,10 @@ and FPS 153.575 -> 156.557; 720p FPS direction changes between execution-order
 groups, and streaming FPS does not improve uniformly. Keep gains workload-specific.
 A future per-frame draw-region crop must preserve the full sorting envelope and
 account for CPU metadata ownership/bounds; it belongs in a separate measured PR.
+
+The four-vertex quad work is merged in #78. The current finite-geometry guard
+is documented in [sprite geometry validation](sprite-geometry-validation.md).
+Transparent-padding trials were withdrawn: the measured GPU saving did not
+offset CPU overhead, and stricter eligibility selected no clips in the tested
+1,024-identity corpus. Revisit cropping/batching only with measured workload
+evidence; preserve sampling, painter order and explicit GPU/CPU ownership.

@@ -322,6 +322,11 @@ void SpriteRenderer::drawRegion(ICommandBuffer* command, const cgl::Viewport& vi
                        2 * source.width * scale / viewport.width, 2 * source.height * scale / viewport.height,
                        float(source.x) / width_, float(source.y) / height_,
                        float(source.width) / width_, float(source.height) / height_, float(frame)};
+    // Finite inputs can still overflow during normalization or at the far
+    // corner added by the vertex shader. Ignore before recording any state.
+    if (!std::isfinite(push[0]) || !std::isfinite(push[1]) ||
+        !std::isfinite(push[2]) || !std::isfinite(push[3]) ||
+        !std::isfinite(push[0] + push[2]) || !std::isfinite(push[1] + push[3])) return;
     static_cast<CommandBuffer*>(command)->drawSprite(pipeline_->pipeline_,pipeline_->layout_,descriptor_,viewport,push);
 }
 }
