@@ -1,12 +1,12 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #78 (equivalent four-vertex sprite quads). Each follow-up
+Current base: merged PR #79 (reject nonfinite computed sprite geometry). Each follow-up
 must run independently on its merged develop base. Scope is selected from actual
 profiles, not a commitment to speculative abstractions.
 
 | Priority | PR scope | Required validation |
 | --- | --- | --- |
-| Current | Reject sprite transforms whose computed GPU rectangle overflows | Negative control, no-state-recording check, valid-draw recovery, full normal/ASan and native regression controls |
+| Current | Bound idle-cache candidate selection to the requested retirement count | Exact LRU/ownership/failure tests, standalone CPU maintenance comparison, full normal/ASan and map-100 streaming controls |
 | Next, if supported by profiles | Investigate CPU sorting/recording; trial order-preserving batching where profiles justify it | Same ready resources and actor counts, transparent order, frame-local buffer lifetimes, actual Vulkan validation and long-frame costs |
 | If warranted | Refine capacity/working-allowance backpressure and long-session residency from traces | Completed/censored misses, coverage, pending ages, exact accounting and process/device memory measurements |
 
@@ -35,8 +35,10 @@ maxima, coverage and frame cost. Queued time includes global capacity pressure a
 well as waiting behind busy CPU/GPU slots. RGBA ledger bytes and process RSS are
 not total physical GPU residency, especially on the integrated development GPU.
 
-The LRU policy still scans/sorts the cache during throttled pressure maintenance;
-profile that cost before replacing it. Count limits are not CPU-time guarantees,
+The bounded LRU path still scans the cache during throttled pressure maintenance,
+but selects only the oldest requested K candidates rather than sorting every idle
+entry. Unbounded trim keeps full sorting. See
+[idle-cache selection validation](idle-cache-selection-validation.md). Count limits are not CPU-time guarantees,
 and map loading remains synchronous. Android/Linux lifecycle/surface adaptation,
 CPU-only public APIs/Python bindings, ECS reference safety and UI focus/command
 boundaries remain separate architecture work.
@@ -81,7 +83,7 @@ groups, and streaming FPS does not improve uniformly. Keep gains workload-specif
 A future per-frame draw-region crop must preserve the full sorting envelope and
 account for CPU metadata ownership/bounds; it belongs in a separate measured PR.
 
-The four-vertex quad work is merged in #78. The current finite-geometry guard
+The four-vertex quad work is merged in #78. The finite-geometry guard merged in #79
 is documented in [sprite geometry validation](sprite-geometry-validation.md).
 Transparent-padding trials were withdrawn: the measured GPU saving did not
 offset CPU overhead, and stricter eligibility selected no clips in the tested

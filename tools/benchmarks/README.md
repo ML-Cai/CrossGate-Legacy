@@ -250,3 +250,24 @@ can include warmup if fewer than 512 subsequent samples exist. Instrumentation
 has a cost; compare disabled/enabled runs. See
 [GPU timing validation](../../docs/gpu-frame-timing-validation.md) for measurements
 and lifecycle/clock limitations.
+
+
+## CPU-only idle-cache maintenance benchmark
+
+This standalone C++20 target needs no assets, Python, window or Vulkan:
+
+```powershell
+cmake -S tools/benchmarks/idle_cache -B build/idle-cache-benchmark -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/idle-cache-benchmark
+./build/idle-cache-benchmark/idle_cache_benchmark.exe
+```
+
+Use the same compiler/options for baseline and candidate, retain separate binaries,
+and alternate their execution without concurrent builds or tests. Each CSV row
+reports 101 timed samples after two warmups. Construction, shuffled LRU touches
+and final cleanup are excluded; candidate selection, callback and selected-entry
+erasure are included. Sizes are 512/4,096/32,768 idle entries with zero, eight and
+all victims. The callback verifies the exact oldest-first sequence and emits a
+checksum to compare builds. This measures a CPU maintenance operation, not FPS,
+GPU residency or full streaming latency. See
+[idle-cache validation](../../docs/idle-cache-selection-validation.md).

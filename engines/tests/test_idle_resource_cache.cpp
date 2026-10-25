@@ -197,3 +197,81 @@ TEST(IdleResourceCache, IdleByteHintTracksOwnersWithoutReleasingOrTouchingLru) {
     EXPECT_NE(cache.find(1),nullptr);EXPECT_EQ(cache.find(2),nullptr);
     cache.clear();EXPECT_EQ(cache.idleBytes(),0);
 }
+
+#include <numeric>
+#include <random>
+TEST(IdleResourceCache, BoundedSelectionMatchesFullLruAcrossPinsTargetsAndCountLimits) {
+    std::mt19937 random(80);
+    for(size_t limit:{size_t(0),size_t(1),size_t(8),size_t(127),size_t(128),size_t(999)}) {
+        for(size_t trial=0;trial<12;++trial) {
+            Cache cache;std::vector<int> order(128);std::iota(order.begin(),order.end(),0);
+            std::vector<std::weak_ptr<const Resource>> weak;
+            std::vector<std::shared_ptr<const Resource>> pins;
+            uint64_t total=0;
+            for(int i:order) {
+                auto p=std::make_shared<Resource>(i);weak.push_back(p);
+                const auto bytes=uint64_t(i%5);total+=bytes;cache.insert(i,p,bytes);
+                if(i%9==0) pins.push_back(p);
+            }
+            std::shuffle(order.begin(),order.end(),random);
+            for(int key:order) cache.find(key);
+            const uint64_t target=trial%3==0?total:trial%3==1?total/2:0;
+            const size_t maxEntries=trial%2?128:17;
+            uint64_t projected=total;std::vector<int> expected;
+            for(int key:order) {
+                if(expected.size()==limit || (projected<=target && 128-expected.size()<=maxEntries)) break;
+                if(key%9==0) continue;
+                expected.push_back(key);projected-=uint64_t(key%5);
+            }
+            int barriers=0;std::vector<int> actual;
+            const auto released=cache.retireKeyed(target,[&] {
+                ++barriers;EXPECT_EQ(cache.size(),128);EXPECT_EQ(cache.bytes(),total);
+                for(const auto& p:weak) EXPECT_FALSE(p.expired());
+            },[&](int key,const auto&,uint64_t){actual.push_back(key);},maxEntries,limit);
+            EXPECT_EQ(actual,expected);EXPECT_EQ(released,total-projected);
+            EXPECT_EQ(cache.bytes(),projected);EXPECT_EQ(cache.size(),128-expected.size());
+            EXPECT_EQ(barriers,expected.empty()?0:1);EXPECT_EQ(cache.evictions(),expected.size());
+            for(size_t i=0;i<weak.size();++i)
+                EXPECT_EQ(weak[i].expired(),std::find(expected.begin(),expected.end(),int(i))!=expected.end());
+            cache.clear();pins.clear();
+            for(const auto& p:weak) EXPECT_TRUE(p.expired());
+        }
+    }
+}
+
+TEST(IdleResourceCache, BoundedTransferFailureKeepsFailedOwnerAndPriorRetirement) {
+    Cache cache;cgl::KeyedRetirementCache<int,Resource> queue;
+    std::vector<std::weak_ptr<const Resource>> weak;
+    for(int i=0;i<32;++i) {
+        auto p=std::make_shared<Resource>(i);weak.push_back(p);cache.insert(i,p,4);
+    }
+    EXPECT_THROW(cache.retireKeyed(0,[]{},[&](int key,const auto& p,uint64_t bytes) {
+        if(key==3) throw std::bad_alloc();
+        queue.retain(key,9,p,bytes);
+    },0,8),std::bad_alloc);
+    EXPECT_EQ(cache.size(),29);EXPECT_EQ(queue.size(),3);
+    EXPECT_EQ(cache.bytes()+queue.bytes(),128);EXPECT_EQ(cache.evictions(),3);
+    for(const auto& p:weak) EXPECT_FALSE(p.expired());
+    EXPECT_EQ(queue.collect(8),0);EXPECT_EQ(queue.collect(9),12);
+    for(size_t i=0;i<weak.size();++i) EXPECT_EQ(weak[i].expired(),i<3);
+    EXPECT_EQ(cache.retireKeyed(0,[]{},[&](int key,const auto& p,uint64_t bytes) {
+        queue.retain(key,10,p,bytes);
+    },0,8),32);
+    EXPECT_EQ(cache.size(),21);EXPECT_EQ(queue.size(),8);
+    EXPECT_EQ(queue.collect(9),0);EXPECT_EQ(queue.collect(10),32);
+    cache.clear();for(const auto& p:weak) EXPECT_TRUE(p.expired());
+}
+
+TEST(IdleResourceCache, BoundedBarrierFailureAndNewPinPreserveSelectedOwners) {
+    Cache cache;std::vector<std::weak_ptr<const Resource>> weak;
+    for(int i=0;i<16;++i) {
+        auto p=std::make_shared<Resource>(i);weak.push_back(p);cache.insert(i,p,0);
+    }
+    EXPECT_THROW(cache.retire(0,[]{throw std::runtime_error("barrier");},[](const auto&,uint64_t){ADD_FAILURE();},0,8),std::runtime_error);
+    EXPECT_EQ(cache.size(),16);EXPECT_EQ(cache.evictions(),0);
+    std::shared_ptr<const Resource> pin;
+    EXPECT_EQ(cache.retire(0,[&]{pin=weak[0].lock();},[](const auto&,uint64_t){},0,8),0);
+    EXPECT_EQ(cache.size(),9);EXPECT_EQ(cache.evictions(),7);EXPECT_FALSE(weak[0].expired());
+    for(size_t i=1;i<weak.size();++i) EXPECT_EQ(weak[i].expired(),i<8);
+    pin.reset();cache.clear();for(const auto& p:weak) EXPECT_TRUE(p.expired());
+}

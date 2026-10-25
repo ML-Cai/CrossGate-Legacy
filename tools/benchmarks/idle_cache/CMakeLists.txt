@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.21)
+project(cgl_idle_cache_benchmark LANGUAGES CXX)
+add_executable(idle_cache_benchmark idle_cache_benchmark.cpp)
+target_compile_features(idle_cache_benchmark PRIVATE cxx_std_20)
+target_include_directories(idle_cache_benchmark PRIVATE ../../../engines/src)

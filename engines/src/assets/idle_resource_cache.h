@@ -54,11 +54,30 @@ public:
     }
     template<class Barrier,class Receiver> uint64_t retireKeyed(uint64_t targetBytes,Barrier&& barrier,Receiver&& receiver,
             size_t maxEntries=std::numeric_limits<size_t>::max(),size_t maxVictims=std::numeric_limits<size_t>::max()) {
-        if(bytes_<=targetBytes && entries_.size()<=maxEntries) return 0;
+        if(!maxVictims || (bytes_<=targetBytes && entries_.size()<=maxEntries)) return 0;
         std::vector<typename Entries::iterator> candidates;
-        for(auto it=entries_.begin();it!=entries_.end();++it)
-            if(it->second.value.use_count()==1) candidates.push_back(it);
-        std::sort(candidates.begin(),candidates.end(),[](auto a,auto b){return a->second.touched<b->second.touched;});
+        const auto older=[](auto a,auto b){return a->second.touched<b->second.touched;};
+        const bool bounded=maxVictims<entries_.size();
+        // Streaming retires only a few entries. Keep the oldest K iterators in
+        // a max-heap rather than allocating/sorting every idle entry. No extra
+        // strong references: held-resource eligibility and transfer stay below.
+        if(bounded) {
+            candidates.reserve(maxVictims);
+            for(auto it=entries_.begin();it!=entries_.end();++it) {
+                if(it->second.value.use_count()!=1) continue;
+                if(candidates.size()<maxVictims) {
+                    candidates.push_back(it);std::push_heap(candidates.begin(),candidates.end(),older);
+                } else if(older(it,candidates.front())) {
+                    std::pop_heap(candidates.begin(),candidates.end(),older);
+                    candidates.back()=it;std::push_heap(candidates.begin(),candidates.end(),older);
+                }
+            }
+            std::sort_heap(candidates.begin(),candidates.end(),older);
+        } else {
+            for(auto it=entries_.begin();it!=entries_.end();++it)
+                if(it->second.value.use_count()==1) candidates.push_back(it);
+            std::sort(candidates.begin(),candidates.end(),older);
+        }
         uint64_t projected=bytes_;size_t count=0;
         while(count<maxVictims && count<candidates.size() && (projected>targetBytes || entries_.size()-count>maxEntries)) projected-=candidates[count++]->second.bytes;
         if(!count) return 0;
