@@ -170,6 +170,46 @@
         "noTestsAction": "error",
         "jobs": 1
       }
+    },
+    {
+      "name": "dev-lifecycle-soak",
+      "configurePreset": "dev",
+      "filter": {
+        "include": {
+          "name": "^resource_lifecycle_soak$"
+        }
+      },
+      "environment": {
+        "CGL_SOAK_CYCLES": "100",
+        "CGL_SOAK_WARMUP_CYCLES": "20"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "jobs": 1
+      }
+    },
+    {
+      "name": "asan-lifecycle-soak",
+      "configurePreset": "asan",
+      "filter": {
+        "include": {
+          "name": "^resource_lifecycle_soak$"
+        }
+      },
+      "environment": {
+        "CGL_SOAK_CYCLES": "100",
+        "CGL_SOAK_WARMUP_CYCLES": "20"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "jobs": 1
+      }
     }
   ]
 }

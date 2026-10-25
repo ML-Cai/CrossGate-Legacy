@@ -1,19 +1,22 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #79 (reject nonfinite computed sprite geometry). Each follow-up
+Current base: merged PR #80 (bounded idle-cache candidate selection). Each follow-up
 must run independently on its merged develop base. Scope is selected from actual
 profiles, not a commitment to speculative abstractions.
 
 | Priority | PR scope | Required validation |
 | --- | --- | --- |
-| Current | Bound idle-cache candidate selection to the requested retirement count | Exact LRU/ownership/failure tests, standalone CPU maintenance comparison, full normal/ASan and map-100 streaming controls |
-| Next, if supported by profiles | Investigate CPU sorting/recording; trial order-preserving batching where profiles justify it | Same ready resources and actor counts, transparent order, frame-local buffer lifetimes, actual Vulkan validation and long-frame costs |
-| If warranted | Refine capacity/working-allowance backpressure and long-session residency from traces | Completed/censored misses, coverage, pending ages, exact accounting and process/device memory measurements |
+| Current | Same-process lifecycle soak and repeatable CTest configuration | Alternating maps, remote replacement, CPU/GPU cancellation, quiescent ownership/accounting, RSS measurements and validation through device teardown |
+| Next | CPU-only CI build/test lane | Run meaningful native core and tool tests without installed game files, a window or Vulkan runtime; retain failure artifacts |
+| Then | Explicit visible-appearance readiness policy | Priority/fallback behavior, coverage, pending demand age and no premature resource release |
+| Then | Progressive map loading | Separate CPU loading from bounded GPU submission, cancellation and failure recovery; preserve a working native client |
+| Profile-driven | Further recording/batching or graph optimization | Same resources, painter order, comparable frame/GPU costs and explicit buffer lifetimes |
 
-Estimate: **2-3 PRs including the current change** for this near-term work, depending
-on whether resource-policy follow-up remains necessary after rendering profiles.
-This is a scope estimate, not a calendar deadline. Do not combine GPU batching, visible-residency policy and platform rewrites into
-one PR.
+The earlier 2-3 PR rendering estimate is superseded by this functional sequence.
+Keep the soak/tooling PR separate from hosted CI dependency/build changes.
+Readiness policy is a separate PR; progressive map loading may need two steps
+(CPU data ownership, then upload scheduling). Do not promise a fixed total while
+those interfaces are still being established.
 
 #73 raises appearance readiness consistently in the measured large cases but does
 not uniformly improve FPS or successful latency tails. More ready actors also
