@@ -247,6 +247,7 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             << ",\"map_loading_frame_p99_ms\":" << loadingSummary.p99Ms
             << ",\"map_loading_frame_max_ms\":" << loadingSummary.lifetimeMaxMs
             << ",\"map_loading_update_mean_ms\":" << loadingSummary.updateMs;
+        cgl::WriteSceneEntryTimings(out,telemetry->entry);
         cgl::WriteTimingDetails(out,telemetry);
         out
             << ",\"animation_clips\":" << animations.clips << ",\"animation_rgba_bytes\":" << animations.rgbaBytes

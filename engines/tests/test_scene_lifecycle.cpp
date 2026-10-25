@@ -701,6 +701,7 @@ TEST_F(DesktopSceneTest, ServerSnapshotsKeepMovementAndReleaseRemoteEntities) {
     for(int i=0;i<3;++i) {input->newBatchRequested=true;manager_.update(&world_);EXPECT_EQ(count(),288);draw_.update(&world_);}
     for(int i=0;i<2;++i) {
         input->restartSceneRequested=true;manager_.update(&world_);manager_.update(&world_);
+        ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::MapScene));
         ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;EXPECT_EQ(count(),288);
     }
     world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice->waitIdle();
@@ -758,6 +759,7 @@ TEST_F(DesktopSceneTest, SwitchBetweenServerDemoAndCrowdReleasesPreviousModeEnti
     settings.serverdemo.Enabled=true;settings.benchmark.ActorCount=0;
     scene->nextScene=cgl::SceneTypes::MapScene;manager_.update(&world_);
     ASSERT_NE(scene->state,cgl::StateTypes::ERROR)<<scene->lastError;
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::MapScene));
     EXPECT_EQ(remoteCount(),288);EXPECT_EQ(crowdCount(),0);
     draw_.update(&world_);
     world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice->waitIdle();
@@ -2027,4 +2029,41 @@ TEST_F(DesktopSceneTest, ResourceLifecycleReturnsToQuiescentBaseline) {
         std::cout<<"CGL_SOAK_CHECKPOINT "<<cycle+1<<std::endl;
         if(std::getenv("CGL_SOAK_HANDSHAKE")) {std::string ack;ASSERT_TRUE(bool(std::getline(std::cin,ack)));ASSERT_EQ(ack,"continue");}
     }
+}
+
+TEST_F(DesktopSceneTest, CatalogEntryIsIncrementalAndRestartReleasesPartialWorld) {
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.map.FilePath="map/0/100.dat";settings.animation.SerialNum=100000;
+    settings.serverdemo.Enabled=true;settings.serverdemo.VisibleActors=8;
+    settings.serverdemo.PrefetchActors=8;settings.serverdemo.CatalogLimit=2048;
+    world_.addSingleton<cgl::component::RuntimeTelemetry>();
+    auto* telemetry=world_.getSingleton<cgl::component::RuntimeTelemetry>();
+    auto* scene=world_.getSingleton<cgl::component::SceneState>();
+    scene->nextScene=cgl::SceneTypes::MapScene;
+    ASSERT_TRUE(waitMapPrepared());
+    auto* progress=world_.getSingleton<cgl::component::SceneLoadProgress>();
+    ASSERT_NE(progress,nullptr);EXPECT_FALSE(progress->ready);EXPECT_EQ(progress->completed,16);
+    const auto catalogIndex=size_t(cgl::EntryStage::Catalog);
+    ASSERT_EQ(telemetry->entry.stages[catalogIndex].calls,1);
+    auto remoteCount=[&]{size_t n=0;world_.forEach<cgl::component::RemoteCharacter>([&](auto,auto*){++n;});return n;};
+    EXPECT_EQ(remoteCount(),0);EXPECT_EQ(world_.getSingleton<cgl::component::StreamingDiagnostics>(),nullptr);
+    cgl::Entity player=0;std::weak_ptr<const cgl::AnimationClip> clip;
+    world_.forEach<cgl::component::CharacterMovement,cgl::component::Sprite>([&](auto id,auto*,auto* sprite){player=id;clip=sprite->clip;});
+    ASSERT_NE(player,0);ASSERT_FALSE(clip.expired());
+    const auto center=world_.getSingleton<cgl::component::MapCamera>()->center;
+    world_.getSingleton<cgl::component::KeyboardInputState>()->moveY=-1;
+    for(int i=0;i<3;++i) {manager_.update(&world_);draw_.update(&world_);EXPECT_FALSE(progress->ready);EXPECT_EQ(remoteCount(),0);}
+    EXPECT_DOUBLE_EQ(world_.getSingleton<cgl::component::MapCamera>()->center.x,center.x);
+    EXPECT_DOUBLE_EQ(world_.getSingleton<cgl::component::MapCamera>()->center.y,center.y);
+    world_.getSingleton<cgl::component::KeyboardInputState>()->moveY=0;
+    world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice->waitIdle();
+    cgl::SceneManagerDestroySystem{}.update(&world_);
+    EXPECT_EQ(world_.getComponent<cgl::component::Sprite>(player),nullptr);
+    EXPECT_EQ(world_.getSingleton<cgl::component::SceneLoadProgress>(),nullptr);EXPECT_EQ(remoteCount(),0);
+    library_.clear();EXPECT_TRUE(clip.expired());EXPECT_FALSE(library_.cpuPending());EXPECT_EQ(library_.pendingBytes(),0);
+    scene->nextScene=cgl::SceneTypes::MapScene;
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::MapScene));EXPECT_EQ(remoteCount(),16);
+    EXPECT_GT(telemetry->entry.stages[catalogIndex].calls,128);
+    EXPECT_EQ(telemetry->entry.stages[size_t(cgl::EntryStage::RemoteWorld)].calls,1);
 }

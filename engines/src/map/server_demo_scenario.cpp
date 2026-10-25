@@ -8,12 +8,22 @@
 #include "telemetry/frame_telemetry.h"
 
 namespace cgl {
-void ServerDemoScenario::enter(ECSCore* world,const MapLayout& layout,Entity character) {
+void ServerDemoScenario::beginEntry(ECSCore* world,const MapLayout& layout,Entity character) {
     width_=layout.width;height_=layout.height;character_=character;
     auto& readers=*world->getSingleton<component::AssetsReaderState>();
     const auto& options=world->getSingleton<component::EngineState>()->settings->serverdemo;
     ValidateDemoLimits(options.AnimationBudgetMiB,options.VisibleActors,options.PrefetchActors,options.CatalogLimit);
-    auto catalog=cgl::ReadCharacterCatalog(readers,options.CatalogLimit);
+    catalog_=std::make_unique<CharacterCatalogScan>(readers,options.CatalogLimit);
+}
+bool ServerDemoScenario::advanceEntry(ECSCore* world) {
+    if(!catalog_) throw std::logic_error("Server demo entry was not started");
+    auto* telemetry=world->getSingleton<component::RuntimeTelemetry>();
+    auto* timings=telemetry?&telemetry->entry:nullptr;
+    const bool complete=[&] {EntryTimer timer(timings,EntryStage::Catalog);return catalog_->advance();}();
+    if(!complete) return false;
+    EntryTimer timer(timings,EntryStage::RemoteWorld);
+    auto catalog=catalog_->take();catalog_.reset();
+    const auto& options=world->getSingleton<component::EngineState>()->settings->serverdemo;
     if(catalog.size()<uint64_t(options.VisibleActors)+options.PrefetchActors)
         throw std::runtime_error("Installed character catalog cannot provide distinct ServerDemo targets");
     if(options.StressFrames) stress_.emplace(options.StressFrames,options.StressLegFrames,options.StressReplaceFrames,options.StressStepMs);
@@ -25,6 +35,7 @@ void ServerDemoScenario::enter(ECSCore* world,const MapLayout& layout,Entity cha
     batchClock_=std::chrono::steady_clock::now();
     const auto& window=*world->getSingleton<cgl::component::WindowHandle>();
     sendSnapshot(world,{0,0,window.width,window.height},true);
+    return true;
 }
 StressMovement ServerDemoScenario::movement(ECSCore* world,double x,double y,double seconds) {
     auto& stats=*world->getSingleton<component::StreamingDiagnostics>();
@@ -84,7 +95,7 @@ void ServerDemoScenario::sendSnapshot(cgl::ECSCore* world,const cgl::Viewport& v
 }
 void ServerDemoScenario::clear(ECSCore* world) {
     if(remote_) remote_->clear(*world);
-    remote_.reset();feed_.reset();batchClock_={};
+    catalog_.reset();remote_.reset();feed_.reset();batchClock_={};
     world->removeSingleton<component::StreamingDiagnostics>();stress_.reset();movement_={};lastBatchFrame_=0;
     character_=0;width_=height_=0;
 }

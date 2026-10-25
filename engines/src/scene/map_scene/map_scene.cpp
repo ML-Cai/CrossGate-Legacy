@@ -42,6 +42,7 @@ public:
                     requests.push_back({settings.animation.SerialNum,direction,0});
                     requests.push_back({settings.animation.SerialNum,direction,1});
                 }
+                cgl::EntryTimer timer(entryTimings(world),cgl::EntryStage::Plan);
                 cgl::AnimationBuilder planner;
                 load_.begin(std::move(requests),animations_.usage().budgetBytes,[&](const auto& request) {
                     return planner.requiredBytes(request,*world->getSingleton<cgl::component::AssetsReaderState>());
@@ -151,6 +152,9 @@ public:
         }
     }
 private:
+    static cgl::SceneEntryTimings* entryTimings(cgl::ECSCore* world) noexcept {
+        auto* t=world->getSingleton<cgl::component::RuntimeTelemetry>();return t?&t->entry:nullptr;
+    }
     void showMapProgress(cgl::ECSCore* world) {
         const auto p=maps_.progress();
         if(p.completed==lastMapCompleted_ && p.total==lastMapTotal_) return;
@@ -161,10 +165,13 @@ private:
     void initializeMap(cgl::ECSCore* world) {
         auto* device=world->getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
         auto* pass=world->getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
-        const cgl::MapPoint center{double(map_->layout.width / 2), double(map_->layout.height / 2)};
-        world->addSingleton<cgl::component::MapCamera>(center, scale_);
-        world->addSingleton<cgl::component::MapHover>();
-        outline_ = maps_.acquireHoverOutline(scale_, device, pass);
+        {
+            cgl::EntryTimer timer(entryTimings(world),cgl::EntryStage::MapFinalize);
+            const cgl::MapPoint center{double(map_->layout.width / 2), double(map_->layout.height / 2)};
+            world->addSingleton<cgl::component::MapCamera>(center, scale_);
+            world->addSingleton<cgl::component::MapHover>();
+            outline_ = maps_.acquireHoverOutline(scale_, device, pass);
+        }
         if (auto* benchmark = world->getSingleton<cgl::component::CrowdBenchmark>()) {
             crowdScenario_=std::make_unique<cgl::CrowdScenario>(animations_);
             crowdScenario_->enter(world,map_->layout,*benchmark);
@@ -178,10 +185,13 @@ private:
     void advanceEntry(cgl::ECSCore* world) {
         auto& render=*world->getSingleton<cgl::component::RenderDeviceState>();
         auto* pass=world->getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
-        const bool acquired=load_.advance([&](const auto& request) {
-            return animations_.acquireForScene(request,*world->getSingleton<cgl::component::AssetsReaderState>(),render.pDevice.get(),pass);
-        });
-        if(acquired) {
+        const bool acquired=[&] {
+            cgl::EntryTimer timer(entryTimings(world),cgl::EntryStage::CharacterClips);
+            return load_.advance([&](const auto& request) {
+                return animations_.acquireForScene(request,*world->getSingleton<cgl::component::AssetsReaderState>(),render.pDevice.get(),pass);
+            });
+        }();
+        if(acquired && !character_) {
             cgl::component::CharacterMovement movement;movement.facing=facing_;
             for(size_t direction=0;direction<8;++direction) {
                 movement.idle[direction]=load_.clip(direction*2);movement.walk[direction]=load_.clip(direction*2+1);
@@ -193,12 +203,16 @@ private:
             world->addComponent<cgl::component::AnimationPlayer>(character_);
             world->addComponent<cgl::component::CharacterMovement>(character_,std::move(movement));
             if(serverDemoEnabled_) {
-                serverDemo_=std::make_unique<cgl::ServerDemoScenario>(animations_);serverDemo_->enter(world,map_->layout,character_);
+                serverDemo_=std::make_unique<cgl::ServerDemoScenario>(animations_);
+                serverDemo_->beginEntry(world,map_->layout,character_);
+                world->getSingleton<cgl::component::WindowHandle>()->pendingTitle="CGL | Loading characters";
             }
+        }
+        if(acquired && (!serverDemo_ || serverDemo_->advanceEntry(world))) {
             cgl::UpdateAnimations(*world,0);ready_=true;
             world->getSingleton<cgl::component::WindowHandle>()->pendingTitle="CGL";
             LOGI("Map scene entered");
-        } else if(lastProgress_!=load_.completed()) {
+        } else if(!acquired && lastProgress_!=load_.completed()) {
             world->getSingleton<cgl::component::WindowHandle>()->pendingTitle="CGL | Loading "+
                 std::to_string(load_.completed())+"/"+std::to_string(load_.total());
             lastProgress_=load_.completed();

@@ -4,7 +4,7 @@ include(GoogleTest)
 # The desktop and SDK-free test projects compile these same production sources.
 function(cgl_add_headless_core_tests root output_dir)
     find_package(Threads REQUIRED)
-    foreach(name IN ITEMS idle_resource_cache animation_decode_worker scene_animation_load appearance_scheduler appearance_demand_telemetry map_builder map_decode_worker)
+    foreach(name IN ITEMS character_catalog idle_resource_cache animation_decode_worker scene_animation_load appearance_scheduler appearance_demand_telemetry map_builder map_decode_worker)
         set(sources "${root}/engines/tests/test_${name}.cpp")
         if(name STREQUAL "animation_decode_worker")
             list(APPEND sources "${root}/engines/src/assets/animation_decode_worker.cpp")
