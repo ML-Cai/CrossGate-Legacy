@@ -462,3 +462,20 @@ Scene-owned streaming diagnostics use scalar storage and are removed on exit.
 The Python runner retains a bounded process-memory tail when psutil is present;
 it does not measure driver VRAM. Low-budget cases report unresolved actors and
 budget waits; clean process/script completion is not full-quality readiness.
+
+
+## Same-process lifecycle soak
+
+The full suite includes four native reload/retirement/cancellation cycles and
+headless Python runner tests. For 100 cycles in a single process/device:
+
+```powershell
+ctest --preset dev-lifecycle-soak -V
+ctest --preset asan-lifecycle-soak -V
+```
+
+These are lifetime checks, not FPS benchmarks. Both need installed assets and a
+Vulkan desktop; use the developer environment for ASan. Optional quiescent RSS
+sampling, growth gates, outputs and limitations are documented in
+[LifecycleSoak](../tools/LifecycleSoak/README.md). This differs from repeating a
+CTest executable in fresh processes, which cannot expose same-process buildup.

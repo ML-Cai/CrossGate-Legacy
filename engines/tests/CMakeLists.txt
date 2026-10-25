@@ -1,9 +1,9 @@
 include(GoogleTest)
 add_executable(test_scene_lifecycle test_scene_lifecycle.cpp)
-target_include_directories(test_scene_lifecycle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_include_directories(test_scene_lifecycle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src ${CMAKE_SOURCE_DIR}/modules/graphics/src)
 target_link_libraries(test_scene_lifecycle PRIVATE GTest::gtest_main cgl::engine cgl::graphics cgl::assets cgl::settings cgl::common cgl::trace Vulkan::Vulkan glfw)
 set_target_properties(test_scene_lifecycle PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
-gtest_discover_tests(test_scene_lifecycle WORKING_DIRECTORY ${CGL_BIN_PATH}
+gtest_discover_tests(test_scene_lifecycle TEST_FILTER "-DesktopSceneTest.ResourceLifecycleReturnsToQuiescentBaseline" WORKING_DIRECTORY ${CGL_BIN_PATH}
     PROPERTIES LABELS "desktop\;assets\;memory" TIMEOUT 60 RESOURCE_LOCK cgl_desktop)
 
 add_executable(test_engine_animation test_animation.cpp)
@@ -110,3 +110,13 @@ target_link_libraries(test_appearance_demand_telemetry PRIVATE GTest::gtest_main
 set_target_properties(test_appearance_demand_telemetry PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
 gtest_discover_tests(test_appearance_demand_telemetry WORKING_DIRECTORY ${CGL_BIN_PATH}
     PROPERTIES LABELS "unit\;memory" TIMEOUT 60)
+
+# One process/device for all cycles; the wrapper samples only quiescent checkpoints.
+add_test(NAME resource_lifecycle_soak COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_SOURCE_DIR}/tools/LifecycleSoak/run_soak.py
+    --test-exe $<TARGET_FILE:test_scene_lifecycle> --output ${CMAKE_CURRENT_BINARY_DIR}/lifecycle-soak)
+set_tests_properties(resource_lifecycle_soak PROPERTIES WORKING_DIRECTORY ${CGL_BIN_PATH}
+    LABELS "desktop;assets;memory;soak" TIMEOUT 1800 RESOURCE_LOCK cgl_desktop)
+
+add_test(NAME lifecycle_soak_runner COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/LifecycleSoak/test_runner.py)
+set_tests_properties(lifecycle_soak_runner PROPERTIES LABELS "unit;python;memory" TIMEOUT 30)

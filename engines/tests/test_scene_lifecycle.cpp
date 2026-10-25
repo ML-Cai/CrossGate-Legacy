@@ -24,6 +24,10 @@
 #include <algorithm>
 #include <thread>
 #include <vector>
+#include <cstdlib>
+#include <iostream>
+#include <string_view>
+#include "vulkan/device.h"
 
 namespace {
 struct Events {
@@ -132,6 +136,7 @@ protected:
         ASSERT_NE(render.pDevice, nullptr);
         render.state = cgl::StateTypes::RUNNING;
         render.pDevice->getLastError(&initialDiagnostic_);
+        EXPECT_EQ(static_cast<cgl::graphics::vulkan::Device*>(render.pDevice.get())->validationErrorCount(),0);
         cgl::FrameRenderInitSystem{}.update(&world_);
         auto* frame = world_.getSingleton<cgl::component::FrameRenderState>();
         ASSERT_NE(frame->state, cgl::StateTypes::ERROR) << frame->lastError;
@@ -153,6 +158,11 @@ protected:
             std::string diagnostic;
             render->pDevice->getLastError(&diagnostic);
             EXPECT_EQ(diagnostic, initialDiagnostic_) << "New Vulkan validation error";
+            // Check through device destruction while the diagnostic owner lives.
+            render->pSwapchain.reset();
+            auto* native=static_cast<cgl::graphics::vulkan::Device*>(render->pDevice.get());
+            native->destroy();
+            EXPECT_EQ(native->validationErrorCount(),0);
         }
         if (render) cgl::RenderDeviceDestroySystem{}.update(&world_);
         if (auto* window = world_.getSingleton<cgl::component::WindowHandle>())
@@ -1728,4 +1738,98 @@ TEST_F(DesktopSceneTest, PreparedAdmissionMissPreservesUploadAndRecoversWithExac
     ASSERT_NE(two,nullptr);EXPECT_EQ(cache.failedLoads(),0);EXPECT_EQ(cache.cancelledLoads(),0);
     EXPECT_EQ(cache.loadTimings().completed,1);EXPECT_EQ(cache.usage().rgbaBytes,a+b);
     device->waitIdle();one.reset();two.reset();cache.clear();EXPECT_EQ(cache.pendingBytes(),0);
+}
+
+
+TEST_F(DesktopSceneTest, ResourceLifecycleReturnsToQuiescentBaseline) {
+    ASSERT_TRUE(world_.getSingleton<cgl::component::EngineState>()->settings->display.Validation)
+        << "Lifecycle soak requires Display.Validation=true";
+    const char* configured=std::getenv("CGL_SOAK_CYCLES");
+    unsigned cycles=4;
+    if(configured) {
+        const std::string_view value(configured);
+        ASSERT_FALSE(value.empty());ASSERT_LE(value.size(),4);
+        cycles=0;
+        for(char c:value) {ASSERT_GE(c,'0');ASSERT_LE(c,'9');cycles=cycles*10+unsigned(c-'0');}
+        ASSERT_GE(cycles,1);ASSERT_LE(cycles,1000);
+    }
+    ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::AnimationScene));
+    auto& settings=*world_.getSingleton<cgl::component::EngineState>()->settings;
+    settings.animation.SerialNum=100000;
+    settings.serverdemo.Enabled=true;settings.serverdemo.VisibleActors=8;
+    settings.serverdemo.PrefetchActors=8;settings.serverdemo.CatalogLimit=32;
+    settings.serverdemo.StressFrames=0;
+    auto& readers=*world_.getSingleton<cgl::component::AssetsReaderState>();
+    const auto* originalReader=readers.pGfxDataReader[cgl::CrossGateVersion::CG_VERSION_Classic].get();
+    auto* device=world_.getSingleton<cgl::component::RenderDeviceState>()->pDevice.get();
+    auto* pass=world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get();
+    auto* sync=world_.getSingleton<cgl::component::PrimaryRenderSyncObjects>();
+    cgl::SceneManagerDestroySystem{}.update(&world_);
+    ASSERT_EQ(device->waitIdle(),cgl::Results::Success);
+    library_.clear();maps_.clear();
+    for(unsigned cycle=0;cycle<cycles;++cycle) {
+        SCOPED_TRACE(cycle);
+        settings.map.FilePath=cycle%2?"map/0/2100.dat":"map/0/100.dat";
+        world_.getSingleton<cgl::component::SceneState>()->nextScene=cgl::SceneTypes::MapScene;
+        ASSERT_TRUE(enterReadyScene(cgl::SceneTypes::MapScene));
+        std::weak_ptr<const cgl::MapResources> map=maps_.acquire(
+            std::filesystem::path(settings.general.EngineRootPath)/settings.map.FilePath,readers,device,pass);
+        std::vector<std::weak_ptr<const cgl::AnimationClip>> clips;
+        for(unsigned frame=0;frame<16;++frame) {
+            auto* input=world_.getSingleton<cgl::component::KeyboardInputState>();
+            input->moveX=frame<8?1:-1;input->newBatchRequested=frame%4==0;
+            world_.getSingleton<cgl::component::FrameTime>()->deltaSeconds=.02;
+            library_.maintainStreaming(sync->progress.submitted,sync->progress.completed);
+            manager_.update(&world_);draw_.update(&world_);
+            ASSERT_NE(world_.getSingleton<cgl::component::SceneState>()->state,cgl::StateTypes::ERROR);
+            ASSERT_NE(world_.getSingleton<cgl::component::FrameRenderState>()->state,cgl::StateTypes::ERROR);
+        }
+        size_t activeRemote=0;
+        world_.forEach<cgl::component::RemoteCharacter>([&](auto,auto*){++activeRemote;});
+        ASSERT_EQ(activeRemote,16);
+        ASSERT_GE(world_.getSingleton<cgl::component::StreamingDiagnostics>()->replacements,4);
+        world_.forEach<cgl::component::Sprite>([&](auto,auto* sprite){clips.push_back(sprite->clip);});
+        ASSERT_FALSE(clips.empty());
+        cgl::SceneManagerDestroySystem{}.update(&world_);
+        library_.retireUnused(0,sync->progress.submitted);maps_.retireUnused(0,sync->progress.submitted,0);
+        EXPECT_FALSE(map.expired()); // Retired ownership survives until GPU completion.
+        ASSERT_EQ(device->waitIdle(),cgl::Results::Success);
+        sync->progress.didComplete(sync->progress.submitted);
+        library_.collectRetired(sync->progress.completed);maps_.collectRetired(sync->progress.completed);
+        EXPECT_TRUE(map.expired());for(const auto& clip:clips) EXPECT_TRUE(clip.expired());
+        // Deterministic CPU metadata cancellation while reader access is unavailable.
+        const cgl::AnimationRequest request{100000,0,0};
+        {
+            std::unique_lock held(*readers.queryMutex);
+            ASSERT_EQ(library_.acquireProgressive(request,readers,device,pass),nullptr);
+            ASSERT_TRUE(library_.cpuPending());EXPECT_TRUE(library_.discardUnsubmitted());
+        }
+        library_.cancelPending();
+        // Cancel after submission too: cleanup must wait for that upload's chunk.
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
+        while(!library_.uploadPending() && std::chrono::steady_clock::now()<deadline) {
+            library_.acquireProgressive(request,readers,device,pass);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        ASSERT_TRUE(library_.uploadPending());library_.cancelPending();
+        const auto a=library_.usage();const auto m=maps_.usage();
+        ASSERT_EQ(a.clips,0);ASSERT_EQ(a.rgbaBytes+a.retiredBytes+a.pendingBytes,0);
+        ASSERT_EQ(a.retiredClips,0);ASSERT_FALSE(library_.streamingPending());ASSERT_FALSE(library_.waitingForBudget());
+        ASSERT_EQ(m.maps+m.outlines+m.pages+m.retiredMaps+m.retiredOutlines,0);
+        ASSERT_EQ(m.rgbaBytes+m.outlineBytes+m.retiredMapBytes+m.retiredOutlineBytes,0);
+        size_t sprites=0,remote=0;
+        world_.forEach<cgl::component::Sprite>([&](auto,auto*){++sprites;});
+        world_.forEach<cgl::component::RemoteCharacter>([&](auto,auto*){++remote;});
+        ASSERT_EQ(sprites,0);ASSERT_EQ(remote,0);
+        ASSERT_EQ(world_.getSingleton<cgl::component::MapCamera>(),nullptr);
+        ASSERT_EQ(world_.getSingleton<cgl::component::SceneLoadProgress>(),nullptr);
+        ASSERT_EQ(world_.getSingleton<cgl::component::MapHover>(),nullptr);
+        ASSERT_EQ(world_.getSingleton<cgl::component::StreamingDiagnostics>(),nullptr);
+        ASSERT_EQ(readers.pGfxDataReader[cgl::CrossGateVersion::CG_VERSION_Classic].get(),originalReader);
+        ASSERT_EQ(world_.getSingleton<cgl::component::PrimarySceneRenderFrame>()->renderPasses.at(cgl::PRIMARY_RENDER_PASS).get(),pass);
+        ASSERT_EQ(static_cast<cgl::graphics::vulkan::Device*>(device)->validationErrorCount(),0);
+        // The runner samples RSS at this quiescent point before allowing a reload.
+        std::cout<<"CGL_SOAK_CHECKPOINT "<<cycle+1<<std::endl;
+        if(std::getenv("CGL_SOAK_HANDSHAKE")) {std::string ack;ASSERT_TRUE(bool(std::getline(std::cin,ack)));ASSERT_EQ(ack,"continue");}
+    }
 }
