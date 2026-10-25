@@ -4,7 +4,7 @@
 #include "cgl/graphics/sprite_renderer.h"
 #include <numeric>
 #include <limits>
-#include <functional>
+#include "map/map_ready_indices.h"
 
 namespace cgl {
 // Classic map placeholders/debug markers are not scene artwork.
@@ -98,8 +98,8 @@ public:
                 edges_.push_back({last,heads_[first]});heads_[first]=edges_.size()-1;++incoming_[last];
             }
         }
-        ready_.clear();ready_.reserve(n);order_.clear();order_.reserve(n);emitted_.assign(n,0);
-        const auto push=[&](size_t i) {ready_.push_back(i);std::push_heap(ready_.begin(),ready_.end(),std::greater<size_t>{});};
+        ready_.reset(n);order_.clear();order_.reserve(n);emitted_.assign(n,0);
+        const auto push=[&](size_t i) {ready_.insert(i);};
         for(size_t i=0;i<n;++i) if(!incoming_[i]) push(i);
         size_t cycleBreaks=0,next=0;
         while(order_.size()<n) {
@@ -107,8 +107,7 @@ public:
                 while(emitted_[next]) ++next;
                 push(next);++cycleBreaks;
             }
-            std::pop_heap(ready_.begin(),ready_.end(),std::greater<size_t>{});
-            const auto i=ready_.back();ready_.pop_back();
+            const auto i=ready_.takeFirst();
             if(emitted_[i]) continue;
             emitted_[i]=1;order_.push_back(i);
             for(auto e=heads_[i];e!=None;e=edges_[e].next) {
@@ -130,15 +129,16 @@ public:
     }
     // Capacity, not live object ownership or total allocator overhead.
     size_t retainedBytes() const noexcept {
-        return (sweep_.capacity()+heads_.capacity()+incoming_.capacity()+ready_.capacity()+order_.capacity())*sizeof(size_t)
-            +rects_.capacity()*sizeof(Rect)+rightMax_.capacity()*sizeof(double)+edges_.capacity()*sizeof(Edge)+emitted_.capacity();
+        return (sweep_.capacity()+heads_.capacity()+incoming_.capacity()+order_.capacity())*sizeof(size_t)
+            +rects_.capacity()*sizeof(Rect)+rightMax_.capacity()*sizeof(double)+edges_.capacity()*sizeof(Edge)+emitted_.capacity()+ready_.retainedBytes();
     }
     void clear() noexcept { *this=MapDrawSorter{}; }
 private:
     static constexpr size_t None=std::numeric_limits<size_t>::max();
     struct Rect {double left,right,top,bottom;};
     struct Edge {size_t to,next;};
-    std::vector<size_t> sweep_,heads_,incoming_,ready_,order_;
+    std::vector<size_t> sweep_,heads_,incoming_,order_;
+    MapReadyIndices ready_;
     std::vector<Rect> rects_;
     std::vector<double> rightMax_;
     std::vector<Edge> edges_;
