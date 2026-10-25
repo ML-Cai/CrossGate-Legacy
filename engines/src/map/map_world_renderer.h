@@ -3,7 +3,7 @@
 #include "map/map_hover.h"
 #include "engine/ecs.h"
 namespace cgl {
-struct MapRenderStats { uint32_t drawnActors=0,drawCalls=0; double sortMs=0; };
+struct MapRenderStats { uint32_t drawnActors=0,drawCalls=0,fallbackMarkers=0; double sortMs=0; };
 // Borrows immutable resource data only for this recording call. Does not advance
 // animation, move entities, update hover or acquire/decode/upload resources.
 class MapWorldRenderer {

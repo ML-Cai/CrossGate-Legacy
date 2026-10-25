@@ -239,7 +239,8 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             << ",\"lifetime_fps\":" << summary.lifetimeFps << ",\"lifetime_frame_max_ms\":" << summary.lifetimeMaxMs << ",\"lifetime_frames_over_33ms\":" << summary.lifetimeOver33ms
             << ",\"update_mean_ms\":" << summary.updateMs << ",\"render_loop_mean_ms\":" << summary.renderMs
             << ",\"sort_mean_ms\":" << summary.sortMs << ",\"drawn_actors_last_frame\":" << telemetry->rendering.actors
-            << ",\"draw_calls_last_frame\":" << telemetry->rendering.drawCalls;
+            << ",\"draw_calls_last_frame\":" << telemetry->rendering.drawCalls
+            << ",\"fallback_markers_last_frame\":" << telemetry->rendering.fallbackMarkers;
         cgl::WriteTimingDetails(out,telemetry);
         out
             << ",\"animation_clips\":" << animations.clips << ",\"animation_rgba_bytes\":" << animations.rgbaBytes

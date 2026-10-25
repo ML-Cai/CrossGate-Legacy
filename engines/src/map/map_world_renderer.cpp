@@ -1,5 +1,6 @@
 #include "map/map_world_renderer.h"
 #include "animation/animation_components.h"
+#include "map/remote_character_components.h"
 #include <chrono>
 namespace cgl {
 MapRenderStats MapWorldRenderer::draw(ECSCore& world,const MapResources& map,
@@ -34,6 +35,21 @@ MapRenderStats MapWorldRenderer::draw(ECSCore& world,const MapResources& map,
     }
     world.forEach<cgl::component::MapPosition, cgl::component::Sprite, cgl::component::AnimationPlayer>(
         [&](cgl::Entity entity, const auto* position, const auto* sprite, const auto* player) {
+            if(const auto* remote=world.getComponent<component::RemoteCharacter>(entity); remote && !remote->presented) {
+                // Ground markers precede world objects, so buildings still occlude
+                // them. Borrow the scene's cached outline: no per-actor GPU upload,
+                // ownership, or work added to the appearance streaming budget.
+                if(outline && outline->renderer) {
+                    const auto center=MapToScreen(position->cell,camera,viewport);
+                    const double scale=camera.scale/outline->scale;
+                    const MapPoint origin{center.x-outline->width*scale*.5,center.y-outline->height*scale*.5};
+                    if(MapImageVisible(origin,outline->width,outline->height,scale,viewport)) {
+                        outline->renderer->draw(command,viewport,0,float(origin.x),float(origin.y),float(scale));
+                        ++stats.fallbackMarkers;++stats.drawCalls;
+                    }
+                }
+                return;
+            }
             const auto& clip = sprite->clip;
             if (clip) items_.push_back({position->cell, clip->renderer.get(), {0, 0, clip->width, clip->height},
                 player->frame, clip->offsetX, clip->offsetY, (1ull << 32) | entity, 0, 0});

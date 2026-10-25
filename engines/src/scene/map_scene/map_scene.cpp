@@ -139,6 +139,7 @@ public:
                 telemetry->rendering.sortMs=stats.sortMs;
                 telemetry->rendering.actors=stats.drawnActors;
                 telemetry->rendering.drawCalls=stats.drawCalls;
+                telemetry->rendering.fallbackMarkers=stats.fallbackMarkers;
             }
             if(benchmark) {
                 benchmark->drawnActors=stats.drawnActors;
