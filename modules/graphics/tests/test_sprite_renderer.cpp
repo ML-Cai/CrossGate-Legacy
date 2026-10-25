@@ -482,3 +482,24 @@ TEST_F(SpriteRendererTest, FractionalAtlasQuadsPreserveUvLayerAndFaintAlphaOnBot
         }
     }
 }
+
+TEST_F(SpriteRendererTest, FiniteTransformsThatOverflowGpuRectangleRecordNoDrawAndRecover) {
+    renderer_=graphics::ISpriteRenderer::create(device_.get(),pass_.get(),2,2,2,texture);
+    ASSERT_NE(renderer_,nullptr);
+    auto* command=commands_->commandBuffer(0);auto* native=static_cast<vk::CommandBuffer*>(command);
+    ASSERT_TRUE(command->reset());ASSERT_TRUE(command->begin());
+    const cgl::Viewport area{0,0,side,side};ASSERT_TRUE(pass_->begin(area,command,framebuffer_.get()));
+    const auto huge=std::numeric_limits<float>::max();
+    renderer_->draw(command,area,0,huge,0,1);
+    renderer_->draw(command,area,0,0,-huge,1);
+    renderer_->draw(command,area,0,0,0,huge);
+    // Components individually fit, but the vertex shader's far corner overflows.
+    renderer_->drawRegion(command,{0,0,1,1},0,{0,0,1,1},huge*.35f,0,huge*.35f);
+    const auto counts=native->spriteBindingStats();
+    EXPECT_EQ(counts.pipelines,0);EXPECT_EQ(counts.descriptors,0);EXPECT_EQ(counts.viewports,0);
+    ASSERT_TRUE(pass_->end());ASSERT_TRUE(command->end());
+    // Discard this recording rather than submit potentially nonfinite geometry.
+    Pixels pixels{};render(0,&pixels,2,2,1);
+    EXPECT_EQ(pixels[2*side+2],(Pixel{255,0,0,255}));
+    EXPECT_EQ(native->spriteBindingStats().pipelines,1);
+}
