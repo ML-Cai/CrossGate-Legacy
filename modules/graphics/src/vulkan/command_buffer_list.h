@@ -12,6 +12,7 @@
 #include <vector>
 #include "cgl/graphics/command_buffer_list.h"
 #include "vulkan/sprite_state_cache.h"
+#include "vulkan/timestamp_clock.h"
 
 namespace cgl {
 
@@ -22,7 +23,7 @@ namespace vulkan {
 // -----------------------------------------------------------------------------
 class CommandBuffer : public cgl::graphics::ICommandBuffer {
  public:
-    explicit CommandBuffer(VkDevice device, VkCommandPool pool, uint32_t idx);
+    explicit CommandBuffer(VkDevice device, VkCommandPool pool, uint32_t idx,TimestampClock clock={});
 
     virtual ~CommandBuffer();
 
@@ -37,6 +38,9 @@ class CommandBuffer : public cgl::graphics::ICommandBuffer {
     uint32_t idx() const noexcept { return idx_; }
 
     bool prepare();
+    bool enableGpuTiming() override;
+    bool gpuTimingEnabled() const noexcept override {return timestampPool_!=VK_NULL_HANDLE;}
+    std::optional<double> takeGpuTimeAfterCompletion() override;
 
     // Native access invalidates tracked graphics state. If a retained handle
     // changes state after a sprite draw, invalidate again before the next draw.
@@ -55,6 +59,9 @@ class CommandBuffer : public cgl::graphics::ICommandBuffer {
     void bindSpriteState(VkPipeline pipeline,VkPipelineLayout layout,VkDescriptorSet descriptor,const cgl::Viewport& viewport);
     mutable SpriteStateCache spriteState_;
     SpriteBindingStats spriteBindings_;
+    TimestampClock clock_;
+    VkQueryPool timestampPool_=VK_NULL_HANDLE;
+    bool timingRecorded_=false;
     bool createCommandBuffer();
 };
 
@@ -87,6 +94,7 @@ class CommandBufferList : public cgl::graphics::ICommandBufferList {
     VkDevice device_;
     VkCommandPool cmdPool_;
     uint32_t graphicsQueueFamily_;
+    TimestampClock clock_;
     std::vector<cgl::graphics::ICommandBuffer::Ptr> cmdBuffers_;
 
     bool createCommandPool();

@@ -3,6 +3,7 @@
 #include "telemetry/load_telemetry.h"
 #include "benchmark/crowd_benchmark.h"
 #include <limits>
+#include <sstream>
 TEST(FrameTelemetry, EmptyWindowAndInvalidInputs) {
     cgl::FrameTelemetry frames;
     EXPECT_EQ(frames.summary().count,0);EXPECT_DOUBLE_EQ(frames.summary().fps,0);
@@ -52,4 +53,32 @@ TEST(LoadTelemetry, RejectsInvalidSamplesAndSeparatesLifetimeCountFromBoundedWin
     EXPECT_DOUBLE_EQ(summary.meanMs,130.5);EXPECT_DOUBLE_EQ(summary.p95Ms,246);EXPECT_DOUBLE_EQ(summary.p99Ms,256);
     EXPECT_DOUBLE_EQ(summary.maxMs,258);EXPECT_DOUBLE_EQ(summary.cpuMeanMs,32.625);EXPECT_DOUBLE_EQ(summary.uploadWaitMeanMs,65.25);
     telemetry.clear();EXPECT_EQ(telemetry.summary().completed,0);EXPECT_EQ(telemetry.summary().count,0);
+}
+
+TEST(FrameTelemetry, RecordsCpuPhasesAndRejectsInvalidPhaseValues) {
+    cgl::FrameTelemetry frames;
+    ASSERT_TRUE(frames.add({10,1,2,0,0,0,3,4}));
+    EXPECT_DOUBLE_EQ(frames.summary().fenceWaitMs,3);
+    EXPECT_DOUBLE_EQ(frames.summary().recordMs,4);
+    EXPECT_FALSE(frames.add({10,1,2,0,0,0,-1,4}));
+    EXPECT_FALSE(frames.add({10,1,2,0,0,0,3,std::numeric_limits<double>::infinity()}));
+    EXPECT_EQ(frames.summary().total,1);
+}
+TEST(GpuTelemetry, BoundedWindowMissingResultsAndClear) {
+    cgl::GpuTelemetry gpu;
+    gpu.add(std::nullopt);gpu.add(-1);gpu.add(std::numeric_limits<double>::quiet_NaN());
+    for(int i=1;i<=600;++i) gpu.add(double(i));
+    const auto s=gpu.summary();
+    EXPECT_EQ(s.count,512);EXPECT_EQ(s.total,600);EXPECT_EQ(s.missing,3);
+    EXPECT_DOUBLE_EQ(s.meanMs,344.5);EXPECT_DOUBLE_EQ(s.p95Ms,575);EXPECT_DOUBLE_EQ(s.maxMs,600);
+    gpu.clear();EXPECT_EQ(gpu.summary().total,0);EXPECT_EQ(gpu.summary().missing,0);
+    gpu.add(0);EXPECT_EQ(gpu.summary().count,1);EXPECT_DOUBLE_EQ(gpu.summary().meanMs,0);
+}
+TEST(GpuTelemetry, ReportsMissingSamplesAsNullRatherThanZero) {
+    std::ostringstream out;cgl::WriteTimingDetails(out,nullptr);
+    EXPECT_NE(out.str().find("\"gpu_timing_requested\":false"),std::string::npos);
+    EXPECT_NE(out.str().find("\"gpu_mean_ms\":null"),std::string::npos);
+    cgl::component::RuntimeTelemetry telemetry;telemetry.gpu.add(0);
+    out.str("");out.clear();cgl::WriteTimingDetails(out,&telemetry);
+    EXPECT_NE(out.str().find("\"gpu_mean_ms\":0"),std::string::npos);
 }

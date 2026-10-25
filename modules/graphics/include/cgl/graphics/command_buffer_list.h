@@ -9,6 +9,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 namespace cgl {
 namespace graphics {
@@ -31,6 +32,15 @@ class ICommandBuffer {
     virtual bool end() = 0;
 
     virtual uint32_t idx() const noexcept = 0;
+
+    // Optional diagnostics. Enable only at an idle lifetime boundary, before
+    // recording. Unsupported backends/devices return false without allocating.
+    virtual bool enableGpuTiming() {return false;}
+    virtual bool gpuTimingEnabled() const noexcept {return false;}
+    // Caller MUST establish completion of this recording's successful submission
+    // (fence/queue idle), then consume before reset. Never polls an in-flight or
+    // merely recorded/unsubmitted buffer. No wait is added; a result is taken once.
+    virtual std::optional<double> takeGpuTimeAfterCompletion() {return std::nullopt;}
 };
 
 
