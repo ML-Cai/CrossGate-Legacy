@@ -188,7 +188,7 @@ private:
         const bool acquired=[&] {
             cgl::EntryTimer timer(entryTimings(world),cgl::EntryStage::CharacterClips);
             return load_.advance([&](const auto& request) {
-                return animations_.acquireForScene(request,*world->getSingleton<cgl::component::AssetsReaderState>(),render.pDevice.get(),pass);
+                return animations_.acquireForSceneProgressive(request,*world->getSingleton<cgl::component::AssetsReaderState>(),render.pDevice.get(),pass);
             });
         }();
         if(acquired && !character_) {

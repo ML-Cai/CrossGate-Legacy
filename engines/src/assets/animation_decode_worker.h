@@ -22,7 +22,9 @@ public:
     bool submit(Task task,uint64_t bytes);
     // Planning occupies the slot but reserves no RGBA. Reserve exact bytes before
     // decode; availableBytes is an owner-thread admission snapshot, not mutable.
-    bool submitPlanned(Planner planner,Decode decode,uint64_t availableBytes);
+    // The default 32 MiB streaming limit stays unchanged. Scene admission can
+    // explicitly allow up to AnimationBuilder::MaxBytes in this same single slot.
+    bool submitPlanned(Planner planner,Decode decode,uint64_t availableBytes,uint64_t clipLimit=MaxBytes);
     bool busy() const;
     std::optional<Result> tryTake();
     uint64_t reservedBytes() const;

@@ -155,3 +155,34 @@ TEST(AnimationDecodeWorkerTest, PlannedDecoderCannotPublishBeyondExactReservatio
     },32));
     auto result=take(worker);ASSERT_TRUE(result);EXPECT_TRUE(result->error);EXPECT_TRUE(result->pixels.rgba.empty());EXPECT_FALSE(worker.busy());
 }
+
+TEST(AnimationDecodeWorkerTest, ExplicitSceneLimitPreservesDefaultStreamingLimitAndBudget) {
+    constexpr uint64_t bytes=cgl::AnimationDecodeWorker::MaxBytes+4;
+    int decoded=0;auto decode=[&](uint64_t required,const auto&) {EXPECT_EQ(required,bytes);++decoded;return cgl::AnimationPixels{};};
+    cgl::AnimationDecodeWorker worker; // Destroy/join before captured test state.
+    EXPECT_THROW(worker.submitPlanned([](const auto&){return bytes;},decode,bytes,0),std::invalid_argument);
+    EXPECT_THROW(worker.submitPlanned([](const auto&){return bytes;},decode,bytes,cgl::AnimationBuilder::MaxBytes+1),std::invalid_argument);
+    ASSERT_TRUE(worker.submitPlanned([](const auto&){return bytes;},decode,bytes));
+    auto result=take(worker);ASSERT_TRUE(result);ASSERT_TRUE(result->error);EXPECT_EQ(decoded,0);
+    EXPECT_THROW(std::rethrow_exception(result->error),std::runtime_error);
+    ASSERT_TRUE(worker.submitPlanned([](const auto&){return bytes;},decode,bytes-1,cgl::AnimationBuilder::MaxBytes));
+    result=take(worker);ASSERT_TRUE(result);ASSERT_TRUE(result->error);EXPECT_EQ(decoded,0);
+    EXPECT_THROW(std::rethrow_exception(result->error),cgl::AnimationBudgetExceeded);
+    ASSERT_TRUE(worker.submitPlanned([](const auto&){return bytes;},decode,bytes,cgl::AnimationBuilder::MaxBytes));
+    result=take(worker);ASSERT_TRUE(result);EXPECT_FALSE(result->error);EXPECT_EQ(decoded,1);EXPECT_EQ(worker.reservedBytes(),0);
+}
+TEST(AnimationDecodeWorkerTest, SceneReservationStaysChargedUntilCancelledCpuExits) {
+    constexpr uint64_t bytes=cgl::AnimationDecodeWorker::MaxBytes+4;
+    std::promise<void> entered,release;auto started=entered.get_future();auto gate=release.get_future().share();
+    auto token=std::make_shared<int>(1);std::weak_ptr<int> weak=token;
+    cgl::AnimationDecodeWorker worker; // Captured promises outlive stop/destruction.
+    ASSERT_TRUE(worker.submitPlanned([](const auto&){return bytes;},[&,keep=std::move(token)](uint64_t,const auto&) {
+        entered.set_value();gate.wait();return cgl::AnimationPixels{};
+    },bytes,cgl::AnimationBuilder::MaxBytes));
+    const auto status=started.wait_for(2s);if(status!=std::future_status::ready) release.set_value();
+    ASSERT_EQ(status,std::future_status::ready);EXPECT_EQ(worker.reservedBytes(),bytes);
+    worker.requestCancel();EXPECT_FALSE(worker.collectCancelled());EXPECT_EQ(worker.reservedBytes(),bytes);EXPECT_FALSE(weak.expired());
+    release.set_value();const auto deadline=std::chrono::steady_clock::now()+2s;
+    while(!worker.collectCancelled() && std::chrono::steady_clock::now()<deadline) std::this_thread::sleep_for(1ms);
+    EXPECT_FALSE(worker.busy());EXPECT_EQ(worker.reservedBytes(),0);EXPECT_TRUE(weak.expired());EXPECT_FALSE(worker.tryTake());
+}

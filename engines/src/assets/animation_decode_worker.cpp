@@ -7,14 +7,14 @@ bool AnimationDecodeWorker::submit(Task task,uint64_t bytes) {
     if(!task || !bytes || bytes>MaxBytes) throw std::invalid_argument("Invalid decode reservation");
     return submitTask(std::move(task),bytes);
 }
-bool AnimationDecodeWorker::submitPlanned(Planner planner,Decode decode,uint64_t availableBytes) {
-    if(!planner || !decode) throw std::invalid_argument("Invalid planned decode");
-    return submitTask([this,plan=std::move(planner),decode=std::move(decode),availableBytes](const auto& cancelled) {
+bool AnimationDecodeWorker::submitPlanned(Planner planner,Decode decode,uint64_t availableBytes,uint64_t clipLimit) {
+    if(!planner || !decode || !clipLimit || clipLimit>AnimationBuilder::MaxBytes) throw std::invalid_argument("Invalid planned decode");
+    return submitTask([this,plan=std::move(planner),decode=std::move(decode),availableBytes,clipLimit](const auto& cancelled) {
         const uint64_t required=plan(cancelled);
         {
             std::lock_guard lock(mutex_);
             if(cancelled.load()) throw std::runtime_error("Animation planning cancelled");
-            if(!required || required>MaxBytes) throw std::runtime_error("Animation exceeds progressive clip memory limit");
+            if(!required || required>clipLimit) throw std::runtime_error("Animation exceeds progressive clip memory limit");
             if(required>availableBytes) throw AnimationBudgetExceeded(required);
             reserved_=required;
         }
