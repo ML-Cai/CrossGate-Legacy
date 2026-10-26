@@ -82,3 +82,20 @@ TEST(GpuTelemetry, ReportsMissingSamplesAsNullRatherThanZero) {
     out.str("");out.clear();cgl::WriteTimingDetails(out,&telemetry);
     EXPECT_NE(out.str().find("\"gpu_mean_ms\":0"),std::string::npos);
 }
+
+TEST(SceneEntryTimings, BoundedCountersRejectInvalidSamplesAndSerializeScopes) {
+    cgl::SceneEntryTimings t;
+    EXPECT_FALSE(t.add(cgl::EntryStage::Count,1));EXPECT_FALSE(t.add(cgl::EntryStage::Plan,-1));
+    EXPECT_FALSE(t.add(cgl::EntryStage::Plan,std::numeric_limits<double>::infinity()));
+    EXPECT_FALSE(t.add(cgl::EntryStage::Plan,std::numeric_limits<double>::quiet_NaN()));
+    for(int i=0;i<100000;++i) ASSERT_TRUE(t.add(cgl::EntryStage::Catalog,2));
+    EXPECT_EQ(t.stages[size_t(cgl::EntryStage::Catalog)].calls,100000);
+    EXPECT_DOUBLE_EQ(t.stages[size_t(cgl::EntryStage::Catalog)].totalMs,200000);
+    EXPECT_DOUBLE_EQ(t.stages[size_t(cgl::EntryStage::Catalog)].maxMs,2);
+    {cgl::EntryTimer disabled(nullptr,cgl::EntryStage::Plan);}
+    try {cgl::EntryTimer timer(&t,cgl::EntryStage::Plan);throw std::runtime_error("test");} catch(const std::runtime_error&) {}
+    EXPECT_EQ(t.stages[size_t(cgl::EntryStage::Plan)].calls,1);
+    std::ostringstream out;cgl::WriteSceneEntryTimings(out,t);
+    EXPECT_NE(out.str().find("\"entry_catalog_max_ms\":2"),std::string::npos);
+    EXPECT_NE(out.str().find("\"entry_remote_world_calls\":0"),std::string::npos);
+}

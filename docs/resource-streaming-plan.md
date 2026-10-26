@@ -1,6 +1,6 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #84 (CPU map preparation). Each follow-up
+Current base: merged PR #85 (progressive map loading). Each follow-up
 must run independently on its merged develop base. Scope is selected from actual
 profiles, not a commitment to speculative abstractions.
 
@@ -9,9 +9,14 @@ profiles, not a commitment to speculative abstractions.
 | Complete (#82) | CPU-only CI build/test lane | Shared native test registry, SDK-free builds, Windows/Linux ordinary and ASan jobs, retained failure artifacts |
 | Complete (#83) | Explicit visible-appearance readiness policy | Priority/fallback behavior, coverage, pending demand age and no premature resource release |
 | Complete (#84) | CPU map preparation boundary | Owned metadata and one-page pixel results, no GPU/window requirements, format fidelity and failed-page cleanup |
-| Current | Progressive map loading | Background preparation and bounded GPU submission, cancellation and failure recovery; preserve a working native client |
-| Then | Resource memory/profiling follow-up | Distinguish payload/reservations from physical host/device memory, measure remaining scene-entry stalls and validate dedicated GPUs |
+| Complete (#85) | Progressive map loading | Background preparation and bounded GPU submission, cancellation and failure recovery; preserve a working native client |
+| Current | Incremental scene-entry catalog | Measure entry phases, bound candidate work, preserve ordering/filters and cancel partial scene ownership |
+| Then | Resource memory/profiling follow-up | Profile local character entry, distinguish payload/reservations from physical host/device memory and validate dedicated GPUs |
 | Profile-driven | Further recording/batching or graph optimization | Same resources, painter order, comparable frame/GPU costs and explicit buffer lifetimes |
+
+The catalog step and its measurements are recorded in
+[catalog entry validation](catalog-entry-validation.md). Candidate count limits do
+not guarantee a wall-time deadline; local clip acquisition remains a separate step.
 
 The earlier 2-3 PR rendering estimate is superseded by this functional sequence.
 The soak/tooling, CPU-only CI and readiness PRs are merged. Keep hosted CI dependency/build changes separate

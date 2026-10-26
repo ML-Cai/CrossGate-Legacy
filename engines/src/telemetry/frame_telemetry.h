@@ -1,4 +1,5 @@
 #pragma once
+#include "telemetry/scene_entry_telemetry.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -82,7 +83,7 @@ private:
     std::array<double,Capacity> samples_{};size_t next_=0,count_=0;uint64_t total_=0,missing_=0;
 };
 namespace component {
-struct RuntimeTelemetry {FrameTelemetry frames;FrameSample rendering;GpuTelemetry gpu;uint32_t gpuSlots=0;FrameTelemetry loadingFrames;};
+struct RuntimeTelemetry {FrameTelemetry frames;FrameSample rendering;GpuTelemetry gpu;uint32_t gpuSlots=0;FrameTelemetry loadingFrames;SceneEntryTimings entry;};
 }
 inline void WriteTimingDetails(std::ostream& out,const component::RuntimeTelemetry* telemetry) {
     const auto cpu=telemetry?telemetry->frames.summary():FrameSummary{};
