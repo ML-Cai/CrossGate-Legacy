@@ -190,7 +190,8 @@ protected:
         if (world_.getSingleton<cgl::component::FrameRenderState>()) cgl::FrameRenderDestroySystem{}.update(&world_);
         if (render && render->pDevice) {
             const auto allocations=render->pDevice->spriteAllocationStatistics();EXPECT_TRUE(allocations);
-            if(allocations) {EXPECT_EQ(allocations->total.bytes,0);EXPECT_EQ(allocations->total.count,0);EXPECT_EQ(allocations->accountingErrors,0);}
+            if(allocations) {EXPECT_EQ(allocations->total.bytes,0);EXPECT_EQ(allocations->total.count,0);EXPECT_EQ(allocations->accountingErrors,0);
+                for(const auto& g:allocations->imageClasses) {EXPECT_EQ(g.images,0);EXPECT_EQ(g.frames,0);EXPECT_EQ(g.payloadBytes,0);EXPECT_EQ(g.allocationBytes,0);}}
             std::string diagnostic;
             render->pDevice->getLastError(&diagnostic);
             EXPECT_EQ(diagnostic, initialDiagnostic_) << "New Vulkan validation error";
@@ -930,6 +931,11 @@ TEST_F(DesktopSceneTest, DeferredRetirementFollowsActualFrameFencesAndRetainsBud
         EXPECT_GT(maps_.retireUnused(0,submitted,0),0);
         EXPECT_EQ(device->spriteAllocationStatistics()->total.bytes,allocatedBefore->total.bytes);
         EXPECT_EQ(device->spriteAllocationStatistics()->total.count,allocatedBefore->total.count);
+        const auto allocatedAfter=*device->spriteAllocationStatistics();
+        for(size_t i=0;i<allocatedBefore->imageClasses.size();++i) {
+            const auto& a=allocatedBefore->imageClasses[i];const auto& b=allocatedAfter.imageClasses[i];
+            EXPECT_EQ(a.images,b.images);EXPECT_EQ(a.frames,b.frames);EXPECT_EQ(a.payloadBytes,b.payloadBytes);EXPECT_EQ(a.allocationBytes,b.allocationBytes);
+        }
         EXPECT_EQ(library_.usage().clips,1);EXPECT_GT(library_.usage().retiredClips,0);
         EXPECT_EQ(library_.usage().rgbaBytes+library_.usage().retiredBytes,oldBytes);
         // Retired allocations cannot be silently removed from the hard budget.
@@ -2049,6 +2055,7 @@ TEST_F(DesktopSceneTest, ResourceLifecycleReturnsToQuiescentBaseline) {
         ASSERT_EQ(m.rgbaBytes+m.outlineBytes+m.retiredMapBytes+m.retiredOutlineBytes,0);
         const auto allocations=device->spriteAllocationStatistics();ASSERT_TRUE(allocations);
         ASSERT_EQ(allocations->total.bytes,0);ASSERT_EQ(allocations->total.count,0);ASSERT_EQ(allocations->accountingErrors,0);
+        for(const auto& g:allocations->imageClasses) {ASSERT_EQ(g.images,0);ASSERT_EQ(g.frames,0);ASSERT_EQ(g.payloadBytes,0);ASSERT_EQ(g.allocationBytes,0);}
         ASSERT_EQ(m.pendingBytes+m.workingBytes,0);ASSERT_FALSE(m.loading);ASSERT_FALSE(m.cpuPending);ASSERT_FALSE(m.uploadPending);
         size_t sprites=0,remote=0;
         world_.forEach<cgl::component::Sprite>([&](auto,auto*){++sprites;});

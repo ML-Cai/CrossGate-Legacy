@@ -113,7 +113,7 @@ public:
         if (image_) vkDestroyImage(device_, image_, nullptr);
         if (imageMemory_) {
             vkFreeMemory(device_, imageMemory_, nullptr);
-            owner_->releaseSpriteAllocation(SpriteAllocationKind::Image,imageAllocation_);
+            owner_->releaseSpriteAllocation(SpriteAllocationKind::Image,imageAllocation_,imageFootprint());
         }
     }
 
@@ -130,6 +130,9 @@ public:
     void drawRegion(ICommandBuffer* command, const cgl::Viewport& viewport,
                     uint32_t frame, SpriteRegion source, float x, float y, float scale) override;
 private:
+    SpriteImageFootprint imageFootprint() const noexcept {
+        return {uint64_t(width_)*height_*frameCount_*4,frameCount_,ClassifySpriteImage(width_,height_,frameCount_)};
+    }
     bool allocate(const VkMemoryRequirements& requirements, VkMemoryPropertyFlags flags, VkDeviceMemory* memory,uint64_t& allocation,SpriteAllocationKind kind) {
         VkPhysicalDeviceMemoryProperties properties;
         vkGetPhysicalDeviceMemoryProperties(physical_, &properties);
@@ -141,7 +144,7 @@ private:
                 info.memoryTypeIndex = i;
                 VkDeviceMemory candidate=VK_NULL_HANDLE;
                 RETURN_FAIL_IF_ANY_VK_FAILED(vkAllocateMemory(device_, &info, nullptr, &candidate), "Sprite memory allocation failed");
-                if(!owner_->recordSpriteAllocation(kind,info.allocationSize)) {
+                if(!owner_->recordSpriteAllocation(kind,info.allocationSize,kind==SpriteAllocationKind::Image?imageFootprint():SpriteImageFootprint{})) {
                     vkFreeMemory(device_,candidate,nullptr);LOGE("Sprite allocation accounting overflow");return false;
                 }
                 *memory=candidate;allocation=info.allocationSize;

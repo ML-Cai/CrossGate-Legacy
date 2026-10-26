@@ -126,7 +126,8 @@ protected:
         if (imageMemory_) vkFreeMemory(handle_, imageMemory_, nullptr);
         if (device_) {
             const auto allocations=device_->spriteAllocationStatistics();EXPECT_TRUE(allocations);
-            if(allocations) {EXPECT_EQ(allocations->total.bytes,0);EXPECT_EQ(allocations->total.count,0);EXPECT_EQ(allocations->accountingErrors,0);}
+            if(allocations) {EXPECT_EQ(allocations->total.bytes,0);EXPECT_EQ(allocations->total.count,0);EXPECT_EQ(allocations->accountingErrors,0);
+                for(const auto& g:allocations->imageClasses) {EXPECT_EQ(g.images,0);EXPECT_EQ(g.frames,0);EXPECT_EQ(g.payloadBytes,0);EXPECT_EQ(g.allocationBytes,0);}}
             std::string diagnostic;
             device_->getLastError(&diagnostic);
             EXPECT_EQ(diagnostic, initialDiagnostic_) << "New Vulkan validation error";
@@ -512,6 +513,8 @@ TEST_F(SpriteRendererTest, AllocationStatisticsTrackReadyPendingCancellationAndR
     renderer_=graphics::ISpriteRenderer::create(device_.get(),pass_.get(),2,2,2,texture);
     ASSERT_NE(renderer_,nullptr);auto ready=*device_->spriteAllocationStatistics();
     EXPECT_EQ(ready.images.count,1);EXPECT_GE(ready.images.bytes,texture.size());EXPECT_EQ(ready.staging.count,0);
+    const auto& footprint=ready.imageClasses[size_t(graphics::SpriteImageClass::FrameUpTo4KiB)];
+    EXPECT_EQ(footprint.images,1);EXPECT_EQ(footprint.frames,2);EXPECT_EQ(footprint.payloadBytes,texture.size());EXPECT_EQ(footprint.allocationBytes,ready.images.bytes);
     EXPECT_GE(ready.staging.peakBytes,texture.size());EXPECT_GE(ready.total.peakBytes,ready.images.bytes+texture.size());
     auto pending=graphics::ISpriteRenderer::createPending(device_.get(),pass_.get(),2,2,2,{texture.begin(),texture.end()},8);
     ASSERT_NE(pending,nullptr);auto uploading=*device_->spriteAllocationStatistics();

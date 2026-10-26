@@ -495,6 +495,9 @@ ownership transfer and failure recovery. It links no asset-reader implementation
 or graphics backend and needs no installed game files.
 The sprite-memory suite checks fixed allocation accounting, simultaneous peaks,
 invalid transitions, overflow rejection and unsupported diagnostics without Vulkan.
+It also verifies live image-class footprints, class/global sum consistency and
+atomic rejection of invalid metadata; see
+[allocation breakdown validation](sprite-allocation-breakdown-validation.md).
 The catalog suite checks bounded candidate scanning, deterministic version/serial
 ordering, metadata filters, busy-reader retry and cancellation by destruction.
 The map-worker suite checks its single slot, reservation retention, cancellation,
