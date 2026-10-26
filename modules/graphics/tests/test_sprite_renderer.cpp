@@ -125,6 +125,8 @@ protected:
         if (image_) vkDestroyImage(handle_, image_, nullptr);
         if (imageMemory_) vkFreeMemory(handle_, imageMemory_, nullptr);
         if (device_) {
+            const auto allocations=device_->spriteAllocationStatistics();EXPECT_TRUE(allocations);
+            if(allocations) {EXPECT_EQ(allocations->total.bytes,0);EXPECT_EQ(allocations->total.count,0);EXPECT_EQ(allocations->accountingErrors,0);}
             std::string diagnostic;
             device_->getLastError(&diagnostic);
             EXPECT_EQ(diagnostic, initialDiagnostic_) << "New Vulkan validation error";
@@ -502,4 +504,31 @@ TEST_F(SpriteRendererTest, FiniteTransformsThatOverflowGpuRectangleRecordNoDrawA
     Pixels pixels{};render(0,&pixels,2,2,1);
     EXPECT_EQ(pixels[2*side+2],(Pixel{255,0,0,255}));
     EXPECT_EQ(native->spriteBindingStats().pipelines,1);
+}
+
+TEST_F(SpriteRendererTest, AllocationStatisticsTrackReadyPendingCancellationAndReuse) {
+    auto baseline=device_->spriteAllocationStatistics();ASSERT_TRUE(baseline);EXPECT_EQ(baseline->total.bytes,0);
+    // Offscreen test target/readback allocations intentionally are outside scope.
+    renderer_=graphics::ISpriteRenderer::create(device_.get(),pass_.get(),2,2,2,texture);
+    ASSERT_NE(renderer_,nullptr);auto ready=*device_->spriteAllocationStatistics();
+    EXPECT_EQ(ready.images.count,1);EXPECT_GE(ready.images.bytes,texture.size());EXPECT_EQ(ready.staging.count,0);
+    EXPECT_GE(ready.staging.peakBytes,texture.size());EXPECT_GE(ready.total.peakBytes,ready.images.bytes+texture.size());
+    auto pending=graphics::ISpriteRenderer::createPending(device_.get(),pass_.get(),2,2,2,{texture.begin(),texture.end()},8);
+    ASSERT_NE(pending,nullptr);auto uploading=*device_->spriteAllocationStatistics();
+    EXPECT_EQ(uploading.images.count,2);EXPECT_EQ(uploading.staging.count,1);EXPECT_GE(uploading.staging.bytes,8);
+    EXPECT_EQ(uploading.total.bytes,uploading.images.bytes+uploading.staging.bytes);
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+    while(pending->pollUpload()==graphics::SpriteUploadState::Pending && std::chrono::steady_clock::now()<deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ASSERT_EQ(pending->pollUpload(),graphics::SpriteUploadState::Ready);
+    auto completed=*device_->spriteAllocationStatistics();EXPECT_EQ(completed.staging.bytes,0);EXPECT_EQ(completed.images.count,2);
+    auto cancel=graphics::ISpriteRenderer::createPending(device_.get(),pass_.get(),2,2,2,{texture.begin(),texture.end()},8);
+    ASSERT_NE(cancel,nullptr);EXPECT_EQ(device_->spriteAllocationStatistics()->staging.count,1);
+    cancel.reset();auto cancelled=*device_->spriteAllocationStatistics();
+    EXPECT_EQ(cancelled.total.bytes,completed.total.bytes);EXPECT_EQ(cancelled.total.count,completed.total.count);
+    EXPECT_EQ(cancelled.staging.bytes,0);EXPECT_GE(cancelled.total.peakBytes,uploading.total.bytes);
+    pending.reset();renderer_.reset();auto empty=*device_->spriteAllocationStatistics();
+    EXPECT_EQ(empty.total.bytes,0);EXPECT_EQ(empty.total.count,0);EXPECT_EQ(empty.accountingErrors,0);
+    EXPECT_EQ(graphics::ISpriteRenderer::create(device_.get(),pass_.get(),0,2,2,texture),nullptr);
+    EXPECT_EQ(device_->spriteAllocationStatistics()->total.bytes,0);
 }

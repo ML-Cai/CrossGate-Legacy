@@ -189,6 +189,8 @@ protected:
         maps_.clear();
         if (world_.getSingleton<cgl::component::FrameRenderState>()) cgl::FrameRenderDestroySystem{}.update(&world_);
         if (render && render->pDevice) {
+            const auto allocations=render->pDevice->spriteAllocationStatistics();EXPECT_TRUE(allocations);
+            if(allocations) {EXPECT_EQ(allocations->total.bytes,0);EXPECT_EQ(allocations->total.count,0);EXPECT_EQ(allocations->accountingErrors,0);}
             std::string diagnostic;
             render->pDevice->getLastError(&diagnostic);
             EXPECT_EQ(diagnostic, initialDiagnostic_) << "New Vulkan validation error";
@@ -923,8 +925,11 @@ TEST_F(DesktopSceneTest, DeferredRetirementFollowsActualFrameFencesAndRetainsBud
         cgl::SceneManagerDestroySystem{}.update(&world_);
         const auto submitted=sync->progress.submitted;
         const auto oldBytes=library_.usage().rgbaBytes;
+        const auto allocatedBefore=device->spriteAllocationStatistics();ASSERT_TRUE(allocatedBefore);
         EXPECT_GT(library_.retireUnused(0,submitted),0);
         EXPECT_GT(maps_.retireUnused(0,submitted,0),0);
+        EXPECT_EQ(device->spriteAllocationStatistics()->total.bytes,allocatedBefore->total.bytes);
+        EXPECT_EQ(device->spriteAllocationStatistics()->total.count,allocatedBefore->total.count);
         EXPECT_EQ(library_.usage().clips,1);EXPECT_GT(library_.usage().retiredClips,0);
         EXPECT_EQ(library_.usage().rgbaBytes+library_.usage().retiredBytes,oldBytes);
         // Retired allocations cannot be silently removed from the hard budget.
@@ -2042,6 +2047,8 @@ TEST_F(DesktopSceneTest, ResourceLifecycleReturnsToQuiescentBaseline) {
         ASSERT_EQ(a.retiredClips,0);ASSERT_FALSE(library_.streamingPending());ASSERT_FALSE(library_.waitingForBudget());
         ASSERT_EQ(m.maps+m.outlines+m.pages+m.retiredMaps+m.retiredOutlines,0);
         ASSERT_EQ(m.rgbaBytes+m.outlineBytes+m.retiredMapBytes+m.retiredOutlineBytes,0);
+        const auto allocations=device->spriteAllocationStatistics();ASSERT_TRUE(allocations);
+        ASSERT_EQ(allocations->total.bytes,0);ASSERT_EQ(allocations->total.count,0);ASSERT_EQ(allocations->accountingErrors,0);
         ASSERT_EQ(m.pendingBytes+m.workingBytes,0);ASSERT_FALSE(m.loading);ASSERT_FALSE(m.cpuPending);ASSERT_FALSE(m.uploadPending);
         size_t sprites=0,remote=0;
         world_.forEach<cgl::component::Sprite>([&](auto,auto*){++sprites;});

@@ -1,6 +1,6 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #86 (incremental scene-entry catalog). Each follow-up
+Current base: merged PR #87 (progressive local-character entry). Each follow-up
 must run independently on its merged develop base. Scope is selected from actual
 profiles, not a commitment to speculative abstractions.
 
@@ -11,9 +11,14 @@ profiles, not a commitment to speculative abstractions.
 | Complete (#84) | CPU map preparation boundary | Owned metadata and one-page pixel results, no GPU/window requirements, format fidelity and failed-page cleanup |
 | Complete (#85) | Progressive map loading | Background preparation and bounded GPU submission, cancellation and failure recovery; preserve a working native client |
 | Complete (#86) | Incremental scene-entry catalog | Measure entry phases, bound candidate work, preserve ordering/filters and cancel partial scene ownership |
-| Current | Progressive local-character entry | Reuse single-slot background decode/chunked upload, retain 256 MiB local support, full scene admission and fence/cancellation safety |
-| Then | Resource memory/profiling follow-up | Measure remaining owner calls and physical host/device memory, and validate dedicated GPUs |
+| Complete (#87) | Progressive local-character entry | Reuse single-slot background decode/chunked upload, retain 256 MiB local support, full scene admission and fence/cancellation safety |
+| Current | Sprite allocation visibility | Separate real Vulkan image/staging allocation sizes from RGBA payload, verify release and retained-fence ownership, expose bounded diagnostics |
+| Then | Broader memory/profiling follow-up | Measure remaining owner calls and heap/process residency, include other allocation classes and validate dedicated GPUs |
 | Profile-driven | Further recording/batching or graph optimization | Same resources, painter order, comparable frame/GPU costs and explicit buffer lifetimes |
+
+The allocation step and its intentionally limited scope are documented in
+[sprite allocation validation](sprite-allocation-validation.md). These allocation
+bytes are not total physical RAM/VRAM or driver heap residency.
 
 The catalog step and its measurements are recorded in
 [catalog entry validation](catalog-entry-validation.md). Candidate count limits do

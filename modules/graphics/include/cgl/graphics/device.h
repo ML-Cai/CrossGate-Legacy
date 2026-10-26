@@ -9,6 +9,8 @@
 #pragma once
 
 #include <string>
+#include <optional>
+#include "cgl/graphics/sprite_memory.h"
 #include <memory>
 #include "cgl/common/results.h"
 
@@ -36,6 +38,9 @@ class IDevice {
     virtual cgl::graphics::IQueue* graphicsQueue() = 0;
 
     virtual cgl::Results waitIdle() = 0;
+
+    // Owner-thread diagnostic. Unsupported backends return no measurement.
+    virtual std::optional<SpriteAllocationStatistics> spriteAllocationStatistics() const noexcept {return std::nullopt;}
 };
 
 }   // namespace graphics

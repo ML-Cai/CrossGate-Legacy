@@ -12,6 +12,7 @@
 #include <chrono>
 #include <fstream>
 #include "telemetry/frame_telemetry.h"
+#include "telemetry/sprite_allocation_report.h"
 #include "map/streaming_stress.h"
 #include "benchmark/crowd_benchmark.h"
 #include "cgl/settings/settings.h"
@@ -247,6 +248,7 @@ void ClientEngine::runStage(cgl::ECSCore* pEcs, uint32_t frameLimit) {
             << ",\"map_loading_frame_p99_ms\":" << loadingSummary.p99Ms
             << ",\"map_loading_frame_max_ms\":" << loadingSummary.lifetimeMaxMs
             << ",\"map_loading_update_mean_ms\":" << loadingSummary.updateMs;
+        cgl::WriteSpriteAllocationDetails(out,pRenderDevState_->pDevice->spriteAllocationStatistics());
         cgl::WriteSceneEntryTimings(out,telemetry->entry);
         cgl::WriteTimingDetails(out,telemetry);
         out
