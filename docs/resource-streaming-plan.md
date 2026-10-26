@@ -1,6 +1,6 @@
 # Resource and rendering follow-up plan
 
-Current base: merged PR #87 (progressive local-character entry). Each follow-up
+Current base: merged PR #88 (actual sprite Vulkan allocation accounting). Each follow-up
 must run independently on its merged develop base. Scope is selected from actual
 profiles, not a commitment to speculative abstractions.
 
@@ -12,13 +12,18 @@ profiles, not a commitment to speculative abstractions.
 | Complete (#85) | Progressive map loading | Background preparation and bounded GPU submission, cancellation and failure recovery; preserve a working native client |
 | Complete (#86) | Incremental scene-entry catalog | Measure entry phases, bound candidate work, preserve ordering/filters and cancel partial scene ownership |
 | Complete (#87) | Progressive local-character entry | Reuse single-slot background decode/chunked upload, retain 256 MiB local support, full scene admission and fence/cancellation safety |
-| Current | Sprite allocation visibility | Separate real Vulkan image/staging allocation sizes from RGBA payload, verify release and retained-fence ownership, expose bounded diagnostics |
+| Complete (#88) | Sprite allocation visibility | Separate real Vulkan image/staging allocation sizes from RGBA payload, verify release and retained-fence ownership, expose bounded diagnostics |
+| Current | Sprite allocation cost classification | Fixed live counters by logical frame size, aggregate consistency, retirement/cleanup and actual workload measurements |
 | Then | Broader memory/profiling follow-up | Measure remaining owner calls and heap/process residency, include other allocation classes and validate dedicated GPUs |
 | Profile-driven | Further recording/batching or graph optimization | Same resources, painter order, comparable frame/GPU costs and explicit buffer lifetimes |
 
 The allocation step and its intentionally limited scope are documented in
 [sprite allocation validation](sprite-allocation-validation.md). These allocation
-bytes are not total physical RAM/VRAM or driver heap residency.
+bytes are not total physical RAM/VRAM or driver heap residency. The next diagnostic
+step groups live image payload and allocation costs by frame canvas size; see
+[allocation breakdown validation](sprite-allocation-breakdown-validation.md).
+Select an allocation/layout change from that evidence and preserve exact sampling
+at fractional transforms; pooling alone does not remove padding inside an image.
 
 The catalog step and its measurements are recorded in
 [catalog entry validation](catalog-entry-validation.md). Candidate count limits do

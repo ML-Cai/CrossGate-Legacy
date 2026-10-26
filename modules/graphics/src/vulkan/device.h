@@ -61,8 +61,8 @@ class Device : public cgl::graphics::IDevice  {
     }
 
     std::optional<SpriteAllocationStatistics> spriteAllocationStatistics() const noexcept override {return spriteMemory_.snapshot();}
-    bool recordSpriteAllocation(SpriteAllocationKind kind,uint64_t bytes) noexcept {return spriteMemory_.allocate(kind,bytes);}
-    bool releaseSpriteAllocation(SpriteAllocationKind kind,uint64_t bytes) noexcept {return spriteMemory_.release(kind,bytes);}
+    bool recordSpriteAllocation(SpriteAllocationKind kind,uint64_t bytes,SpriteImageFootprint image={}) noexcept {return spriteMemory_.allocate(kind,bytes,image);}
+    bool releaseSpriteAllocation(SpriteAllocationKind kind,uint64_t bytes,SpriteImageFootprint image={}) noexcept {return spriteMemory_.release(kind,bytes,image);}
 
     VkSurfaceKHR surface() const { return surface_; }
 
