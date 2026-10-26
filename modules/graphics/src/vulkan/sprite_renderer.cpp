@@ -102,7 +102,7 @@ std::shared_ptr<SpritePipeline> IRenderPass::acquireSpritePipeline() {
 namespace {
 class SpriteRenderer final : public ISpriteRenderer {
 public:
-    explicit SpriteRenderer(Device* device) : device_(device->device()), physical_(device->physicalDevice()),
+    explicit SpriteRenderer(Device* device) : owner_(device), device_(device->device()), physical_(device->physicalDevice()),
         queueFamily_(device->graphicsQueueFamily()) {}
     ~SpriteRenderer() override {
         // Cancellation only waits for this renderer's submitted copy, not queue idle.
@@ -111,7 +111,10 @@ public:
         if (descriptorPool_) vkDestroyDescriptorPool(device_, descriptorPool_, nullptr);
         if (view_) vkDestroyImageView(device_, view_, nullptr);
         if (image_) vkDestroyImage(device_, image_, nullptr);
-        if (imageMemory_) vkFreeMemory(device_, imageMemory_, nullptr);
+        if (imageMemory_) {
+            vkFreeMemory(device_, imageMemory_, nullptr);
+            owner_->releaseSpriteAllocation(SpriteAllocationKind::Image,imageAllocation_);
+        }
     }
 
     bool prepare(IRenderPass* pass, uint32_t width, uint32_t height,
@@ -127,7 +130,7 @@ public:
     void drawRegion(ICommandBuffer* command, const cgl::Viewport& viewport,
                     uint32_t frame, SpriteRegion source, float x, float y, float scale) override;
 private:
-    bool allocate(const VkMemoryRequirements& requirements, VkMemoryPropertyFlags flags, VkDeviceMemory* memory) {
+    bool allocate(const VkMemoryRequirements& requirements, VkMemoryPropertyFlags flags, VkDeviceMemory* memory,uint64_t& allocation,SpriteAllocationKind kind) {
         VkPhysicalDeviceMemoryProperties properties;
         vkGetPhysicalDeviceMemoryProperties(physical_, &properties);
         for (uint32_t i = 0; i < properties.memoryTypeCount; ++i) {
@@ -136,7 +139,12 @@ private:
                 VkMemoryAllocateInfo info{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
                 info.allocationSize = requirements.size;
                 info.memoryTypeIndex = i;
-                RETURN_FAIL_IF_ANY_VK_FAILED(vkAllocateMemory(device_, &info, nullptr, memory), "Sprite memory allocation failed");
+                VkDeviceMemory candidate=VK_NULL_HANDLE;
+                RETURN_FAIL_IF_ANY_VK_FAILED(vkAllocateMemory(device_, &info, nullptr, &candidate), "Sprite memory allocation failed");
+                if(!owner_->recordSpriteAllocation(kind,info.allocationSize)) {
+                    vkFreeMemory(device_,candidate,nullptr);LOGE("Sprite allocation accounting overflow");return false;
+                }
+                *memory=candidate;allocation=info.allocationSize;
                 return true;
             }
         }
@@ -154,6 +162,8 @@ private:
     VkCommandBuffer uploadCommand_=VK_NULL_HANDLE;
 
     std::shared_ptr<SpritePipeline> pipeline_;
+    Device* owner_;
+    uint64_t imageAllocation_=0,stagingAllocation_=0;
     VkDevice device_;
     VkPhysicalDevice physical_;
     uint32_t queueFamily_, width_ = 0, height_ = 0, frameCount_ = 0;
@@ -195,7 +205,7 @@ bool SpriteRenderer::prepare(IRenderPass* pass, uint32_t width, uint32_t height,
     RETURN_FAIL_IF_ANY_VK_FAILED(vkCreateImage(device_, &imageInfo, nullptr, &image_), "Sprite image creation failed");
     VkMemoryRequirements requirements;
     vkGetImageMemoryRequirements(device_, image_, &requirements);
-    if (!allocate(requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &imageMemory_)) return false;
+    if (!allocate(requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &imageMemory_,imageAllocation_,SpriteAllocationKind::Image)) return false;
     RETURN_FAIL_IF_ANY_VK_FAILED(vkBindImageMemory(device_, image_, imageMemory_, 0), "Sprite image binding failed");
     if (!upload(rgba)) return false;
 
@@ -226,7 +236,11 @@ void SpriteRenderer::releaseUpload() noexcept {
     if (uploadPool_) vkDestroyCommandPool(device_,uploadPool_,nullptr);
     if (uploadFence_) vkDestroyFence(device_,uploadFence_,nullptr);
     if (staging_) vkDestroyBuffer(device_,staging_,nullptr);
-    if (stagingMemory_) vkFreeMemory(device_,stagingMemory_,nullptr);
+    if (stagingMemory_) {
+        vkFreeMemory(device_,stagingMemory_,nullptr);
+        owner_->releaseSpriteAllocation(SpriteAllocationKind::Staging,stagingAllocation_);
+        stagingAllocation_=0;
+    }
     uploadPool_=VK_NULL_HANDLE;uploadFence_=VK_NULL_HANDLE;staging_=VK_NULL_HANDLE;stagingMemory_=VK_NULL_HANDLE;
     std::vector<uint8_t>().swap(pixels_);
 }
@@ -237,7 +251,7 @@ bool SpriteRenderer::upload(std::span<const uint8_t> rgba) {
     RETURN_FAIL_IF_ANY_VK_FAILED(vkCreateBuffer(device_,&buffer,nullptr,&staging_),"Sprite staging buffer failed");
     VkMemoryRequirements requirements;
     vkGetBufferMemoryRequirements(device_,staging_,&requirements);
-    if(!allocate(requirements,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,&stagingMemory_)) return false;
+    if(!allocate(requirements,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,&stagingMemory_,stagingAllocation_,SpriteAllocationKind::Staging)) return false;
     RETURN_FAIL_IF_ANY_VK_FAILED(vkBindBufferMemory(device_,staging_,stagingMemory_,0),"Sprite staging binding failed");
     VkCommandPoolCreateInfo pool{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};pool.queueFamilyIndex=queueFamily_;
     RETURN_FAIL_IF_ANY_VK_FAILED(vkCreateCommandPool(device_,&pool,nullptr,&uploadPool_),"Sprite upload pool failed");

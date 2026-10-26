@@ -15,6 +15,7 @@
 #include <vector>
 #include <filesystem>
 #include "cgl/graphics/device.h"
+#include "sprite_memory_ledger.h"
 
 namespace cgl {
 namespace graphics {
@@ -58,6 +59,10 @@ class Device : public cgl::graphics::IDevice  {
     uint64_t validationErrorCount() const noexcept {
         return validationErrors_.load(std::memory_order_relaxed);
     }
+
+    std::optional<SpriteAllocationStatistics> spriteAllocationStatistics() const noexcept override {return spriteMemory_.snapshot();}
+    bool recordSpriteAllocation(SpriteAllocationKind kind,uint64_t bytes) noexcept {return spriteMemory_.allocate(kind,bytes);}
+    bool releaseSpriteAllocation(SpriteAllocationKind kind,uint64_t bytes) noexcept {return spriteMemory_.release(kind,bytes);}
 
     VkSurfaceKHR surface() const { return surface_; }
 
@@ -113,6 +118,7 @@ class Device : public cgl::graphics::IDevice  {
                             VkShaderModule*              pModule);
 
  private:
+    SpriteMemoryLedger spriteMemory_;
     std::atomic<uint64_t> validationErrors_{0};
     bool enableDebug_;
     std::string last_error_;

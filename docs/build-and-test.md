@@ -483,7 +483,7 @@ CTest executable in fresh processes, which cannot expose same-process buildup.
 
 ## SDK-free core CI
 
-The independent project below builds eight native test suites plus two
+The independent project below builds nine native test suites plus two
 Python protocol runners without the desktop project, Vulkan SDK/glslc, GLFW,
 installed game files, Python development headers or NumPy. It is a selected core
 subset, not the entire engine or all `unit` tests. It reuses the same sources and
@@ -493,6 +493,8 @@ The map preparation suite exercises production CPU planning/pixel assembly using
 synthetic reader implementations, including page admission, palette conversion,
 ownership transfer and failure recovery. It links no asset-reader implementation
 or graphics backend and needs no installed game files.
+The sprite-memory suite checks fixed allocation accounting, simultaneous peaks,
+invalid transitions, overflow rejection and unsupported diagnostics without Vulkan.
 The catalog suite checks bounded candidate scanning, deterministic version/serial
 ordering, metadata filters, busy-reader retry and cancellation by destruction.
 The map-worker suite checks its single slot, reservation retention, cancellation,
