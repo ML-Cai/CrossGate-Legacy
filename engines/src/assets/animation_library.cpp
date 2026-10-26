@@ -34,6 +34,18 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireForScene(
 std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
     const AnimationRequest& request,component::AssetsReaderState& readers,
     graphics::IDevice* device,graphics::IRenderPass* pass,bool backgroundDecode) {
+    return acquireProgressiveImpl(request,readers,device,pass,backgroundDecode,AnimationDecodeWorker::MaxBytes);
+}
+std::shared_ptr<const AnimationClip> AnimationLibrary::acquireForSceneProgressive(
+    const AnimationRequest& request,component::AssetsReaderState& readers,
+    graphics::IDevice* device,graphics::IRenderPass* pass) {
+    if((pending_ && pending_->first!=request) || (decodeRequest_ && *decodeRequest_!=request))
+        throw std::logic_error("Scene admission requires other streaming work to be cancelled");
+    return acquireProgressiveImpl(request,readers,device,pass,true,AnimationBuilder::MaxBytes);
+}
+std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressiveImpl(
+    const AnimationRequest& request,component::AssetsReaderState& readers,
+    graphics::IDevice* device,graphics::IRenderPass* pass,bool backgroundDecode,uint64_t clipLimit) {
     if(!device || !pass || (device_ && device_!=device) || (pass_ && pass_!=pass))
         throw std::invalid_argument("Animation library requires one live device/render pass");
     if(auto found=findOrRestore(request)) {
@@ -64,7 +76,7 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
         if(result->error) {
             try {std::rethrow_exception(result->error);}
             catch(const AnimationBudgetExceeded& error) {
-                try {deferBudget(completed,error.requiredBytes);} catch(...) {++failedLoads_;loadStarted_.reset();throw;}
+                try {deferBudget(completed,error.requiredBytes,clipLimit);} catch(...) {++failedLoads_;loadStarted_.reset();throw;}
                 return nullptr;
             }
             catch(...) {++failedLoads_;loadStarted_.reset();throw;}
@@ -85,7 +97,7 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
         // The occupied slot prevents concurrent admissions, even at zero bytes.
         if(loadStarted_ && loadStarted_->request!=request) cancelLoadTiming();
         if(!loadStarted_) loadStarted_=StartedLoad{request,Clock::now()};
-        if(!submitDecode(request,readers,available)) throw std::logic_error("Decoder slot unexpectedly occupied");
+        if(!submitDecode(request,readers,available,clipLimit)) throw std::logic_error("Decoder slot unexpectedly occupied");
         device_=device;pass_=pass;
         return nullptr;
     }
@@ -95,12 +107,12 @@ std::shared_ptr<const AnimationClip> AnimationLibrary::acquireProgressive(
     } catch(const AnimationBudgetExceeded& error) {deferBudget(request,error.requiredBytes);}
     return nullptr;
 }
-bool AnimationLibrary::submitDecode(const AnimationRequest& request,component::AssetsReaderState& readers,uint64_t available) {
+bool AnimationLibrary::submitDecode(const AnimationRequest& request,component::AssetsReaderState& readers,uint64_t available,uint64_t clipLimit) {
     if(!decoder_.submitPlanned([this,&readers,request](const auto& cancelled) {
         return builder_.requiredBytes(request,readers,&cancelled);
     },[this,&readers,request](uint64_t required,const auto& cancelled) {
         return builder_.build(request,readers,required,&cancelled);
-    },available)) return false;
+    },available,clipLimit)) return false;
     decodeRequest_=request;decodeReaders_=&readers;return true;
 }
 bool AnimationLibrary::prepareNext(const AnimationRequest& request,component::AssetsReaderState& readers) {

@@ -39,9 +39,16 @@ public:
     bool prepareNext(const AnimationRequest& request,component::AssetsReaderState& readers);
     // Nonblocking CPU-only cancellation, including lookahead during an upload.
     void discardPrepared() noexcept;
-    // Scene entry may defer synchronous acquisition while older ownership occupies
+    // Preview/compatibility entry may defer synchronous acquisition while older ownership occupies
     // capacity. It supports the normal 256 MiB clip limit, without a worker job.
     std::shared_ptr<const AnimationClip> acquireForScene(const AnimationRequest& request,
+        component::AssetsReaderState& readers,graphics::IDevice* device,graphics::IRenderPass* pass);
+    // Main-scene entry: one background CPU job and one chunked GPU upload, no
+    // lookahead. Keeps the 256 MiB local clip limit and total-budget accounting;
+    // unlike remote streaming it may reserve more than 32 MiB for one clip.
+    // Poll once per update; nullptr means CPU/upload/budget work is not ready.
+    // Cancel before switching scene/request owners or replacing readers.
+    std::shared_ptr<const AnimationClip> acquireForSceneProgressive(const AnimationRequest& request,
         component::AssetsReaderState& readers,graphics::IDevice* device,graphics::IRenderPass* pass);
     std::shared_ptr<const AnimationClip> findReady(const AnimationRequest& request) const {
         return clips_.find(request);
@@ -121,7 +128,9 @@ private:
     void cancelLoadTiming() noexcept {if(loadStarted_) {++cancelledLoads_;loadStarted_.reset();}}
     void cancelPreparedTiming() noexcept {if(preparedStarted_) {++cancelledLoads_;preparedStarted_.reset();}}
     void finishLoadTiming();
-    bool submitDecode(const AnimationRequest&,component::AssetsReaderState&,uint64_t available);
+    bool submitDecode(const AnimationRequest&,component::AssetsReaderState&,uint64_t available,uint64_t clipLimit=AnimationDecodeWorker::MaxBytes);
+    std::shared_ptr<const AnimationClip> acquireProgressiveImpl(const AnimationRequest&,component::AssetsReaderState&,
+        graphics::IDevice*,graphics::IRenderPass*,bool backgroundDecode,uint64_t clipLimit);
     uint64_t uploadBytes() const noexcept {
         if(!pending_) return 0;
         const auto& c=pending_->second;return uint64_t(c->width)*c->height*c->frameCount*4;
