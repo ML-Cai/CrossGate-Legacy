@@ -483,8 +483,8 @@ CTest executable in fresh processes, which cannot expose same-process buildup.
 
 ## SDK-free core CI
 
-The independent project below builds ten native test suites plus two
-Python protocol runners without the desktop project, Vulkan SDK/glslc, GLFW,
+The independent project below builds ten native test suites, two Python protocol runners and
+the resource-preview selection tests without the desktop project, Vulkan SDK/glslc, GLFW,
 installed game files, Python development headers or NumPy. It is a selected core
 subset, not the entire engine or all `unit` tests. It reuses the same sources and
 CMake test definitions as the desktop build.

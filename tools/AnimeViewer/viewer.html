@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CGL Character Preview</title>
+<style>
+body{font:15px system-ui;margin:24px auto;max-width:1050px;padding:0 16px;color:#243040;background:#f6f8fa}h1{margin-bottom:4px}.note{color:#536374} .row{display:flex;gap:18px;flex-wrap:wrap;align-items:end;margin:18px 0}label{display:grid;gap:6px}select,button,input{font:inherit}select,button{padding:7px 12px}button{cursor:pointer}.row label{min-width:180px}#status{white-space:pre-wrap;min-height:44px}#stage{height:460px;overflow:auto;border:1px solid #aab5be;display:grid;place-items:start center;background-color:#eee;background-image:linear-gradient(45deg,#ccc 25%,transparent 25%),linear-gradient(-45deg,#ccc 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#ccc 75%),linear-gradient(-45deg,transparent 75%,#ccc 75%);background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0}canvas{margin:12px;image-rendering:pixelated;max-width:none}.controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:14px 0}#frame{width:180px}#error{color:#ac2727;min-height:20px}#position{min-width:140px}
+</style><script src="/playback.js" defer></script><script src="/viewer.js" defer></script>
+</head><body>
+<h1>角色動畫預覽</h1><p class="note">Classic · 唯讀 · Daytime／素材內嵌調色盤</p>
+<div class="row"><label>角色<select id="serial" disabled></select></label><label>動作<select id="motion" disabled></select></label><label>素材方向<select id="direction" disabled></select></label><button id="reload" disabled>載入動畫</button></div>
+<div id="status" role="status">讀取角色清單…</div><div id="error" role="alert"></div>
+<div class="controls"><button id="play" disabled>播放</button><button id="previous" disabled>上一格</button><button id="next" disabled>下一格</button><label>影格<input id="frame" type="range" min="0" value="0" disabled></label><span id="position">尚未載入</span><label>縮放<select id="zoom"><option value="0.5">50%</option><option value="1" selected>100%</option><option value="2">200%</option><option value="4">400%</option></select></label></div>
+<div id="stage"><canvas id="canvas" width="1" height="1"></canvas></div>
+</body></html>

@@ -55,3 +55,9 @@ if (CGL_WITH_TEST)
     set_tests_properties(python_session_cache PROPERTIES
         LABELS "unit;memory;python" TIMEOUT 60)
 endif()
+
+if (CGL_WITH_TEST)
+    add_test(NAME anime_viewer_selection
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/AnimeViewer/tests/test_preview.py)
+    set_tests_properties(anime_viewer_selection PROPERTIES LABELS "unit;memory;python" TIMEOUT 30)
+endif()

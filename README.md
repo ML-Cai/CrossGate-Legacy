@@ -122,7 +122,7 @@ cmake --build . --config RelWithDebInfo
   each frame visits only camera-visible bounds expanded for large sprites.
   This is not chunk streaming, and map uploads remain cached until shutdown.
 - GraphicsDataViewer : see [tools/GraphicsDataViewer](tools/GraphicsDataViewer)
-- AnimeViewer : see [tools/AnimeViewer](tools/AnimeViewer)
+- Character web preview / legacy AnimeViewer: see [tools/AnimeViewer](tools/AnimeViewer)
 - Resource Preview 01: [current tools, reusable APIs and observed gaps](docs/resource-preview-audit.md)
 
 

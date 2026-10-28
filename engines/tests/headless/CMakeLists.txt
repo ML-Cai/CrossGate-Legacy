@@ -27,3 +27,7 @@ foreach(tool IN ITEMS StreamingStress LifecycleSoak)
     add_test(NAME ${tool}_protocol COMMAND ${Python3_EXECUTABLE} "${CGL_REPOSITORY_ROOT}/tools/${tool}/${script}")
     set_tests_properties(${tool}_protocol PROPERTIES LABELS "unit;memory;python;headless" TIMEOUT 30)
 endforeach()
+
+add_test(NAME anime_viewer_selection
+    COMMAND ${Python3_EXECUTABLE} "${CGL_REPOSITORY_ROOT}/tools/AnimeViewer/tests/test_preview.py")
+set_tests_properties(anime_viewer_selection PROPERTIES LABELS "unit;memory;python;headless" TIMEOUT 30)

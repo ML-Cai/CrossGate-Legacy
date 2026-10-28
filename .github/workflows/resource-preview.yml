@@ -1,0 +1,31 @@
+name: Resource preview tools
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'tools/AnimeViewer/**'
+      - '.github/workflows/resource-preview.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  viewer:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      GRADIO_ANALYTICS_ENABLED: 'False'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r tools/AnimeViewer/requirements.txt
+      - run: python tools/AnimeViewer/tests/test_preview.py
+      - run: python tools/AnimeViewer/tests/test_web_viewer.py
+      - run: node tools/AnimeViewer/tests/test_playback.cjs
+      - run: node tools/AnimeViewer/tests/test_viewer.cjs
