@@ -7,6 +7,7 @@
 // =============================================================================
 
 #include <vector>
+#include <algorithm>
 #include <filesystem>
 #include <type_traits>
 #include <cstdint>
@@ -29,6 +30,7 @@
 #include "cgl/assets/palette_reader.h"
 #include "cgl/trace/logger.h"
 #include "holders.h"
+#include "cgl/assets/animation_decoder.h"
 
 namespace py = pybind11;
 using namespace pybind11::literals;
@@ -76,6 +78,38 @@ std::vector<cgl::CrossGateVersion> GetTypes_CrossGateVersion() {
 class Session {
 public:
     explicit Session(const std::string& engineRootPath = "", size_t cacheBudgetBytes = 4 * 1024 * 1024);
+    std::vector<uint32_t> acquire_available_anime_serial_nums(cgl::CrossGateVersion version) {
+        auto* reader=acquireReader<cgl::IAnimeInfoReader>(animeInfoReaderMap_,version);
+        std::vector<cgl::AnimeResourceSerialNum> entries;
+        if(reader->queryAvailableSerialNums(&entries)!=cgl::Results::Success)
+            throw std::runtime_error("Could not enumerate animation serial numbers");
+        std::vector<uint32_t> result;result.reserve(entries.size());
+        for(const auto& entry:entries) result.push_back(entry.value);
+        std::sort(result.begin(),result.end());result.erase(std::unique(result.begin(),result.end()),result.end());
+        return result;
+    }
+    py::dict acquire_animation_pixels(cgl::CrossGateVersion version,uint32_t serial,
+                                     cgl::DirectionTypes direction,cgl::MotionTypes motion,uint64_t maxBytes) {
+        ensureOpen();
+        if(!maxBytes || maxBytes>cgl::AnimationDecoder::MaxBytes)
+            throw std::invalid_argument("max_bytes must be between 1 and 268435456");
+        if(direction>=cgl::DirectionTypes::COUNT || motion>=cgl::MotionTypes::COUNT)
+            throw std::invalid_argument("Invalid animation direction or motion");
+        const cgl::AnimationReaders readers{
+            acquireReader<cgl::IAnimeInfoReader>(animeInfoReaderMap_,version),
+            acquireReader<cgl::IAnimeDataReader>(animeDataReaderMap_,version),
+            acquireReader<cgl::IGraphicsInfoReader>(infoReaderMap_,version),
+            acquireReader<cgl::IGraphicsDataReader>(dataReaderMap_,version),acquirePaletteReader(cgl::EnvironmentPaletteTypes::Daytime)};
+        auto pixels=animationDecoder_.build({serial,uint32_t(direction),uint32_t(motion),version},readers,maxBytes);
+        auto buffer=std::make_unique<std::vector<uint8_t>>(std::move(pixels.rgba));
+        py::capsule owner(buffer.get(),[](void* p){delete static_cast<std::vector<uint8_t>*>(p);});
+        auto* data=buffer->data();buffer.release();
+        const py::ssize_t width=pixels.width,height=pixels.height;
+        py::array_t<uint8_t> rgba({py::ssize_t(pixels.frameCount),height,width,py::ssize_t(4)},
+                                {height*width*4,width*4,py::ssize_t(4),py::ssize_t(1)},data,owner);
+        return py::dict("width"_a=pixels.width,"height"_a=pixels.height,"frame_count"_a=pixels.frameCount,
+                        "duration_ms"_a=pixels.durationMs,"offset_x"_a=pixels.offsetX,"offset_y"_a=pixels.offsetY,"rgba"_a=rgba);
+    }
     void ensureOpen() const {
         if (closed_) throw std::runtime_error("Session is closed");
     }
@@ -111,6 +145,7 @@ public:
         uint32_t              anime_serial_num);
 
 private:
+    cgl::AnimationDecoder animationDecoder_;
     bool closed_ = false;
     size_t cacheBudgetBytes_;
 
@@ -158,11 +193,13 @@ Session::Session(const std::string& engineRootPath, size_t cacheBudgetBytes)
 }
 
 void Session::trim_cache() noexcept {
+    animationDecoder_.clear();
     for (auto& [version, reader] : dataReaderMap_) reader->trimCache();
     for (auto& [version, reader] : animeDataReaderMap_) reader->trimCache();
     clear_palette_cache();
 }
 void Session::invalidate_resources() noexcept {
+    animationDecoder_.clear();
     auto release = [](auto& readers) { std::decay_t<decltype(readers)>().swap(readers); };
     release(infoReaderMap_); release(dataReaderMap_);
     release(animeInfoReaderMap_); release(animeDataReaderMap_);
@@ -411,6 +448,9 @@ PYBIND11_MODULE(cgl, m) {
     py::class_<Session>(m, "Session")
         .def(py::init<const std::string&, size_t>(), py::arg("engine_root_path") = "",
              py::arg("cache_budget_bytes") = 4 * 1024 * 1024)
+        .def("acquire_available_anime_serial_nums", &Session::acquire_available_anime_serial_nums,py::arg("version"))
+        .def("acquire_animation_pixels", &Session::acquire_animation_pixels,py::arg("version"),py::arg("serial"),
+             py::arg("direction"),py::arg("motion"),py::arg("max_bytes")=64ull*1024*1024)
         .def("cache_stats", &Session::cache_stats)
         .def("trim_cache", &Session::trim_cache)
         .def("clear_palette_cache", &Session::clear_palette_cache)

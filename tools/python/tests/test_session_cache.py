@@ -176,5 +176,76 @@ class SessionCacheTest(unittest.TestCase):
         self.load()
         self.assertTrue(all(r["budget_bytes"] == 4096 for r in self.session.cache_stats()["readers"]))
 
+    def test_animation_catalog_is_sorted_unique_and_reloads(self):
+        record = lambda serial: struct.pack("<IIHH", serial, 0, 1, 0)
+        self.write("AnimeInfo_4.bin", record(100001) + record(100000) + record(100001))
+        self.assertEqual(self.session.acquire_available_anime_serial_nums(V), [100000, 100001])
+        self.write("AnimeInfo_4.bin", record(100002))
+        self.session.invalidate_resources()
+        self.assertEqual(self.session.acquire_available_anime_serial_nums(V), [100002])
+        self.session.close()
+        with self.assertRaises(RuntimeError): self.session.acquire_available_anime_serial_nums(V)
+
+    def animation(self, **kwargs):
+        return self.session.acquire_animation_pixels(V, 100000, cgl.DirectionTypes.DIRECTION_NORTH,
+                                                     cgl.MotionTypes.STANDARD, **kwargs)
+
+    def test_animation_rgba_alignment_and_exact_duration(self):
+        second = struct.pack("<IIIiiiiBB6sI", 101, 20, 20, 1, 0, 2, 2, 1, 1, bytes(6), 0)
+        first = struct.pack("<IIIiiiiBB6sI", 100, 0, 20, -1, -2, 2, 2, 1, 1, bytes(6), 0)
+        self.write("GraphicInfo_66.bin", first + second)
+        self.write("Graphic_66.bin", self.graphics * 2)
+        self.write("Anime_4.bin", struct.pack("<HHII", 0, 0, 101, 2) +
+                   struct.pack("<I6s",100,bytes(6)) + struct.pack("<I6s",101,bytes(6)))
+        clip = self.animation(max_bytes=128)
+        self.assertEqual({k:clip[k] for k in clip if k != "rgba"},
+                         dict(width=4,height=4,frame_count=2,duration_ms=101,offset_x=-1,offset_y=-2))
+        rgba = clip["rgba"]
+        self.assertEqual(rgba.shape, (2,4,4,4)); self.assertEqual(rgba.dtype, np.uint8)
+        self.assertTrue(rgba.flags.c_contiguous)
+        np.testing.assert_array_equal(rgba[0,0,0], [90,80,70,255])
+        self.assertEqual(rgba[0,0,1,3], 0)  # Index-zero source pixel.
+        self.assertEqual(rgba[0,0,2,3], 0)  # Transparent canvas padding.
+        np.testing.assert_array_equal(rgba[1,2,2], [90,80,70,255])
+
+    def test_animation_budget_errors_and_retry_preserve_existing_output(self):
+        held = self.animation(); expected = held["rgba"].copy()
+        for limit in (0, 268435457):
+            with self.assertRaises(ValueError): self.animation(max_bytes=limit)
+        with self.assertRaises((TypeError, OverflowError)): self.animation(max_bytes=-1)
+        self.session.invalidate_resources()
+        with self.assertRaises(RuntimeError): self.animation(max_bytes=15)
+        # Opening a graphics reader may read its file header. Once open, repeated
+        # rejected admission must not read frame payloads or warm their cache.
+        self.session.reset_cache_stats()
+        with self.assertRaises(RuntimeError): self.animation(max_bytes=15)
+        stats = self.session.cache_stats()
+        self.assertTrue(all(r["file_read_calls"] == 0 for r in stats["readers"] if r["kind"] == "graphics"))
+        with self.assertRaises(ValueError):
+            self.session.acquire_animation_pixels(V,100000,cgl.DirectionTypes.UNKNOWN,cgl.MotionTypes.STANDARD)
+        with self.assertRaises(RuntimeError):
+            self.session.acquire_animation_pixels(V,100000,cgl.DirectionTypes.DIRECTION_NORTH,cgl.MotionTypes.WALK)
+        self.assertEqual(self.animation()["rgba"].shape, (1,2,2,4))
+        np.testing.assert_array_equal(held["rgba"], expected)
+
+    def test_animation_output_and_views_outlive_close_and_release(self):
+        clip = self.animation(); array = clip["rgba"]; expected = array.copy()
+        self.session.trim_cache(); self.session.invalidate_resources(); self.session.close()
+        np.testing.assert_array_equal(array, expected)
+        with self.assertRaises(RuntimeError): self.animation()
+        view = array[0]; ref = weakref.ref(array)
+        del clip, array; gc.collect()
+        self.assertIsNotNone(ref()); np.testing.assert_array_equal(view, expected[0])
+        del view; gc.collect(); self.assertIsNone(ref())
+
+    def test_animation_repeated_decode_invalidate_does_not_retain_outputs(self):
+        for _ in range(100):
+            clip = self.animation(); ref = weakref.ref(clip["rgba"])
+            self.session.invalidate_resources()
+            self.assertEqual(self.session.cache_stats()["readers"], [])
+            del clip
+            self.assertIsNone(ref())
+        self.assertEqual(self.animation()["duration_ms"], 100)
+
 if __name__ == "__main__":
     unittest.main(argv=[sys.argv[0]] + remaining)

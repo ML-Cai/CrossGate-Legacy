@@ -76,7 +76,7 @@ must name that same interpreter. Build the cgl_pybind target, then run:
 ctest --test-dir build -R python_session_cache --output-on-failure
 ```
 
-Eight synthetic unittest cases need no game installation or GPU. They cover
+Thirteen synthetic unittest cases need no game installation or GPU. They cover
 snapshots, hot reads, current/future budgets, integer-safe budget totals,
 invalidation/reload, repaired failed loads, context cleanup, mismatched dimensions,
 NumPy view ownership and 100 load/invalidate cycles. Allocator failure is not
@@ -100,3 +100,57 @@ finite cycles or a plateau do not prove absence of leaks. Record the environment
 corpus and iteration count when comparing runs. On Windows an ASan-instrumented
 PYD also needs the matching ASan runtime DLL beside it (or in Python's DLL search
 paths); the interpreter and NumPy themselves are not instrumented by this build.
+
+## CPU animation preview API (Resource Preview 02)
+
+```python
+import cgl
+
+with cgl.Session(engine_root_path="C:/CrossGate-Legacy") as session:
+    version = cgl.CrossGateVersion.CG_VERSION_Classic
+    serials = session.acquire_available_anime_serial_nums(version)  # sorted, unique
+    description = session.acquire_anime_resource(version, 100000)
+    direction, motion = sorted(description.keys(), key=lambda key: (int(key[0]), int(key[1])))[0]
+    clip = session.acquire_animation_pixels(version, 100000, direction, motion,
+                                            max_bytes=64 * 1024 * 1024)
+    frames = clip["rgba"]  # uint8[frame_count, height, width, 4], top-down RGBA
+# frames and views remain usable after Session close.
+```
+
+Unlike legacy `apply_palette`, this result already has browser-compatible RGBA
+channel/row order and an aligned transparent canvas. Do not flip or swap it again.
+The dict contains `width`, `height`, `frame_count`, `duration_ms`, `offset_x`,
+`offset_y` and `rgba`. Offsets locate the canvas top-left relative to the character
+anchor, in unscaled pixels. `duration_ms` is the exact total motion duration;
+playback should derive frame indices from elapsed time rather than round each
+frame to integer milliseconds or GIF delays. The existing format/model divides
+that duration uniformly among frames. Browser playback is Project 03, not part
+of this API.
+
+Enumeration lists animation-index entries, not graphics IDs or a guarantee that
+all referenced pixels are valid. Existing `description.keys()` supplies available
+direction/motion pairs (unordered); select/sort these, not every enum combination.
+The first version verified with installed resources is Classic. Runtime results
+for other resource versions remain subject to their reader support and real data.
+Environment palette is Daytime, with embedded frame palettes taking precedence,
+as in the native decoder. Palette selection is not added in this step.
+
+`max_bytes` limits one aligned output payload (default 64 MiB, allowed 1..256 MiB),
+checked from metadata before frame pixel decoding. It is not a whole-Session or
+process cap: readers/indexes/metadata and caller-retained outputs are additional.
+Opening a reader can read file headers before admission. Invalid bounds/enums
+raise ValueError (out-of-range Python integers may raise TypeError/OverflowError);
+missing/malformed animation or budget rejection raises RuntimeError. Reader-open
+failures retain the existing ValueError behavior. Acquiring after close raises
+RuntimeError. Failed calls return no partial clip and preserve earlier outputs.
+
+The native core `AnimationDecoder` accepts a non-owning per-version reader bundle;
+it has no ECS/window/GPU dependency. The engine's existing `AnimationBuilder`
+adapter retains its shared reader mutex. Session retains the GIL and one cached
+animation description, serializes access as before, and clears that description
+before reader invalidation, close or trim. Returned pixels use a NumPy capsule
+owning the moved vector; the Session does not cache returned clips. Metadata and
+Python-owned pixels are not added to `cache_stats()`'s file-cache byte counters.
+
+For this step's checks and reproducible examples, see
+[Resource Preview 02 validation](../../docs/resource-preview-animation-api.md).
