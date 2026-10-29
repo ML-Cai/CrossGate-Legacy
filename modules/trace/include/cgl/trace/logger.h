@@ -9,6 +9,7 @@
 #pragma once
 
 #include <sstream>
+#include <cstdint>
 #include <iostream>
 
 namespace cgl {

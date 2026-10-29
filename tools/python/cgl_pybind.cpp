@@ -30,6 +30,7 @@
 #include "cgl/assets/palette_reader.h"
 #include "cgl/trace/logger.h"
 #include "holders.h"
+#include "map_snapshot.h"
 #include "cgl/assets/animation_decoder.h"
 
 namespace py = pybind11;
@@ -78,6 +79,13 @@ std::vector<cgl::CrossGateVersion> GetTypes_CrossGateVersion() {
 class Session {
 public:
     explicit Session(const std::string& engineRootPath = "", size_t cacheBudgetBytes = 4 * 1024 * 1024);
+    std::unique_ptr<cgl::py::MapSnapshot> load_map(const std::string& filePath) {
+        ensureOpen();
+        if (filePath.empty()) throw std::invalid_argument("file_path must not be empty");
+        auto path = std::filesystem::u8path(filePath);
+        if (path.is_relative()) path = std::filesystem::u8path(pSettings_->general.EngineRootPath) / path;
+        return cgl::py::MapSnapshot::load(path);
+    }
     std::vector<uint32_t> acquire_available_anime_serial_nums(cgl::CrossGateVersion version) {
         auto* reader=acquireReader<cgl::IAnimeInfoReader>(animeInfoReaderMap_,version);
         std::vector<cgl::AnimeResourceSerialNum> entries;
@@ -442,6 +450,13 @@ PYBIND11_MODULE(cgl, m) {
 
     cgl::SetLogLevel(cgl::LogLevel::Trace);
 
+    py::class_<cgl::py::MapSnapshot>(m, "MapSnapshot")
+        .def_property_readonly("width", &cgl::py::MapSnapshot::width)
+        .def_property_readonly("height", &cgl::py::MapSnapshot::height)
+        .def("cell", &cgl::py::MapSnapshot::cell, py::arg("x"), py::arg("y"))
+        .def("region", &cgl::py::MapSnapshot::region, py::arg("x"), py::arg("y"),
+             py::arg("width"), py::arg("height"));
+
     // -------------------------------------------------------------------------
     // Session
     // -------------------------------------------------------------------------
@@ -449,6 +464,7 @@ PYBIND11_MODULE(cgl, m) {
         .def(py::init<const std::string&, size_t>(), py::arg("engine_root_path") = "",
              py::arg("cache_budget_bytes") = 4 * 1024 * 1024)
         .def("acquire_available_anime_serial_nums", &Session::acquire_available_anime_serial_nums,py::arg("version"))
+        .def("load_map", &Session::load_map, py::arg("file_path"))
         .def("acquire_animation_pixels", &Session::acquire_animation_pixels,py::arg("version"),py::arg("serial"),
              py::arg("direction"),py::arg("motion"),py::arg("max_bytes")=64ull*1024*1024)
         .def("cache_stats", &Session::cache_stats)

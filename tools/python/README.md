@@ -1,5 +1,8 @@
 # Python resource sessions
 
+Read-only MAP snapshots: see [map preview API](../../docs/map-preview-api.md)
+for `Session.load_map`, bounded region copies, ownership and CPU-only tests.
+
 The CPU-only `cgl.Session` binding supports native resource inspection without a
 window or GPU. Existing `Session()` calls still load settings as before. Explicit
 roots make tools/tests independent of the process settings file:

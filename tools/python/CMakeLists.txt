@@ -40,7 +40,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::pybind11 ${PYTHON_LIB_PA
 set(CGL_OUTPUT_DIR ${CMAKE_BINARY_DIR}/bin)
 set_target_properties(${PROJECT_NAME} PROPERTIES
     PREFIX ""
-    SUFFIX ".pyd"
     OUTPUT_NAME "cgl"
     LIBRARY_OUTPUT_DIRECTORY ${CGL_OUTPUT_DIR}
     LIBRARY_OUTPUT_DIRECTORY_DEBUG ${CGL_OUTPUT_DIR}
@@ -48,12 +47,19 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CGL_OUTPUT_DIR}
     LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL ${CGL_OUTPUT_DIR}
 )
+if(WIN32)
+    set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".pyd")
+endif()
 if (CGL_WITH_TEST)
     add_test(NAME python_session_cache
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_session_cache.py
                 --module-dir $<TARGET_FILE_DIR:${PROJECT_NAME}>)
     set_tests_properties(python_session_cache PROPERTIES
         LABELS "unit;memory;python" TIMEOUT 60)
+    add_test(NAME python_map_snapshot
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_map_snapshot.py
+                --module-dir $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+    set_tests_properties(python_map_snapshot PROPERTIES LABELS "unit;memory;python" TIMEOUT 60)
 endif()
 
 if (CGL_WITH_TEST)
