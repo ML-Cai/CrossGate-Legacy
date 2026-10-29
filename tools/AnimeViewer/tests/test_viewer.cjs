@@ -14,7 +14,9 @@ function harness({count=4,width=2,height=2,fail=false,delayFirst=false,catalogFa
   const response=data=>({ok:true,json:async()=>data});
   const api={get calls(){return calls;},get live(){return allocated-closed;},get closed(){return closed;},
     element,draws,fail,catalogFail,set now(value){now=value;},release:()=>release&&release()};
-  const fetcher=async url=>{
+  const fetcher=async function(url) {
+    // Browser fetch rejects a foreign receiver; an arrow fake would hide this regression.
+    assert.equal(this,undefined,"fetch must not receive LatestRequest as its receiver");
     if(url==="/api/catalog")return api.catalogFail?{ok:false}:response({serials:[100000,100001],initial:100000});
     if(url.startsWith("/api/select?")) {
       const params=new URLSearchParams(url.split("?")[1]);
@@ -36,6 +38,10 @@ function harness({count=4,width=2,height=2,fail=false,delayFirst=false,catalogFa
   return api;
 }
 (async()=>{
+  let receiver;
+  const receiverCheck=new LatestRequest(function(){receiver=this;return Promise.resolve({ok:true,json:async()=>({id:1})});});
+  assert.equal((await receiverCheck.run("/select?x=1")).id,1);
+  assert.equal(receiver,undefined);
   // Simulate a native request which ignores abort and completes after its replacement.
   const waiting=[];const latest=new LatestRequest(()=>new Promise(resolve=>waiting.push(resolve)));
   const first=latest.run("/select?x=1"),second=latest.run("/select?x=2");
