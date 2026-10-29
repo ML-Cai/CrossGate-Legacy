@@ -34,6 +34,9 @@ set(PYTHON_LIB_PATH "${Python3_LIBRARY_RELEASE}")
 # [build pyd module]
 #-------------------------------------------------------------------------------
 add_library(${PROJECT_NAME} MODULE cgl_pybind.cpp)
+target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../engines/src/assets/map_builder.cpp)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../engines/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../modules/graphics/include)
 target_include_directories(${PROJECT_NAME}  PRIVATE ${Python3_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::pybind11 ${PYTHON_LIB_PATH} cgl::all)
 
@@ -60,6 +63,10 @@ if (CGL_WITH_TEST)
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_map_snapshot.py
                 --module-dir $<TARGET_FILE_DIR:${PROJECT_NAME}>)
     set_tests_properties(python_map_snapshot PROPERTIES LABELS "unit;memory;python" TIMEOUT 60)
+    add_test(NAME python_map_preview
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_map_preview.py
+                --module-dir $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+    set_tests_properties(python_map_preview PROPERTIES LABELS "unit;memory;python" TIMEOUT 60)
 endif()
 
 if (CGL_WITH_TEST)

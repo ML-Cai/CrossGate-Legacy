@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CGL 地圖預覽</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#141a20;color:#e7edf3;font:15px system-ui}header{padding:18px 24px;border-bottom:1px solid #35414f}h1{font-size:20px;margin:0 0 6px}small{color:#a9bac9}main{max-width:1328px;margin:auto;padding:20px}nav{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:12px}input[type=number]{width:90px}input,select,button{font:inherit;padding:6px;border-radius:5px}button{cursor:pointer}canvas{display:block;max-width:100%;background:#20262b;touch-action:none;cursor:grab;border:1px solid #435466}canvas:active{cursor:grabbing}#status{white-space:pre-line;min-height:24px;color:#b7ccdd}#error{color:#ffa49e;min-height:24px}label{display:flex;align-items:center;gap:5px}
+</style>
+<header><h1>地圖資源預覽 <small>唯讀 · Classic</small></h1><small>拖曳平移 · 滾輪縮放 · 圖層獨立開關；目前不提供編輯與存檔</small></header>
+<main><nav>
+<label>MAP X <input id="x" type="number" min="0" step="1"></label>
+<label>MAP Y <input id="y" type="number" min="0" step="1"></label>
+<label>縮放 <select id="scale"><option value="0.5">50%</option><option value="1" selected>100%</option><option value="1.5">150%</option><option value="2">200%</option></select></label>
+<label><input id="ground" type="checkbox" checked>地面</label><label><input id="objects" type="checkbox" checked>物件</label>
+<button id="load">更新／重試</button><button id="center">地圖中心</button>
+</nav><p id="status" role="status">讀取地圖資訊…</p><p id="error" role="alert"></p>
+<canvas id="canvas" width="1024" height="720" aria-label="唯讀地圖預覽；使用上方 MAP 座標欄位可透過鍵盤平移"></canvas>
+</main><script src="/viewer.js"></script></html>

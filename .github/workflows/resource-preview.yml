@@ -4,6 +4,7 @@ on:
     branches: [develop]
     paths:
       - 'tools/AnimeViewer/**'
+      - 'tools/MapViewer/**'
       - '.github/workflows/resource-preview.yml'
   workflow_dispatch:
 permissions:
@@ -30,3 +31,5 @@ jobs:
       - run: python -W error::ResourceWarning tools/AnimeViewer/tests/test_verify_preview.py
       - run: node tools/AnimeViewer/tests/test_playback.cjs
       - run: node tools/AnimeViewer/tests/test_viewer.cjs
+      - run: python -W error::ResourceWarning tools/MapViewer/tests/test_web_viewer.py
+      - run: node tools/MapViewer/tests/test_viewer.cjs

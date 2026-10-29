@@ -126,6 +126,7 @@ cmake --build . --config RelWithDebInfo
 - Resource Preview 01: [current tools, reusable APIs and observed gaps](docs/resource-preview-audit.md)
 - Resource Preview 04: [repeatable CPU/HTTP acceptance and manual visual checks](docs/resource-preview-acceptance.md)
 - Map preview foundation: [read-only Python MAP snapshots and bounded region queries](docs/map-preview-api.md)
+- Read-only browser map viewer: [launch, pan/zoom, layers and validation](tools/MapViewer/README.md)
 
 
 ### Map 100: playable local server snapshot demo
