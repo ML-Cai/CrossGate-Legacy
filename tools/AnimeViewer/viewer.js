@@ -1,7 +1,8 @@
 "use strict";
 // Both HTTP abort and a revision check are needed: a server/native call may already be running.
 class LatestRequest {
-  constructor(fetcher) { this.fetcher=fetcher; this.revision=0; this.controller=null; }
+  // Invoke injected globals as functions, never as methods with LatestRequest as `this`.
+  constructor(fetcher) { this.fetcher=(...args)=>fetcher(...args); this.revision=0; this.controller=null; }
   async run(url) {
     if(this.controller) this.controller.abort();
     const revision=++this.revision, controller=new AbortController();this.controller=controller;
