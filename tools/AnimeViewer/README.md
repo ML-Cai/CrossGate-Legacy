@@ -45,9 +45,20 @@ HTTP 傳送、Python／瀏覽器 overhead 仍另外存在。超限素材會顯�
 
 ## 測試與驗收
 
+完成上述依賴與 binding 建置後，一個指令執行實際素材的 CPU／HTTP 驗收：
+
+```powershell
+python tools/AnimeViewer/verify_preview.py --root C:/CrossGate-Legacy --report build/preview-acceptance.json
+```
+
+不啟動瀏覽器或 Vulkan；檢查逐格 RGBA、切換／錯誤恢復、舊資源與關閉回收。
+成功為 exit code 0；完整判定與人工畫面清單見
+[Resource Preview 04 驗收](../../docs/resource-preview-acceptance.md)。
+
 ```powershell
 python tools/AnimeViewer/tests/test_preview.py
 python tools/AnimeViewer/tests/test_web_viewer.py
+python tools/AnimeViewer/tests/test_verify_preview.py
 # JavaScript tests need Node.js; running the viewer itself does not.
 node tools/AnimeViewer/tests/test_playback.cjs
 node tools/AnimeViewer/tests/test_viewer.cjs

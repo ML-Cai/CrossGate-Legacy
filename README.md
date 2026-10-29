@@ -124,6 +124,7 @@ cmake --build . --config RelWithDebInfo
 - GraphicsDataViewer : see [tools/GraphicsDataViewer](tools/GraphicsDataViewer)
 - Character web preview / legacy AnimeViewer: see [tools/AnimeViewer](tools/AnimeViewer)
 - Resource Preview 01: [current tools, reusable APIs and observed gaps](docs/resource-preview-audit.md)
+- Resource Preview 04: [repeatable CPU/HTTP acceptance and manual visual checks](docs/resource-preview-acceptance.md)
 
 
 ### Map 100: playable local server snapshot demo
