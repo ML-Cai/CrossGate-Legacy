@@ -3,7 +3,7 @@ const assert=require("node:assert/strict"),fs=require("node:fs"),vm=require("nod
 const {Playback}=require("../playback.js"),{LatestRequest}=require("../viewer.js");
 const source=fs.readFileSync(require.resolve("../viewer.js"),"utf8");
 const flush=()=>new Promise(r=>setImmediate(r));
-function harness({directions=2,count=null,width=2,height=2,delayFirst=false,failDirection=null}={}){
+function harness({directions=2,count=null,width=2,height=2,delayFirst=false,failDirection=null,measureTime=false}={}){
  const elements=new Map(),events={},all=[],rafs=new Map();let allocated=0,closed=0,maxLive=0,serial=0,now=0,nextRaf=0,release;
  function element(tag="div"){
   const item={tag,children:[],value:"",disabled:false,textContent:"",width:1,height:1,style:{},attrs:{},draws:[],
@@ -18,9 +18,10 @@ function harness({directions=2,count=null,width=2,height=2,delayFirst=false,fail
  const fetch=async function(url){
   assert.equal(this,undefined,"Browser globals must not receive a helper as their receiver");
   if(url.startsWith("/api/catalog?")){const q=new URLSearchParams(url.split("?")[1]);const version=q.get("version")||"0";return app.badVersion===version?{ok:false,json:async()=>({error:"Missing version files"})}:response({versions:[["Classic","0"],["PUK1","1"]],version,serials:[100000,100001],initial:100000});}
-  if(url.startsWith("/api/group?")){const q=new URLSearchParams(url.split("?")[1]);return response({token:String(++serial),serial:q.get("serial"),version:q.get("version"),motion:"0",motions:[["IDLE","0"]],directions:Array.from({length:directions},(_,i)=>({direction:String(i),label:"DIRECTION_"+i,width,height,offset_x:-1,offset_y:-2,frame_count:count||(i===0?4:7),duration_ms:i===0?101:130}))});}
+  if(url.startsWith("/api/group?")){if(measureTime)now+=20;const q=new URLSearchParams(url.split("?")[1]);return response({token:String(++serial),serial:q.get("serial"),version:q.get("version"),motion:"0",motions:[["IDLE","0"]],directions:Array.from({length:directions},(_,i)=>({direction:String(i),label:"DIRECTION_"+i,width,height,offset_x:-1,offset_y:-2,frame_count:count||(i===0?4:7),duration_ms:i===0?101:130}))});}
   const parts=url.split("/"),request={token:parts[3],direction:parts[4],index:Number(parts[5].split(".")[0])};app.requests.push(request);
   if(delayFirst&&app.requests.length===1)await new Promise(r=>release=r);
+  if(measureTime)now+=5;
   if(request.direction===app.failDirection)return {ok:false,json:async()=>({error:"Bad frame"})};
   return {ok:true,blob:async()=>request};
  };
@@ -28,7 +29,7 @@ function harness({directions=2,count=null,width=2,height=2,delayFirst=false,fail
  vm.runInNewContext(source,{Playback,AbortController,URLSearchParams,crypto:{randomUUID:()=>"test"},fetch,document,
   window:{addEventListener:(n,f)=>events[n]=f},Option:class{constructor(label,value){this.value=value;this.textContent=label;}},performance:{now:()=>now},
   requestAnimationFrame:f=>{rafs.set(++nextRaf,f);return nextRaf;},cancelAnimationFrame:id=>rafs.delete(id),
-  createImageBitmap:async item=>{allocated++;maxLive=Math.max(maxLive,allocated-closed);return {...item,width,height,closed:false,close(){assert.equal(this.closed,false);this.closed=true;closed++;}};}});
+  createImageBitmap:async item=>{if(measureTime)now+=2;allocated++;maxLive=Math.max(maxLive,allocated-closed);return {...item,width,height,closed:false,close(){assert.equal(this.closed,false);this.closed=true;closed++;}};}});
  return app;
 }
 (async()=>{
@@ -51,6 +52,16 @@ function harness({directions=2,count=null,width=2,height=2,delayFirst=false,fail
  app.failDirection=null;app.el("reload").onclick();await flush();assert.ok(app.el("canvas").current);app.dispose();assert.equal(app.live,0);
  app=harness();await flush();app.badVersion="1";app.el("version").value="1";app.el("version").onchange();await flush();assert.equal(app.live,0);assert.match(app.el("error").textContent,/Missing version/);
  app.badVersion=null;app.el("version").value="0";app.el("version").onchange();await flush();assert.equal(app.live,2);app.dispose();
+ // First-draw timing includes planning plus both frame transports/bitmap decodes, once per selection.
+ app=harness({measureTime:true});await flush();
+ assert.match(app.el("timing").textContent,/20\.0 ms.*34\.0 ms/);
+ const timing=app.el("timing").textContent;app.el("next").onclick();await flush();assert.equal(app.el("timing").textContent,timing);
+ app.el("serial").value="100001";app.el("serial").onchange();await flush();assert.match(app.el("timing").textContent,/20\.0 ms.*34\.0 ms/);
+ app.dispose();assert.equal(app.el("timing").textContent,"");assert.equal(app.live,0);
+ app=harness({delayFirst:true,measureTime:true});await flush();assert.match(app.el("timing").textContent,/20\.0 ms/);
+ await app.tick(100);app.el("serial").value="100001";app.el("serial").onchange();await flush();app.release();await flush();
+ assert.equal(app.el("canvas").current.token,"2");assert.match(app.el("timing").textContent,/20\.0 ms.*41\.0 ms/);app.dispose();
+ app=harness({failDirection:"0"});await flush();assert.match(app.el("timing").textContent,/首批繪製失敗/);app.dispose();
  // Exercise count and byte limits; current batch frames remain pinned until all canvases draw.
  for(const size of [2,1024]){
   app=harness({directions:8,count:40,width:size,height:size});await flush();

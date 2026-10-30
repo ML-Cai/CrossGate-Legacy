@@ -48,28 +48,37 @@ def verify(preview, versions, cycles=32, require_memory=False):
         worker=threading.Thread(target=server.serve_forever);worker.start();thread=worker
         base=f"http://127.0.0.1:{server.server_port}"
 
-        def get(path, expected=200):
+        def get(path, expected=200, include_cache=False):
             try:response=urllib.request.urlopen(base+path,timeout=30)
             except urllib.error.HTTPError as error:response=error
             with response:
                 data=response.read()
                 if response.status!=expected:
                     raise AssertionError(f"HTTP {response.status}, expected {expected}: {data[:300]!r}")
-                return data
+                return (data,response.headers.get("X-Frame-Cache")) if include_cache else data
 
         get("/")
         for version,label in versions:
             row=dict(version=label,status="failed",samples=[])
             plan=expected=None
             try:
+                catalog_start=time.perf_counter()
                 catalog=json.loads(get("/api/catalog?"+urlencode(dict(version=version))))
+                row["catalog_http_ms"]=round((time.perf_counter()-catalog_start)*1000,2)
                 ids=catalog["serials"]
                 serials=[sn for sn in (100000,101406) if version==0 and sn in ids] or [ids[0]]
                 for serial in serials:
+                    selection_start=time.perf_counter()
                     group=json.loads(get("/api/group?"+urlencode(dict(version=version,serial=serial))))
+                    group_ms=(time.perf_counter()-selection_start)*1000
                     if any("error" in d for d in group["directions"]):
                         raise AssertionError(str([d for d in group["directions"] if "error" in d]))
-                    row["samples"].append({k:group[k] for k in ("serial","motion","version")})
+                    sample={k:group[k] for k in ("serial","motion","version")}
+                    sample.update(group_http_ms=round(group_ms,2),group_cache_hit=group["cache_hit"],
+                                  first_png_http_ms=None,selection_to_first_png_ms=None,
+                                  first_direction=None,first_png_cache=None,
+                                  directions=group["directions"])
+                    row["samples"].append(sample)
                     row["catalog_count"]=len(ids)
                     targets.append((version,serial,int(group["motion"])))
                     report["groups"]+=1
@@ -81,8 +90,14 @@ def verify(preview, versions, cycles=32, require_memory=False):
                             row["oversized_clip_streamed"]=True
                         for index in range(meta["frame_count"]):
                             start=time.perf_counter()
-                            encoded=get(f"/api/direction/{group['token']}/{direction}/{index}.png")
-                            latencies.append((time.perf_counter()-start)*1000)
+                            encoded,cache_status=get(f"/api/direction/{group['token']}/{direction}/{index}.png",include_cache=True)
+                            received=time.perf_counter()
+                            elapsed=(received-start)*1000
+                            latencies.append(elapsed)
+                            if sample["first_png_http_ms"] is None:
+                                sample.update(first_png_http_ms=round(elapsed,2),
+                                              selection_to_first_png_ms=round((received-selection_start)*1000,2),
+                                              first_direction=direction,first_png_cache=cache_status)
                             with preview.lock:
                                 expected=preview.session.decode_animation_frame(plan,index,max_bytes=4*1024*1024)
                             frame_refs.append(weakref.ref(expected))
@@ -149,6 +164,7 @@ def verify(preview, versions, cycles=32, require_memory=False):
     report.update(cycles=cycles,plan_owner_checks=len(plan_refs),frame_owners_released=True,closed_readers=0,
                   http_png_median_ms=round(statistics.median(latencies),2),http_png_max_ms=round(max(latencies),2),
                   status="passed" if all(row["status"]=="passed" for row in report["versions"]) else "failed")
+    report["timing_scope"]="Loopback HTTP through response body; excludes Session/Preview construction, browser bitmap decode/paint and native GPU. First PNG follows planning with no pixel comparison in between. OS file cache is uncontrolled."
     report.update(memory_summary(rss_samples,len(targets)))
     return report
 

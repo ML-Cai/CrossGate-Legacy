@@ -51,6 +51,16 @@ Ctrl+C 停止服務，等待 worker 結束再清空資料與關閉 Session。
 
 ## 驗收
 
+網頁會顯示本次角色／動作選取的「規劃」與「首批繪製」時間；後者包含規劃、逐格 PNG
+傳輸及 bitmap 解碼，記錄 canvas draw 完成。兩者從相同選取時間起算，不可相加；
+不含版本清單讀取，也不是螢幕呈現時間或 FPS。逐格／播放不會覆蓋這次載入數值，
+重新選取／重試才重算。失敗時顯示未完成／繪製失敗，不會以 0 ms 代替成功。
+
+驗收 JSON 另記 `catalog_http_ms`、`group_http_ms`、`first_png_http_ms`、
+`selection_to_first_png_ms`、實際 PNG cache header，以及各方向畫布／offset／時間資料。
+HTTP 數值只到回應讀取完成，與網頁繪製時間範圍不同；詳細定義與實測見
+[載入時間驗收](../../docs/resource-preview-load-timing.md)。
+
 ```powershell
 python tools/AnimeViewer/verify_directions.py --root C:/CrossGate-Legacy --cycles 128 --report build/direction-matrix.json
 ```
