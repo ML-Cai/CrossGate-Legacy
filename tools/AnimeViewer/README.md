@@ -1,13 +1,14 @@
-# 角色動畫網頁預覽
+# 角色動畫資源預覽
 
-Python 啟動本機 HTTP 服務，瀏覽器預覽 Classic 角色動畫。使用既有 C++
-`Session` API，支援角色、動作與素材方向選擇、播放／暫停、逐格、影格滑桿與縮放。
-頁面保留不重建，切換不需要重新整理；載入後預設暫停，只取第一格。
+Python 啟動本機網頁，透過共用 C++ API 預覽 Classic 與 PUK 角色素材。
+中央顯示選定方向，下方列出八方向縮圖，缺少方向／錯誤會明確標示。
+所有方向同步播放、暫停、逐格與 seek；切換大圖共用 bitmap，不刷新頁面。
+**唯讀工具，沒有角色編輯、原格式寫回、遊戲 server 或地圖功能。**
 
 ## 啟動
 
-使用 Python 3.12，先建置包含 Resource Preview 02 API 的 `cgl_pybind`
-（PR #91 或之後），並使用與 extension 相同的 interpreter／架構：
+Python 3.12／架構必須與編譯好的 extension 相符。Windows 需先關閉使用舊 `cgl.pyd`
+的工具，避免鎖住 extension。從 repository 根目錄，在完成依賴與原生設定後執行：
 
 ```powershell
 python -m pip install -r tools/AnimeViewer/requirements.txt
@@ -15,77 +16,73 @@ cmake --build --preset dev --target cgl_pybind
 python tools/AnimeViewer/web_viewer.py --root C:/CrossGate-Legacy --serial 100000 --port 7874
 ```
 
-開啟 <http://127.0.0.1:7874/>。此角色工具不需要 Gradio、遊戲 server、視窗或 Vulkan。
-既有 GraphicsDataViewer 仍有自己的 Gradio 需求。
-若 module 不在 `build/dev/bin`，指定 `--module-dir <compiled module directory>`。
-沒有 `--serial` 時先用 100000（若索引有它），否則用第一個編號。
-關閉 terminal 中的工具用 Ctrl+C；服務會等待 HTTP worker 結束，再關閉 Session。
-
-根目錄必須包含遊戲的 `bin` 素材。若載入的 `cgl` 太舊，工具會顯示實際 module
-位置與重建提示。新 API 回傳的 top-down RGBA 已對齊，不再額外翻轉或丟棄 alpha。
-Daytime／內嵌 palette 與原生解碼一致；目前不提供調色盤切換或素材編輯。
-
-## 切換與資源限制
-
-- 角色、動作、方向變更都直接取新的 JSON metadata，不重傳 Base64 HTML／iframe。
-- 新選擇會清空舊畫面並中止舊 HTTP；仍在執行的 native decode 不強制中斷。
-  前後端 revision 檢查會拒絕舊結果覆蓋新選擇。
-- 後端只保留目前一個解碼 clip；切換前釋放舊 clip。預設 RGBA 上限 **8 MiB**，
-  `--max-mib 1..32` 可調整；另有 **256 frames**、每格畫布 **4 MiB** 的上限。
-- PNG 按需編碼，最多 **12 張／8 MiB**；同一格再次讀取可重用。
-  完全相同的選擇也重用目前 clip。
-- 瀏覽器最多保留 **12 張／8 MiB** 解碼 bitmap，一次一個影格請求；淘汰與離頁時
-  呼叫 `ImageBitmap.close()`。播放最多每秒更新 30 次，仍依原始總時長計算影格，
-  來不及顯示的格會跳過。背景頁面自動暫停。
-- HTTP worker 上限為 8；Session 存取序列化。忙碌或錯誤會顯示在頁面，
-  可改選或按「載入動畫」重試，不需 F5。
-
-這些限制不是整個 Python／Chrome／驅動的記憶體上限，reader、索引、暫存、
-HTTP 傳送、Python／瀏覽器 overhead 仍另外存在。超限素材會顯示錯誤，不自動提高限制。
-
-## 測試與驗收
-
-完成上述依賴與 binding 建置後，一個指令執行實際素材的 CPU／HTTP 驗收：
+開啟 <http://127.0.0.1:7874/>。不需要 Gradio、Vulkan、遊戲 server 或 Node.js；Node
+僅用於測試。非預設 extension 位置用 `--module-dir <directory>`。
+也可用[無桌面 SDK 的 binding 建置](../../docs/map-preview-api.md#驗證)所得模組。
 
 ```powershell
-python tools/AnimeViewer/verify_preview.py --root C:/CrossGate-Legacy --report build/preview-acceptance.json
+python tools/AnimeViewer/web_viewer.py --root C:/CrossGate-Legacy --version PUK1 --port 7874
 ```
 
-不啟動瀏覽器或 Vulkan；檢查逐格 RGBA、切換／錯誤恢復、舊資源與關閉回收。
-成功為 exit code 0；完整判定與人工畫面清單見
-[Resource Preview 04 驗收](../../docs/resource-preview-acceptance.md)。
+`--version` 可為 Classic、PUK1、PUK2_V1、PUK2_V2、PUK3_V1、PUK4_V1、PUK4_V2、
+PUK4_V3；啟動後亦可由下拉選擇。根目錄需有對應的 `bin` 素材。沒有 `--serial`
+就選該版本的 100000（若存在）或第一個 ID；缺檔／不支援的素材會明確報錯。
+PUK2_V2／PUK3_V1 的動畫 palette 還需要 PUK2_V1 圖資。
+Ctrl+C 停止服務，等待 worker 結束再清空資料與關閉 Session。
+
+## 操作與資源
+
+- 選版本、角色、動作；點縮圖切換中央大圖，左右鍵可在可用方向間移動。
+- 播放全部方向共用 normalized phase；同步週期以第一個有效方向的原始 duration
+  為準。各方向原始時長另列，時長不同時採等比例同步循環。
+- 背景頁暫停，錯誤方向不會自動無限重試；可改選或按重新載入恢復。
+- 後端只持有最多八個 metadata plans，按需解碼一格；不把八段 RGBA 一起載入。
+  每格最多 4 MiB，每方向最多 256 frames，native logical clip 上限仍為 256 MiB。
+- 全方向合計 PNG cache 最多 24 張／8 MiB，browser bitmap cache 最多 32 張／
+  32 MiB；替換解碼可短暫多一格，canvas、codec、reader 等另計。
+- 一次一個 frame fetch，一個播放時鐘；大圖／對應縮圖共用同一 bitmap。
+  淘汰、切換、離頁都 close bitmap。新版本載入前先釋放舊 plans／readers。
+- `--max-mib` 保留舊整段 API 的 1..32 MiB 預算；streaming frame 額外受 4 MiB
+  限制。增加它不會繞過每格上限，不把這些 payload cap 當程序或 VRAM cap。
+
+未增加 palette 編輯／選擇；使用共用 decoder 的內嵌、動畫專用 palette 與 Daytime。
+未知擴充 flags 保留為 metadata，不宣稱完整遊戲事件、鏡像或倒播效果已還原。
+
+## 驗收
 
 ```powershell
+python tools/AnimeViewer/verify_directions.py --root C:/CrossGate-Legacy --cycles 128 --report build/direction-matrix.json
+```
+
+此指令不啟動瀏覽器或 Vulkan。逐版查詢代表素材、逐方向／逐格比對 HTTP PNG、
+反覆切換、錯誤恢復，最後檢查 owner 與 reader 釋放；失敗不靜默略過。
+選用 RSS：安裝 `psutil` 再加 `--require-memory`。詳細契約、限制、本機結果及尚待
+人工驗收見 [版本與同步方向驗證](../../docs/resource-preview-directions.md)。
+
+```powershell
+ctest --test-dir build/dev -R "python_session_cache|python_animation_stream|AnimationBuilderTest" --output-on-failure
 python tools/AnimeViewer/tests/test_preview.py
+python tools/AnimeViewer/tests/test_direction_preview.py
 python tools/AnimeViewer/tests/test_web_viewer.py
 python tools/AnimeViewer/tests/test_verify_preview.py
-# JavaScript tests need Node.js; running the viewer itself does not.
+python tools/AnimeViewer/tests/test_verify_directions.py
 node tools/AnimeViewer/tests/test_playback.cjs
 node tools/AnimeViewer/tests/test_viewer.cjs
 ```
 
-這些測試不需要安裝遊戲或 GPU；selection 單元測試只用 standard library 與 fake
-backend，HTTP 測試另用 NumPy／Pillow 驗證實際 PNG。CI 的 viewer lane 會在
-Windows／Linux 執行上述檢查。
-實際素材的像素／HTTP／資源回收量測與瀏覽器驗收限制，見
-[網頁預覽驗證](../../docs/resource-preview-web-validation.md)。
+CI 用合成資料，不需要商業素材／GPU。DOM／bitmap 模擬不等於實際瀏覽器驗收。
+`verify_preview.py` 與 [04 原驗收](../../docs/resource-preview-acceptance.md)保留作舊
+整段 API 檢查；新版網頁改用 `verify_directions.py`。原先 101406 STANDARD 超過
+整段 8 MiB 的案例，現在可按單格預覽，不提高整段預算。
 
-## 舊版 GIF 匯出
+## 舊 GIF 工具
 
-目前腳本固定讀取 Classic 角色 `101406`，只匯出第一組方向／動作的 GIF，
-輸出位於目前工作目錄。它不是網頁動畫預覽器，也沒有角色編輯能力。
-
-在完成 `cgl_pybind` 建置、Python 環境已安裝 NumPy 與 Pillow 後，
-從 repository 根目錄執行：
+`anime_viewer.py` 仍是固定 Classic 101406、只匯出第一組動作的歷史工具，使用編譯
+時預設根目錄。它會丟失 alpha／時間精度，不能作為新預覽器正確性基準：
 
 ```powershell
 $env:PYTHONPATH = (Resolve-Path build/dev/bin).Path
 python tools/AnimeViewer/anime_viewer.py
 ```
 
-Python 版本與架構必須和 `cgl.pyd` 相符。工具尚無素材根目錄參數，
-`Session()` 使用編譯時設定預設值；目前為 `C:/CrossGate-Legacy`。
-腳本會丟棄原始 alpha，GIF 時間也有量化，不能作為新預覽器的正確性基準。
-
-歷史盤點、共用 API、當時實跑結果見
-[Resource Preview 01 盤點](../../docs/resource-preview-audit.md)。
+盤點與沿革見 [Resource Preview 01](../../docs/resource-preview-audit.md)。

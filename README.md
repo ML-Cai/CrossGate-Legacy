@@ -123,6 +123,7 @@ cmake --build . --config RelWithDebInfo
   This is not chunk streaming, and map uploads remain cached until shutdown.
 - GraphicsDataViewer : see [tools/GraphicsDataViewer](tools/GraphicsDataViewer)
 - Character web preview / legacy AnimeViewer: see [tools/AnimeViewer](tools/AnimeViewer)
+- Resource Preview versions/directions: [PUK matrix, frame streaming and synchronized thumbnails](docs/resource-preview-directions.md)
 - Resource Preview 01: [current tools, reusable APIs and observed gaps](docs/resource-preview-audit.md)
 - Resource Preview 04: [repeatable CPU/HTTP acceptance and manual visual checks](docs/resource-preview-acceptance.md)
 - Map preview foundation: [read-only Python MAP snapshots and bounded region queries](docs/map-preview-api.md)
