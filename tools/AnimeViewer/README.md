@@ -49,6 +49,17 @@ Ctrl+C 停止服務，等待 worker 結束再清空資料與關閉 Session。
 擴充 flags 的水平鏡像會同步反射像素與錨點；其他位元保留為 metadata，不宣稱
 完整遊戲事件或倒播效果已還原。
 
+## Browser process memory (optional)
+
+Read-only sampling during manual preview use: [instructions and scope](../../docs/resource-preview-browser-memory.md).
+Install `requirements-memory.txt` only for this recorder; the preview server does not require it.
+
+```powershell
+python tools/AnimeViewer/record_browser_memory.py --pid 12345 --samples 60 --interval 1 --report build/browser-memory.json
+```
+
+Replace the example PID with the browser main process PID. RSS sums include shared pages and other tabs; they are not VRAM or a leak-free verdict.
+
 ## 驗收
 
 網頁會顯示本次角色／動作選取的「規劃」與「首批繪製」時間；後者包含規劃、逐格 PNG

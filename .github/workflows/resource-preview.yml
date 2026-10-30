@@ -31,6 +31,7 @@ jobs:
       - run: python tools/AnimeViewer/tests/test_web_viewer.py
       - run: python -W error::ResourceWarning tools/AnimeViewer/tests/test_verify_preview.py
       - run: python -W error::ResourceWarning tools/AnimeViewer/tests/test_verify_directions.py
+      - run: python -W error::ResourceWarning tools/AnimeViewer/tests/test_browser_memory.py
       - run: node tools/AnimeViewer/tests/test_playback.cjs
       - run: node tools/AnimeViewer/tests/test_viewer.cjs
       - run: python -W error::ResourceWarning tools/MapViewer/tests/test_web_viewer.py
