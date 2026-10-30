@@ -157,6 +157,7 @@ cgl::Results ReaderImpl::preLoad(size_t fileSize) {
             info.serialNum = {createInfo().version, entry.index};
             info.dataOffset = entry.address;
             info.motionCount = entry.motionCount;
+            info.formatFlags = entry.unknown;
             map_[entry.index] = info; // Preserve last-entry-wins duplicate handling.
         }
         first += entries;

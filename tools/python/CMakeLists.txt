@@ -67,6 +67,10 @@ if (CGL_WITH_TEST)
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_map_preview.py
                 --module-dir $<TARGET_FILE_DIR:${PROJECT_NAME}>)
     set_tests_properties(python_map_preview PROPERTIES LABELS "unit;memory;python" TIMEOUT 60)
+    add_test(NAME python_animation_stream
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_animation_stream.py
+                --module-dir $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+    set_tests_properties(python_animation_stream PROPERTIES LABELS "unit;memory;python" TIMEOUT 60)
 endif()
 
 if (CGL_WITH_TEST)

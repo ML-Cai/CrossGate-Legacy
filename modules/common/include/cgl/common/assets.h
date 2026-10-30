@@ -123,6 +123,7 @@ struct GraphicsResourceData {
     int32_t height;
     std::unique_ptr<uint8_t[]> pData;
     uint8_t* pPaletteData;
+    uint32_t paletteBytes = 0;
 };
 
 
@@ -139,6 +140,7 @@ struct AnimeResourceInfo {
     AnimeResourceSerialNum serialNum;
     uint32_t dataOffset;
     uint16_t motionCount;
+    uint16_t formatFlags = 0; // Index bit 0 selects the 20-byte motion header.
 };
 
 
@@ -160,6 +162,7 @@ struct AnimeMotionDesc {
     cgl::MotionTypes motion;
     uint32_t duration;
     std::vector<uint32_t> motionGraphicsSerialNums;
+    uint32_t extendedFlags = 0; // Preserve extension payload without guessing its semantics.
 };
 
 
