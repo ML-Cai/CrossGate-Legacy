@@ -1,118 +1,108 @@
 "use strict";
-// Both HTTP abort and a revision check are needed: a server/native call may already be running.
 class LatestRequest {
-  // Invoke injected globals as functions, never as methods with LatestRequest as `this`.
-  constructor(fetcher) { this.fetcher=(...args)=>fetcher(...args); this.revision=0; this.controller=null; }
-  async run(url) {
-    if(this.controller) this.controller.abort();
-    const revision=++this.revision, controller=new AbortController();this.controller=controller;
-    try {
-      const response=await this.fetcher(url+"&revision="+revision,{signal:controller.signal});
-      const data=await response.json();
-      if(revision!==this.revision) return null;
-      if(!response.ok) throw new Error(data.error || "Request failed: "+response.status);
-      return data;
-    } catch(error) { if(revision!==this.revision || error.name==="AbortError") return null; throw error; }
+  constructor(fetcher){this.fetcher=(...args)=>fetcher(...args);this.revision=0;this.controller=null;}
+  async run(url){
+    if(this.controller)this.controller.abort();const revision=++this.revision;
+    this.controller=new AbortController();
+    try{const response=await this.fetcher(url+"&revision="+revision,{signal:this.controller.signal});const data=await response.json();
+      if(revision!==this.revision)return null;if(!response.ok)throw new Error(data.error||"Request failed");return data;
+    }catch(error){if(revision!==this.revision||error.name==="AbortError")return null;throw error;}
   }
-  cancel() { ++this.revision; if(this.controller) this.controller.abort(); }
+  cancel(){++this.revision;if(this.controller)this.controller.abort();}
 }
-if(typeof module!=="undefined") module.exports={LatestRequest};
-if(typeof document!=="undefined") {
-const el=id=>document.getElementById(id), canvas=el("canvas"), ctx=canvas.getContext("2d");
-const requests=new LatestRequest(fetch), client=crypto.randomUUID();
-const cache=new Map(), MAX_BYTES=8*1024*1024, MAX_FRAMES=12;
-let clip=null, clock=null, generation=0, pending=null, frameRequest=null, used=0, lastDraw=-1, tickAt=0;
-function controls(ready) { for(const id of ["play","previous","next","frame"]) el(id).disabled=!ready; }
-function clearFrames() { for(const item of cache.values()) item.bitmap.close();cache.clear();used=0;lastDraw=-1; }
-function pause() {
-  if(clock) clock.pause(performance.now());
-  if(pending!==null) cancelAnimationFrame(pending);pending=null;el("play").textContent="播放";
+if(typeof module!=="undefined")module.exports={LatestRequest};
+if(typeof document!=="undefined"){
+const el=id=>document.getElementById(id),requests=new LatestRequest(fetch),client=crypto.randomUUID();
+const cache=new Map(),cards=new Map(),errors=new Map(),MAX_BYTES=32*1024*1024,MAX_ITEMS=32;
+let used=0,group=null,clock=null,selected="0",generation=0,paintRevision=0,pumping=false,again=false,raf=null,frameController=null,disposed=false,lastTick=0,hasCatalog=false;
+function options(id,choices,value){el(id).replaceChildren(...choices.map(([label,key])=>new Option(label,key)));el(id).value=value;el(id).disabled=false;}
+function controls(ready){for(const id of ["play","previous","next","frame"])el(id).disabled=!ready;}
+function clearCache(){for(const item of cache.values())item.bitmap.close();cache.clear();used=0;}
+function stop(){if(clock)clock.pause(performance.now());if(raf!==null)cancelAnimationFrame(raf);raf=null;el("play").textContent="播放全部方向";}
+function reset(){stop();++generation;++paintRevision;requests.cancel();if(frameController)frameController.abort();clearCache();group=clock=null;errors.clear();cards.clear();el("directions").replaceChildren();controls(false);const c=el("canvas");c.getContext("2d").clearRect(0,0,c.width,c.height);}
+function good(){return group?group.directions.filter(d=>!d.error):[];}
+function selectedMeta(){return good().find(d=>d.direction===selected);}
+function indexAt(meta,phase){return Math.min(meta.frame_count-1,Math.floor(phase*meta.frame_count+Number.EPSILON*meta.frame_count*4));}
+function draw(canvas,meta,bitmap,zoom=1){
+ const ctx=canvas.getContext("2d");ctx.clearRect(0,0,canvas.width,canvas.height);if(!bitmap)return;
+ const all=good(),left=Math.min(...all.map(d=>d.offset_x)),top=Math.min(...all.map(d=>d.offset_y));
+ const right=Math.max(...all.map(d=>d.offset_x+d.width)),bottom=Math.max(...all.map(d=>d.offset_y+d.height));
+ const scale=Math.min((canvas.width-24)/(right-left),(canvas.height-24)/(bottom-top),4)*zoom;
+ const x=(canvas.width-(right-left)*scale)/2+(meta.offset_x-left)*scale,y=(canvas.height-(bottom-top)*scale)/2+(meta.offset_y-top)*scale;
+ ctx.imageSmoothingEnabled=false;ctx.drawImage(bitmap,x,y,meta.width*scale,meta.height*scale);
 }
-function zoom() { canvas.style.width=canvas.width*Number(el("zoom").value)+"px";canvas.style.height=canvas.height*Number(el("zoom").value)+"px"; }
-function draw(index,item) {
-  ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(item.bitmap,0,0);lastDraw=index;
-  el("frame").value=index;el("position").textContent="影格 "+(index+1)+" / "+clip.frame_count;
+async function bitmapFor(meta,index,pinned,version){
+ const key=meta.direction+"/"+index;
+ if(cache.has(key)){const item=cache.get(key);cache.delete(key);cache.set(key,item);return item.bitmap;}
+ frameController=new AbortController();
+ const response=await fetch(`/api/direction/${group.token}/${meta.direction}/${index}.png`,{signal:frameController.signal});
+ if(!response.ok){const data=await response.json();throw new Error(data.error||"Frame request failed");}
+ const bitmap=await createImageBitmap(await response.blob());
+ if(disposed||version!==generation){bitmap.close();return null;}
+ const bytes=bitmap.width*bitmap.height*4;
+ if(bitmap.width!==meta.width||bitmap.height!==meta.height||bytes>4*1024*1024){bitmap.close();throw new Error("Frame dimensions exceed the admitted plan");}
+ while(used+bytes>MAX_BYTES||cache.size>=MAX_ITEMS){
+  const oldest=[...cache.keys()].find(k=>!pinned.has(k));
+  if(oldest===undefined){bitmap.close();throw new Error("All-direction bitmap budget exceeded");}
+  const item=cache.get(oldest);item.bitmap.close();used-=item.bytes;cache.delete(oldest);
+ }
+ cache.set(key,{bitmap,bytes});used+=bytes;return bitmap;
 }
-async function show(index,version=generation) {
-  if(!clip || version!==generation) return;
-  if(cache.has(index)) { const item=cache.get(index);cache.delete(index);cache.set(index,item);if(lastDraw!==index) draw(index,item);return true; }
-  if(frameRequest) return;
-  const request={controller:new AbortController(),version};frameRequest=request;let failed=false;
-  try {
-    const response=await fetch("/api/frame/"+clip.token+"/"+index+".png",{signal:request.controller.signal});
-    if(!response.ok) { const data=await response.json();throw new Error(data.error || "Frame request failed"); }
-    const bitmap=await createImageBitmap(await response.blob());
-    if(version!==generation) { bitmap.close();return; }
-    const bytes=bitmap.width*bitmap.height*4;
-    if(bytes>MAX_BYTES) { bitmap.close();throw new Error("Frame exceeds browser bitmap budget"); }
-    while(cache.size && (cache.size>=MAX_FRAMES || used+bytes>MAX_BYTES)) {
-      const key=cache.keys().next().value,item=cache.get(key);used-=item.bytes;item.bitmap.close();cache.delete(key);
-    }
-    const item={bitmap,bytes};cache.set(index,item);used+=bytes;
-    // A user may seek again while this frame is loading; never display the obsolete seek.
-    if(clock.frame(performance.now())===index) draw(index,item);
-  } catch(error) { if(version===generation && error.name!=="AbortError") { failed=true;pause();el("error").textContent=error.message; } }
-  finally { if(frameRequest===request) frameRequest=null; }
-  if(!failed && version===generation && !clock.playing && clock.frame(performance.now())!==lastDraw) show(clock.frame(performance.now()),version);
-  return !failed && version===generation;
-}
-function tick(now) {
-  pending=null;
-  if(clock && clock.playing) {
-    if(now-tickAt>=1000/30) { tickAt=now;show(clock.frame(now)); }
-    pending=requestAnimationFrame(tick);
+async function paint(){
+ if(disposed||!group||!clock||document.hidden)return;
+ if(pumping){again=true;return;}pumping=true;again=false;
+ const version=generation,revision=paintRevision,phase=clock.elapsed(performance.now())/clock.duration;
+ const targets=good().filter(d=>!errors.has(d.direction)).map(meta=>({meta,index:indexAt(meta,phase)}));
+ targets.sort((a,b)=>(b.meta.direction===selected)-(a.meta.direction===selected));
+ const pinned=new Set(targets.map(t=>t.meta.direction+"/"+t.index)),images=new Map();
+ try{
+  for(const target of targets){
+   if(disposed||version!==generation)return;
+   try{const bitmap=await bitmapFor(target.meta,target.index,pinned,version);if(!bitmap)return;images.set(target.meta.direction,bitmap);}
+   catch(error){if(disposed||version!==generation||error.name==="AbortError")return;errors.set(target.meta.direction,error.message);cards.get(target.meta.direction).status.textContent="讀取失敗，按重新載入重試";}
   }
+  if(disposed||version!==generation||revision!==paintRevision)return;
+  for(const target of targets){const card=cards.get(target.meta.direction);draw(card.canvas,target.meta,images.get(target.meta.direction));if(!errors.has(target.meta.direction))card.status.textContent=`${target.index+1}/${target.meta.frame_count} · 原始 ${target.meta.duration_ms} ms`;}
+  const meta=selectedMeta();if(meta){draw(el("canvas"),meta,images.get(selected),Number(el("zoom").value));el("frame").max=meta.frame_count-1;el("frame").value=indexAt(meta,phase);el("position").textContent=`影格 ${indexAt(meta,phase)+1} / ${meta.frame_count}`;}
+  el("memory").textContent=`Bitmap ${(used/1048576).toFixed(1)} / 32 MiB · ${cache.size} 張`;
+  el("error").textContent=[...errors.values()].join(" · ");
+ }finally{pumping=false;frameController=null;if(again&&!disposed)paint();}
 }
-function seek(index) { if(!clock)return;pause();clock.seek(index,performance.now());show(clock.frame(performance.now())); }
-function options(id,choices,value) {
-  el(id).replaceChildren(...choices.map(([label,key])=>new Option(label,key)));
-  el(id).value=value;el(id).disabled=false;
+function tick(now){raf=null;if(clock&&clock.playing&&!document.hidden){if(now-lastTick>=1000/30){lastTick=now;paint();}raf=requestAnimationFrame(tick);}}
+function choose(direction){selected=direction;for(const [id,card]of cards){card.button.setAttribute("aria-pressed",String(id===selected));card.button.tabIndex=id===selected?0:-1;}const meta=selectedMeta();el("selected").textContent=meta?meta.label:"方向尚未可用";paint();}
+function makeCards(){
+ for(let i=0;i<8;i++){
+  const id=String(i),meta=group.directions.find(d=>d.direction===id),button=document.createElement("button"),canvas=document.createElement("canvas"),label=document.createElement("span"),status=document.createElement("small");
+  button.type="button";button.className="direction-card";button.disabled=!meta||!!meta.error;button.setAttribute("aria-label",meta?meta.label:`素材方向 ${i} 未提供`);
+  canvas.width=160;canvas.height=144;label.textContent=meta?meta.label.replace("DIRECTION_",""):String(i);status.textContent=!meta?"此動作未提供此方向":meta.error||"準備第一格…";
+  button.append(canvas,label,status);button.onclick=()=>choose(id);button.onkeydown=e=>{if(!["ArrowLeft","ArrowRight"].includes(e.key))return;e.preventDefault();const ids=good().map(d=>d.direction);const next=ids[(ids.indexOf(id)+(e.key==="ArrowRight"?1:ids.length-1))%ids.length];choose(next);cards.get(next).button.focus();};
+  el("directions").append(button);cards.set(id,{button,canvas,status});
+ }
 }
-async function select() {
-  pause();++generation;
-  if(frameRequest) frameRequest.controller.abort();frameRequest=null;
-  clearFrames();clip=clock=null;controls(false);ctx.clearRect(0,0,canvas.width,canvas.height);
-  el("error").textContent="";el("status").textContent="載入動畫…";el("position").textContent="等待第一格";
-  const query=new URLSearchParams({serial:el("serial").value,client});
-  if(el("motion").value) query.set("motion",el("motion").value);
-  if(el("direction").value) query.set("direction",el("direction").value);
-  try {
-    const result=await requests.run("/api/select?"+query);
-    if(!result)return;
-    clip=result;clock=new Playback(clip.frame_count,clip.duration_ms);
-    options("motion",clip.motions,clip.motion);options("direction",clip.directions,clip.direction);
-    el("serial").value=clip.serial;
-    canvas.width=clip.width;canvas.height=clip.height;zoom();el("frame").max=clip.frame_count-1;
-    const ready=await show(0);
-    if(clip!==result)return;
-    controls(ready);
-    if(!ready) { el("status").textContent=clip.label+" | 第一格載入失敗，可按載入動畫重試。";return; }
-    el("status").textContent=clip.label+" | "+clip.duration_ms+" ms | "+clip.width+" x "+clip.height+" | offset ("+clip.offset_x+", "+clip.offset_y+") | "+(clip.cache_hit?"已載入":clip.load_ms+" ms")+"\n已暫停；播放才會按需讀取其餘影格。";
-  } catch(error) { el("status").textContent="載入失敗，可重新選擇或按載入動畫重試。";el("error").textContent=error.message; }
+async function select(){
+ reset();const version=generation;el("error").textContent="";el("status").textContent="規劃所有可用方向…";
+ try{
+  const q=new URLSearchParams({serial:el("serial").value,version:el("version").value,client});if(el("motion").value)q.set("motion",el("motion").value);
+  const result=await requests.run("/api/group?"+q);if(!result||version!==generation)return;group=result;
+  options("motion",result.motions,result.motion);makeCards();const available=good();
+  if(!available.length)throw new Error("沒有可預覽的方向；請查看各方向錯誤或改選角色／動作");
+  clock=new Playback(available[0].frame_count,available[0].duration_ms);selected=available.some(d=>d.direction===selected)?selected:available[0].direction;
+  el("status").textContent=`${el("version").selectedOptions?.[0]?.textContent||"資源版本"} · ${result.serial} · ${available.length}/8 方向 · 同步週期 ${clock.duration} ms\n各方向按相同 normalized phase 同步；載入後暫停，按需讀取影格。`;
+  controls(true);choose(selected);
+ }catch(error){if(version===generation){el("status").textContent="載入失敗，可改選或按重新載入重試";el("error").textContent=error.message;}}
 }
-el("serial").onchange=()=>{el("motion").replaceChildren();el("direction").replaceChildren();select();};
-el("motion").onchange=()=>{el("direction").replaceChildren();select();};
-el("direction").onchange=select;el("reload").onclick=()=>el("serial").value?select():loadCatalog();
-el("play").onclick=()=>{if(!clock)return;if(clock.playing)pause();else{clock.play(performance.now());el("play").textContent="暫停";tick(performance.now());}};
-el("previous").onclick=()=>seek(clock.frame(performance.now())-1);
-el("next").onclick=()=>seek(clock.frame(performance.now())+1);
-el("frame").oninput=()=>seek(Number(el("frame").value));el("zoom").onchange=zoom;
-document.addEventListener("visibilitychange",()=>{if(document.hidden)pause();});
-window.addEventListener("pagehide",()=>{pause();requests.cancel();++generation;if(frameRequest)frameRequest.controller.abort();clearFrames();});
-async function loadCatalog() {
-  el("error").textContent="";
-  try {
-    const response=await fetch("/api/catalog");
-    if(!response.ok) throw new Error("Could not load catalog");
-    const data=await response.json();
-    options("serial",data.serials.map(value=>[String(value),String(value)]),String(data.initial));
-    el("reload").disabled=false;el("reload").textContent="載入動畫";
-    await select();
-  } catch(error) {
-    el("status").textContent="無法載入角色清單，可按按鈕重試。";
-    el("error").textContent=error.message;
-    el("reload").disabled=false;el("reload").textContent="重試角色清單";
-  }
+async function catalog(requested=false){
+ reset();const version=generation;el("serial").disabled=true;el("motion").replaceChildren();el("error").textContent="";el("status").textContent="讀取所選版本的角色清單…";
+ try{const q=new URLSearchParams({client});if((requested||hasCatalog)&&el("version").value)q.set("version",el("version").value);const data=await requests.run("/api/catalog?"+q);if(!data||version!==generation)return;hasCatalog=true;
+  options("version",data.versions,data.version);options("serial",data.serials.map(s=>[String(s),String(s)]),String(data.initial));el("reload").disabled=false;await select();
+ }catch(error){if(version===generation){el("status").textContent="此版本無法載入，請確認資源檔案；可改選版本或重試";el("error").textContent=error.message;el("reload").disabled=false;el("version").disabled=false;}}
 }
-loadCatalog();
+function seek(delta,absolute=false){const meta=selectedMeta();if(!clock||!meta)return;stop();const phase=absolute?delta/meta.frame_count:clock.elapsed(performance.now())/clock.duration+delta/meta.frame_count;clock.seekNormalized(phase,performance.now());++paintRevision;paint();}
+el("version").onchange=()=>catalog(true);el("serial").onchange=()=>{el("motion").replaceChildren();select();};el("motion").onchange=select;
+el("reload").onclick=()=>el("serial").disabled?catalog(true):select();
+el("play").onclick=()=>{if(!clock)return;if(clock.playing){stop();++paintRevision;paint();}else{clock.play(performance.now());el("play").textContent="暫停全部方向";tick(performance.now());}};
+el("previous").onclick=()=>seek(-1);el("next").onclick=()=>seek(1);el("frame").oninput=()=>seek(Number(el("frame").value),true);el("zoom").onchange=()=>paint();
+document.addEventListener("visibilitychange",()=>{if(document.hidden){stop();if(frameController)frameController.abort();}else paint();});
+window.addEventListener("pagehide",()=>{disposed=true;reset();});
+catalog();
 }

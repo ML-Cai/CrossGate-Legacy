@@ -14,5 +14,9 @@ class Playback {
     this.pause(now);
     this.phase = ((frame % this.count + this.count) % this.count) * this.duration / this.count;
   }
+  seekNormalized(phase, now) {
+    if(!Number.isFinite(phase))throw new Error("Invalid playback phase");
+    this.pause(now);this.phase=((phase%1+1)%1)*this.duration;
+  }
 }
 if (typeof module !== "undefined") module.exports = {Playback};
