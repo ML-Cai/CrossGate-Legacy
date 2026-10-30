@@ -15,11 +15,12 @@ if(typeof document!=="undefined"){
 const el=id=>document.getElementById(id),requests=new LatestRequest(fetch),client=crypto.randomUUID();
 const cache=new Map(),cards=new Map(),errors=new Map(),MAX_BYTES=32*1024*1024,MAX_ITEMS=32;
 let used=0,group=null,clock=null,selected="0",generation=0,paintRevision=0,pumping=false,again=false,raf=null,frameController=null,disposed=false,lastTick=0,hasCatalog=false;
+let loadTiming=null;
 function options(id,choices,value){el(id).replaceChildren(...choices.map(([label,key])=>new Option(label,key)));el(id).value=value;el(id).disabled=false;}
 function controls(ready){for(const id of ["play","previous","next","frame"])el(id).disabled=!ready;}
 function clearCache(){for(const item of cache.values())item.bitmap.close();cache.clear();used=0;}
 function stop(){if(clock)clock.pause(performance.now());if(raf!==null)cancelAnimationFrame(raf);raf=null;el("play").textContent="播放全部方向";}
-function reset(){stop();++generation;++paintRevision;requests.cancel();if(frameController)frameController.abort();clearCache();group=clock=null;errors.clear();cards.clear();el("directions").replaceChildren();controls(false);const c=el("canvas");c.getContext("2d").clearRect(0,0,c.width,c.height);}
+function reset(){stop();++generation;++paintRevision;requests.cancel();if(frameController)frameController.abort();clearCache();group=clock=null;loadTiming=null;el("timing").textContent="";errors.clear();cards.clear();el("directions").replaceChildren();controls(false);const c=el("canvas");c.getContext("2d").clearRect(0,0,c.width,c.height);}
 function good(){return group?group.directions.filter(d=>!d.error):[];}
 function selectedMeta(){return good().find(d=>d.direction===selected);}
 function indexAt(meta,phase){return Math.min(meta.frame_count-1,Math.floor(phase*meta.frame_count+Number.EPSILON*meta.frame_count*4));}
@@ -66,6 +67,12 @@ async function paint(){
   const meta=selectedMeta();if(meta){draw(el("canvas"),meta,images.get(selected),Number(el("zoom").value));el("frame").max=meta.frame_count-1;el("frame").value=indexAt(meta,phase);el("position").textContent=`影格 ${indexAt(meta,phase)+1} / ${meta.frame_count}`;}
   el("memory").textContent=`Bitmap ${(used/1048576).toFixed(1)} / 32 MiB · ${cache.size} 張`;
   el("error").textContent=[...errors.values()].join(" · ");
+  if(loadTiming&&loadTiming.firstDraw===null&&images.has(selected)){
+   loadTiming.firstDraw=performance.now()-loadTiming.start;
+   el("timing").textContent=`規劃 ${loadTiming.plan.toFixed(1)} ms · 首批繪製 ${loadTiming.firstDraw.toFixed(1)} ms（${images.size}/${good().length} 方向）`;
+  }else if(loadTiming&&loadTiming.firstDraw===null&&errors.has(selected)){
+   el("timing").textContent=`規劃 ${loadTiming.plan.toFixed(1)} ms · 選取方向首批繪製失敗`;
+  }
  }finally{pumping=false;frameController=null;if(again&&!disposed)paint();}
 }
 function tick(now){raf=null;if(clock&&clock.playing&&!document.hidden){if(now-lastTick>=1000/30){lastTick=now;paint();}raf=requestAnimationFrame(tick);}}
@@ -80,16 +87,18 @@ function makeCards(){
  }
 }
 async function select(){
- reset();const version=generation;el("error").textContent="";el("status").textContent="規劃所有可用方向…";
+ reset();const version=generation;loadTiming={start:performance.now(),plan:null,firstDraw:null};el("error").textContent="";el("status").textContent="規劃所有可用方向…";
  try{
   const q=new URLSearchParams({serial:el("serial").value,version:el("version").value,client});if(el("motion").value)q.set("motion",el("motion").value);
   const result=await requests.run("/api/group?"+q);if(!result||version!==generation)return;group=result;
+  loadTiming.plan=performance.now()-loadTiming.start;
+  el("timing").textContent=`規劃 ${loadTiming.plan.toFixed(1)} ms · 等待首批繪製…`;
   options("motion",result.motions,result.motion);makeCards();const available=good();
   if(!available.length)throw new Error("沒有可預覽的方向；請查看各方向錯誤或改選角色／動作");
   clock=new Playback(available[0].frame_count,available[0].duration_ms);selected=available.some(d=>d.direction===selected)?selected:available[0].direction;
   el("status").textContent=`${el("version").selectedOptions?.[0]?.textContent||"資源版本"} · ${result.serial} · ${available.length}/8 方向 · 同步週期 ${clock.duration} ms\n各方向按相同 normalized phase 同步；載入後暫停，按需讀取影格。`;
   controls(true);choose(selected);
- }catch(error){if(version===generation){el("status").textContent="載入失敗，可改選或按重新載入重試";el("error").textContent=error.message;}}
+ }catch(error){if(version===generation){el("status").textContent="載入失敗，可改選或按重新載入重試";el("timing").textContent="本次載入未完成";el("error").textContent=error.message;}}
 }
 async function catalog(requested=false){
  reset();const version=generation;el("serial").disabled=true;el("motion").replaceChildren();el("error").textContent="";el("status").textContent="讀取所選版本的角色清單…";

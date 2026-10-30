@@ -28,12 +28,26 @@ class VerifyDirectionTests(unittest.TestCase):
         self.assertEqual(report["png_frames"],32)
         self.assertEqual(report["closed_readers"],0)
         self.assertEqual(report["browser_visual"],"not_run")
+        self.assertIn("excludes Session/Preview construction",report["timing_scope"])
+        for row in report["versions"]:
+            self.assertGreaterEqual(row["catalog_http_ms"],0)
+            for sample in row["samples"]:
+                self.assertGreaterEqual(sample["group_http_ms"],0)
+                self.assertGreaterEqual(sample["first_png_http_ms"],0)
+                self.assertGreaterEqual(sample["selection_to_first_png_ms"],sample["group_http_ms"])
+                self.assertGreaterEqual(sample["selection_to_first_png_ms"],sample["first_png_http_ms"])
+                self.assertEqual(sample["first_png_cache"],"miss")
+                self.assertEqual(sample["first_direction"],"0")
+                self.assertEqual(sample["directions"][0]["offset_x"],-1)
+                self.assertEqual(len(sample["directions"]),8)
         self.assertEqual(session.close_calls,1)
     def test_missing_requested_version_is_failed_not_silently_skipped(self):
         session,preview=self.setup_preview();session.bad_version=1
         report=verify(preview,[(0,"Classic"),(1,"PUK1")],cycles=2)
         self.assertEqual(report["status"],"failed")
         self.assertEqual(report["versions"][1]["status"],"failed")
+        self.assertEqual(report["versions"][1]["samples"],[])
+        self.assertNotIn("catalog_http_ms",report["versions"][1])
         self.assertEqual(session.close_calls,1)
     def test_corrupt_png_rejected_and_failure_closes_session(self):
         session,preview=self.setup_preview()
