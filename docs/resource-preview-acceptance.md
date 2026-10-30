@@ -1,5 +1,9 @@
 # Resource Preview 04：可重跑的驗收
 
+此文件記錄整段 clip API 的原驗收。新版多方向／PUK／逐幀介面請使用
+[版本與同步方向驗證](resource-preview-directions.md)及 `verify_directions.py`；
+下列舊整段 8 MiB 限制仍存在，但不再限制新版網頁一次只能預覽小動畫。
+
 目標是驗收目前唯讀角色動畫工具，不擴充角色編輯、地圖功能或公開服務。
 完成依賴與 `cgl_pybind` 建置後，從 repository 根目錄執行：
 

@@ -65,7 +65,23 @@ class Handler(BaseHTTPRequestHandler):
                 name,kind = ASSETS[url.path]
                 self.send(200,Path(__file__).with_name(name).read_bytes(),kind)
             elif url.path == "/api/catalog":
-                self.json(200,{"serials":list(self.server.preview.serials),"initial":self.server.initial_serial})
+                query=parse_qs(url.query)
+                if not re.fullmatch(r"[A-Za-z0-9_-]{0,40}",query.get("client",[""])[0]) or not 0<=int(query.get("revision",["0"])[0])<=2**53-1:
+                    raise ValueError("Invalid catalog revision")
+                result=self.server.preview.catalog(query.get("version",[None])[0],query.get("client",[""])[0],int(query.get("revision",["0"])[0]))
+                if self.server.initial_serial in result["serials"]:
+                    result["initial"]=self.server.initial_serial
+                self.json(200,result)
+            elif url.path == "/api/group":
+                query=parse_qs(url.query)
+                client=query.get("client",[""])[0];revision=int(query.get("revision",["0"])[0])
+                if not re.fullmatch(r"[A-Za-z0-9_-]{0,40}",client) or not 0<=revision<=2**53-1:
+                    raise ValueError("Invalid selection revision")
+                self.json(200,self.server.preview.select_group(query["serial"][0],query.get("motion",[None])[0],
+                    query.get("version",[None])[0],client,revision))
+            elif match := re.fullmatch(r"/api/direction/([A-Za-z0-9_-]{1,32})/([0-9]{1,2})/([0-9]{1,5})\.png",url.path):
+                data,hit=self.server.preview.group_frame(match[1],match[2],int(match[3]))
+                self.send(200,data,"image/png",**{"X-Frame-Cache":"hit" if hit else "miss"})
             elif url.path == "/api/select":
                 query = parse_qs(url.query)
                 client = query.get("client",[""])[0]
@@ -89,6 +105,7 @@ def main():
     parser.add_argument("--root",required=True,type=Path)
     parser.add_argument("--module-dir",type=Path,default=Path(__file__).resolve().parents[2]/"build/dev/bin")
     parser.add_argument("--serial",type=int)
+    parser.add_argument("--version",default="Classic",help="Classic, PUK1, PUK2_V1/V2, PUK3_V1, PUK4_V1/V2/V3")
     parser.add_argument("--max-mib",type=int,default=8,choices=range(1,33),metavar="1..32")
     parser.add_argument("--port",type=int,default=7860)
     args = parser.parse_args()
@@ -97,12 +114,16 @@ def main():
     sys.path.insert(0,str(args.module_dir.resolve()))
     try:
         import cgl
-        required=("acquire_available_anime_serial_nums","acquire_animation_pixels")
+        required=("acquire_available_anime_serial_nums","plan_animation","decode_animation_frame")
         if not hasattr(cgl,"Session") or any(not hasattr(cgl.Session,name) for name in required):
-            raise RuntimeError(f"cgl binding is outdated; rebuild cgl_pybind from PR #91 or newer. Loaded: {cgl.__file__}")
+            raise RuntimeError(f"cgl binding is outdated; rebuild cgl_pybind with the streaming API. Loaded: {cgl.__file__}")
         from preview import Preview
         with cgl.Session(engine_root_path=str(args.root.resolve())) as session:
-            preview = Preview(session,max_bytes=args.max_mib*1024*1024)
+            versions={v.name.replace("CG_VERSION_",""):v for v in cgl.CrossGateVersionList()}
+            if args.version not in versions:
+                parser.error("Unknown --version: "+args.version)
+            preview = Preview(session,max_bytes=args.max_mib*1024*1024,version=versions[args.version])
+            preview.version_options={int(v):v for v in versions.values()}
             if args.serial is not None and args.serial not in preview.available:
                 parser.error("--serial is not in the Classic catalog")
             try:

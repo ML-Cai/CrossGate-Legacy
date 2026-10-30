@@ -4,6 +4,8 @@
 #include <atomic>
 #include <optional>
 #include <stdexcept>
+#include <utility>
+#include <cstddef>
 #include "cgl/common/assets.h"
 
 namespace cgl {
@@ -38,12 +40,31 @@ struct AnimationReaders {
     IGraphicsInfoReader* graphicsInfo=nullptr;
     IGraphicsDataReader* graphicsData=nullptr;
     IPaletteReader* palette=nullptr;
+    IGraphicsInfoReader* hiddenPaletteInfo=nullptr;
+    IGraphicsDataReader* hiddenPaletteData=nullptr;
 };
 // CPU-only, serialized access. Retains at most one character description.
 // Clear when reloading resources in place; reader identity alone cannot detect it.
 class AnimationDecoder {
 public:
     static constexpr uint64_t MaxBytes=256ull*1024*1024;
+    class Plan {
+    public:
+        const AnimationPixels& metadata() const noexcept { return canvas; }
+        uint64_t requiredBytes() const noexcept { return bytes; }
+    private:
+        friend class AnimationDecoder;
+        Plan(AnimationPixels value,std::vector<GraphicsResourceInfo> infos,uint64_t size,AnimationRequest source,bool mirror)
+            :canvas(std::move(value)),frames(std::move(infos)),bytes(size),request(source),mirrorX(mirror) {}
+        AnimationPixels canvas;
+        std::vector<GraphicsResourceInfo> frames;
+        uint64_t bytes;
+        AnimationRequest request;
+        bool mirrorX;
+    };
+    // Owned metadata, no readers or pixels retained. Decode only the requested frame.
+    Plan prepare(const AnimationRequest&,const AnimationReaders&,const std::atomic_bool* cancelled=nullptr);
+    AnimationPixels buildFrame(const Plan&,size_t index,const AnimationReaders&,uint64_t availableBytes);
     // Metadata only: validates the canvas and returns exact RGBA payload.
     uint64_t requiredBytes(const AnimationRequest& request,const AnimationReaders& readers,const std::atomic_bool* cancelled=nullptr);
     AnimationPixels build(const AnimationRequest& request, const AnimationReaders& readers,
@@ -54,8 +75,7 @@ public:
         dataReader_ = nullptr;
     }
 private:
-    struct Plan {AnimationPixels canvas;std::vector<GraphicsResourceInfo> frames;uint64_t bytes;};
-    Plan prepare(const AnimationRequest&,const AnimationReaders&,const std::atomic_bool*);
+    AnimationPixels render(const Plan&,const AnimationReaders&,size_t first,size_t count,uint64_t availableBytes,const std::atomic_bool*);
     std::optional<AnimeResourceData> description_;
     const IAnimeInfoReader* infoReader_ = nullptr;
     const IAnimeDataReader* dataReader_ = nullptr;

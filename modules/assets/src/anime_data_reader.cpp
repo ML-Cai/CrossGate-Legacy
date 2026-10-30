@@ -141,8 +141,9 @@ cgl::Results ReaderImpl::query(
 
     // Validate on-disk sizes using subtraction, before allocating or changing output.
     size_t offset = animeResInfo.dataOffset;
+    const size_t headerBytes=sizeof(AnimeDataRawMotionHeader)+((animeResInfo.formatFlags&1)?8:0);
     if (!isStreamReady() || offset > fileSize() ||
-        animeResInfo.motionCount > (fileSize() - offset) / sizeof(AnimeDataRawMotionHeader)) {
+        animeResInfo.motionCount > (fileSize() - offset) / headerBytes) {
         return cgl::Results::InvalidFile;
     }
     constexpr size_t maxFramesPerMotion = 65536;
@@ -156,6 +157,12 @@ cgl::Results ReaderImpl::query(
         AnimeDataRawMotionHeader header{};
         if (!read(offset, sizeof(header), &header)) return cgl::Results::InvalidFile;
         offset += sizeof(header);
+        uint32_t extension[2]{};
+        if(animeResInfo.formatFlags & 1) {
+            if(offset>fileSize() || sizeof(extension)>fileSize()-offset || !read(offset,sizeof(extension),extension) ||
+               extension[1]!=0xffffffffu)return cgl::Results::InvalidFile;
+            offset+=sizeof(extension);
+        }
         if (header.frameCount > maxFramesPerMotion ||
             header.frameCount > maxFramesPerQuery - totalFrames ||
             header.frameCount > (fileSize() - offset) / sizeof(AnimeDataRawMotionFrame)) {
@@ -179,6 +186,7 @@ cgl::Results ReaderImpl::query(
             .duration = header.duraction
         };
         desc.motionGraphicsSerialNums.reserve(header.frameCount);
+        desc.extendedFlags=extension[0];
         for (const auto& frame : frames) desc.motionGraphicsSerialNums.push_back(frame.serialNum);
         auto key = std::make_pair(desc.direction, desc.motion);
         result.motionMap.emplace(key, std::move(desc));

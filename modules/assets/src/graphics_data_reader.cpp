@@ -492,7 +492,8 @@ cgl::Results GraphicsDataReaderImpl::ReadDataFromPUK(
         .width = header.width,
         .height = header.height,
         .pData = std::move(resourceData),
-        .pPaletteData = pPalette
+        .pPaletteData = pPalette,
+        .paletteBytes = static_cast<uint32_t>(paletteDataSize)
     };
 
 

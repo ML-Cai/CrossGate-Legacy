@@ -1,5 +1,14 @@
 # Python resource sessions
 
+Current character preview: [streaming plans, PUK versions and synchronized directions](../../docs/resource-preview-directions.md).
+`plan_animation(version, serial, direction, motion)` returns an owned `AnimationPlan`
+with a copied metadata dict; `decode_animation_frame(plan, index, max_bytes=4 MiB)`
+returns independently owned top-down RGBA for one frame. The plan holds no Session
+or readers. Decoding requires its original open Session and resource epoch;
+`invalidate_resources` and `close` expire plans, while prior metadata/pixels survive.
+`trim_cache` does not expire plans. Access retains the GIL and must be serialized.
+The full-clip API below remains supported; its original validation notes are historical.
+
 Read-only MAP snapshots: see [map preview API](../../docs/map-preview-api.md)
 for `Session.load_map`, bounded region copies, ownership and CPU-only tests.
 The [map web viewer](../MapViewer/README.md) additionally wraps shared CPU map

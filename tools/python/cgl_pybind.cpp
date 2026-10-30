@@ -77,9 +77,40 @@ std::vector<cgl::CrossGateVersion> GetTypes_CrossGateVersion() {
 }
 
 // -----------------------------------------------------------------------------
+struct AnimationPlan {
+    cgl::AnimationDecoder::Plan plan;
+    cgl::CrossGateVersion version;
+    std::weak_ptr<uint8_t> epoch;
+    py::dict metadata() const {
+        const auto& p=plan.metadata();
+        return py::dict("width"_a=p.width,"height"_a=p.height,"frame_count"_a=p.frameCount,
+            "duration_ms"_a=p.durationMs,"offset_x"_a=p.offsetX,"offset_y"_a=p.offsetY,
+            "clip_bytes"_a=plan.requiredBytes(),"frame_bytes"_a=uint64_t(p.width)*p.height*4);
+    }
+};
+
 class Session {
 public:
     explicit Session(const std::string& engineRootPath = "", size_t cacheBudgetBytes = 4 * 1024 * 1024);
+    std::unique_ptr<AnimationPlan> plan_animation(cgl::CrossGateVersion version,uint32_t serial,cgl::DirectionTypes direction,cgl::MotionTypes motion) {
+        ensureOpen();
+        if(version>=cgl::CrossGateVersion::COUNT)throw std::invalid_argument("Invalid resource version");
+        auto plan=animationDecoder_.prepare({serial,uint32_t(direction),uint32_t(motion),version},animationReaders(version));
+        if(!animationEpoch_)animationEpoch_=std::make_shared<uint8_t>(0);
+        return std::make_unique<AnimationPlan>(AnimationPlan{std::move(plan),version,animationEpoch_});
+    }
+    py::array_t<uint8_t> decode_animation_frame(const AnimationPlan& plan,size_t index,uint64_t maxBytes) {
+        ensureOpen();
+        auto epoch=plan.epoch.lock();
+        if(!epoch || epoch!=animationEpoch_)throw std::runtime_error("Animation plan is expired or belongs to another Session");
+        if(!maxBytes || maxBytes>4ull*1024*1024)throw std::invalid_argument("max_bytes must be 1..4194304 per frame");
+        auto pixels=animationDecoder_.buildFrame(plan.plan,index,animationReaders(plan.version),maxBytes);
+        auto buffer=std::make_unique<std::vector<uint8_t>>(std::move(pixels.rgba));
+        py::capsule owner(buffer.get(),[](void* p){delete static_cast<std::vector<uint8_t>*>(p);});
+        auto* data=buffer->data();buffer.release();
+        return py::array_t<uint8_t>({py::ssize_t(pixels.height),py::ssize_t(pixels.width),py::ssize_t(4)},
+            {py::ssize_t(pixels.width)*4,py::ssize_t(4),py::ssize_t(1)},data,owner);
+    }
     std::unique_ptr<cgl::py::MapSnapshot> load_map(const std::string& filePath) {
         ensureOpen();
         if (filePath.empty()) throw std::invalid_argument("file_path must not be empty");
@@ -126,11 +157,7 @@ public:
             throw std::invalid_argument("max_bytes must be between 1 and 268435456");
         if(direction>=cgl::DirectionTypes::COUNT || motion>=cgl::MotionTypes::COUNT)
             throw std::invalid_argument("Invalid animation direction or motion");
-        const cgl::AnimationReaders readers{
-            acquireReader<cgl::IAnimeInfoReader>(animeInfoReaderMap_,version),
-            acquireReader<cgl::IAnimeDataReader>(animeDataReaderMap_,version),
-            acquireReader<cgl::IGraphicsInfoReader>(infoReaderMap_,version),
-            acquireReader<cgl::IGraphicsDataReader>(dataReaderMap_,version),acquirePaletteReader(cgl::EnvironmentPaletteTypes::Daytime)};
+        const auto readers=animationReaders(version);
         auto pixels=animationDecoder_.build({serial,uint32_t(direction),uint32_t(motion),version},readers,maxBytes);
         auto buffer=std::make_unique<std::vector<uint8_t>>(std::move(pixels.rgba));
         py::capsule owner(buffer.get(),[](void* p){delete static_cast<std::vector<uint8_t>*>(p);});
@@ -176,6 +203,19 @@ public:
         uint32_t              anime_serial_num);
 
 private:
+    std::shared_ptr<uint8_t> animationEpoch_;
+    cgl::AnimationReaders animationReaders(cgl::CrossGateVersion version) {
+        cgl::AnimationReaders readers{acquireReader<cgl::IAnimeInfoReader>(animeInfoReaderMap_,version),
+            acquireReader<cgl::IAnimeDataReader>(animeDataReaderMap_,version),
+            acquireReader<cgl::IGraphicsInfoReader>(infoReaderMap_,version),
+            acquireReader<cgl::IGraphicsDataReader>(dataReaderMap_,version),
+            acquirePaletteReader(cgl::EnvironmentPaletteTypes::Daytime)};
+        if(version==cgl::CrossGateVersion::CG_VERSION_PUK2_V2 || version==cgl::CrossGateVersion::CG_VERSION_PUK3_V1) {
+            readers.hiddenPaletteInfo=acquireReader<cgl::IGraphicsInfoReader>(infoReaderMap_,cgl::CrossGateVersion::CG_VERSION_PUK2_V1);
+            readers.hiddenPaletteData=acquireReader<cgl::IGraphicsDataReader>(dataReaderMap_,cgl::CrossGateVersion::CG_VERSION_PUK2_V1);
+        }
+        return readers;
+    }
     cgl::AnimationDecoder animationDecoder_;
     bool closed_ = false;
     size_t cacheBudgetBytes_;
@@ -230,6 +270,7 @@ void Session::trim_cache() noexcept {
     clear_palette_cache();
 }
 void Session::invalidate_resources() noexcept {
+    animationEpoch_.reset();
     animationDecoder_.clear();
     auto release = [](auto& readers) { std::decay_t<decltype(readers)>().swap(readers); };
     release(infoReaderMap_); release(dataReaderMap_);
@@ -472,6 +513,8 @@ cgl::py::GraphicsResourceBundleHolder::Ptr Session::acquire_graphics_resource(
 PYBIND11_MODULE(cgl, m) {
 
     cgl::SetLogLevel(cgl::LogLevel::Trace);
+    py::class_<AnimationPlan>(m,"AnimationPlan")
+        .def_property_readonly("metadata",&AnimationPlan::metadata);
 
     py::class_<cgl::py::MapPreview>(m,"MapPreview")
         .def_property_readonly("width",&cgl::py::MapPreview::width)
@@ -495,6 +538,8 @@ PYBIND11_MODULE(cgl, m) {
         .def(py::init<const std::string&, size_t>(), py::arg("engine_root_path") = "",
              py::arg("cache_budget_bytes") = 4 * 1024 * 1024)
         .def("acquire_available_anime_serial_nums", &Session::acquire_available_anime_serial_nums,py::arg("version"))
+        .def("plan_animation",&Session::plan_animation,py::arg("version"),py::arg("serial"),py::arg("direction"),py::arg("motion"))
+        .def("decode_animation_frame",&Session::decode_animation_frame,py::arg("plan"),py::arg("index"),py::arg("max_bytes")=4ull*1024*1024)
         .def("load_map", &Session::load_map, py::arg("file_path"))
         .def("load_map_preview",&Session::load_map_preview,py::arg("file_path"))
         .def("acquire_map_page",&Session::acquire_map_page,py::arg("preview"),py::arg("index"))
@@ -650,6 +695,7 @@ PYBIND11_MODULE(cgl, m) {
         .def_readonly("direction", &cgl::AnimeMotionDesc::direction)
         .def_readonly("motion", &cgl::AnimeMotionDesc::motion)
         .def_readonly("duration", &cgl::AnimeMotionDesc::duration)
+        .def_readonly("extended_flags", &cgl::AnimeMotionDesc::extendedFlags)
         .def_readonly("motionGraphicsSerialNums", &cgl::AnimeMotionDesc::motionGraphicsSerialNums)
         .def("__repr__", [](const cgl::AnimeMotionDesc& desc) {
             return "<AnimeMotionDesc: " + std::to_string(static_cast<int>(desc.direction)) +

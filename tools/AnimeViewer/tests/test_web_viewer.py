@@ -80,6 +80,21 @@ class WebViewerTests(unittest.TestCase):
             for _ in range(held):self.server.slots.release()
         self.selection()
 
+    def test_direction_group_routes_version_change_and_expired_tokens(self):
+        from test_direction_preview import GroupSession
+        self.preview.close();self.session=GroupSession();self.preview=Preview(self.session,version=0)
+        self.preview.version_options={0:0,1:1};self.server.preview=self.preview
+        status,_,body=self.get("/api/group?serial=100000&version=0&client=tab&revision=1")
+        self.assertEqual(status,200);group=json.loads(body)
+        self.assertEqual(len(group["directions"]),8);self.assertEqual(self.session.frame_calls,0)
+        frame=f"/api/direction/{group['token']}/0/0.png"
+        self.assertEqual(self.get(frame)[0],200);self.assertEqual(self.get(frame)[1]["X-Frame-Cache"],"hit")
+        self.assertEqual(self.get("/api/catalog?version=1&client=tab&revision=2")[0],200)
+        self.assertEqual(self.get(frame)[0],410)
+        self.assertEqual(self.get("/api/group?serial=100000&version=0&client=tab&revision=1")[0],410)
+        self.assertEqual(self.get("/api/catalog?version=99")[0],400)
+        self.assertEqual(self.get("/api/catalog?client=x&revision=-1")[0],400)
+
 class StartupTests(unittest.TestCase):
     def test_outdated_binding_reports_actionable_error_without_starting_server(self):
         with tempfile.TemporaryDirectory(prefix="cgl-viewer-startup-") as directory:

@@ -1,5 +1,8 @@
 # Resource Preview 03：固定頁面與有上限的動畫載入
 
+本文件保留 PR #92 的歷史驗證。新版網頁已改為多版本、多方向、按單格解碼，
+當前契約與驗收見[版本與同步方向驗證](resource-preview-directions.md)。
+
 原本尚未提交的 Gradio／iframe 試作，每次切換會重新把所有影格編成 PNG、Base64、
 HTML，再重建 iframe 並預載全部圖片。使用者回報切換慢、必須重新整理，並在切換
 動作附近發生 BSOD。這版改為 Python standard-library 的本機 HTTP service 與固定
