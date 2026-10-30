@@ -119,6 +119,10 @@ AnimationPixels AnimationDecoder::render(const Plan& plan,const AnimationReaders
     auto result=plan.canvas;result.frameCount=uint32_t(count);const auto& frames=plan.frames;
     const auto width=result.width,height=result.height;
     const auto left=result.offsetX,top=result.offsetY;
+    if(AnimationPaletteVersion(plan.request.version)!=plan.request.version) {
+        require(readers.hiddenPaletteInfo && readers.hiddenPaletteData,
+                "Animation palette readers are unavailable");
+    }
     PaletteData256 palette{};
     require(readers.palette->read(EnvironmentPaletteTypes::Daytime, &palette) == Results::Success,
             "Could not read daytime palette");
