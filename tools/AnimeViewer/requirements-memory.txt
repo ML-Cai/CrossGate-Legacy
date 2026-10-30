@@ -1,0 +1,2 @@
+# Optional process RSS recorder; not needed by the preview server.
+psutil==7.2.2
