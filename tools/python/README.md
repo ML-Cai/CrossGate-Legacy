@@ -2,6 +2,8 @@
 
 Read-only MAP snapshots: see [map preview API](../../docs/map-preview-api.md)
 for `Session.load_map`, bounded region copies, ownership and CPU-only tests.
+The [map web viewer](../MapViewer/README.md) additionally wraps shared CPU map
+planning, atlas pages, visible draw ordering and pan conversion without Vulkan.
 
 The CPU-only `cgl.Session` binding supports native resource inspection without a
 window or GPU. Existing `Session()` calls still load settings as before. Explicit

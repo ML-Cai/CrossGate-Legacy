@@ -31,6 +31,7 @@
 #include "cgl/trace/logger.h"
 #include "holders.h"
 #include "map_snapshot.h"
+#include "map_preview.h"
 #include "cgl/assets/animation_decoder.h"
 
 namespace py = pybind11;
@@ -85,6 +86,28 @@ public:
         auto path = std::filesystem::u8path(filePath);
         if (path.is_relative()) path = std::filesystem::u8path(pSettings_->general.EngineRootPath) / path;
         return cgl::py::MapSnapshot::load(path);
+    }
+    std::unique_ptr<cgl::py::MapPreview> load_map_preview(const std::string& filePath) {
+        ensureOpen();
+        if(filePath.empty())throw std::invalid_argument("file_path must not be empty");
+        auto path=std::filesystem::u8path(filePath);
+        if(path.is_relative())path=std::filesystem::u8path(pSettings_->general.EngineRootPath)/path;
+        cgl::MapLayout layout;
+        const auto status=cgl::IMapLayoutReader::create()->read(path,&layout);
+        if(status==cgl::Results::OutOfMemory)throw std::bad_alloc();
+        if(status!=cgl::Results::Success)throw std::invalid_argument("Cannot read MAP file: "+filePath);
+        return std::make_unique<cgl::py::MapPreview>(std::move(layout),
+            *acquireReader<cgl::IGraphicsInfoReader>(infoReaderMap_,cgl::CrossGateVersion::CG_VERSION_Classic),
+            *acquirePaletteReader(cgl::EnvironmentPaletteTypes::Daytime));
+    }
+    py::array_t<uint8_t> acquire_map_page(const cgl::py::MapPreview& view,size_t index) {
+        ensureOpen();
+        auto pixels=view.page(index,*acquireReader<cgl::IGraphicsDataReader>(dataReaderMap_,cgl::CrossGateVersion::CG_VERSION_Classic));
+        auto buffer=std::make_unique<std::vector<uint8_t>>(std::move(pixels.rgba));
+        py::capsule owner(buffer.get(),[](void* p){delete static_cast<std::vector<uint8_t>*>(p);});
+        auto* data=buffer->data();buffer.release();
+        return py::array_t<uint8_t>({py::ssize_t(pixels.height),py::ssize_t(pixels.width),py::ssize_t(4)},
+            {py::ssize_t(pixels.width)*4,py::ssize_t(4),py::ssize_t(1)},data,owner);
     }
     std::vector<uint32_t> acquire_available_anime_serial_nums(cgl::CrossGateVersion version) {
         auto* reader=acquireReader<cgl::IAnimeInfoReader>(animeInfoReaderMap_,version);
@@ -450,6 +473,14 @@ PYBIND11_MODULE(cgl, m) {
 
     cgl::SetLogLevel(cgl::LogLevel::Trace);
 
+    py::class_<cgl::py::MapPreview>(m,"MapPreview")
+        .def_property_readonly("width",&cgl::py::MapPreview::width)
+        .def_property_readonly("height",&cgl::py::MapPreview::height)
+        .def_property_readonly("page_count",&cgl::py::MapPreview::pageCount)
+        .def("pan",&cgl::py::MapPreview::pan,py::arg("x"),py::arg("y"),py::arg("dx"),py::arg("dy"),py::arg("scale"))
+        .def("draw_list",&cgl::py::MapPreview::drawList,py::arg("x"),py::arg("y"),py::arg("width"),py::arg("height"),
+             py::arg("scale")=1.0,py::arg("ground")=true,py::arg("objects")=true);
+
     py::class_<cgl::py::MapSnapshot>(m, "MapSnapshot")
         .def_property_readonly("width", &cgl::py::MapSnapshot::width)
         .def_property_readonly("height", &cgl::py::MapSnapshot::height)
@@ -465,6 +496,8 @@ PYBIND11_MODULE(cgl, m) {
              py::arg("cache_budget_bytes") = 4 * 1024 * 1024)
         .def("acquire_available_anime_serial_nums", &Session::acquire_available_anime_serial_nums,py::arg("version"))
         .def("load_map", &Session::load_map, py::arg("file_path"))
+        .def("load_map_preview",&Session::load_map_preview,py::arg("file_path"))
+        .def("acquire_map_page",&Session::acquire_map_page,py::arg("preview"),py::arg("index"))
         .def("acquire_animation_pixels", &Session::acquire_animation_pixels,py::arg("version"),py::arg("serial"),
              py::arg("direction"),py::arg("motion"),py::arg("max_bytes")=64ull*1024*1024)
         .def("cache_stats", &Session::cache_stats)

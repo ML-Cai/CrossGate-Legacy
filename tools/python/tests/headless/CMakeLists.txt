@@ -20,7 +20,7 @@ add_library(cgl::all ALIAS cgl_all)
 target_link_libraries(cgl_all INTERFACE cgl::common cgl::utils cgl::settings cgl::trace cgl::assets)
 add_subdirectory("${root}/tools/python" python)
 enable_testing()
-foreach(name IN ITEMS session_cache map_snapshot)
+foreach(name IN ITEMS session_cache map_snapshot map_preview)
     add_test(NAME python_${name}
         COMMAND ${Python3_EXECUTABLE} "${root}/tools/python/tests/test_${name}.py"
                 --module-dir $<TARGET_FILE_DIR:cgl_pybind>)

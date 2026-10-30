@@ -4,6 +4,8 @@ on:
     branches: [develop]
     paths:
       - 'tools/python/**'
+      - 'engines/src/map/**'
+      - 'engines/src/assets/map_builder.*'
       - 'modules/assets/**'
       - 'modules/common/**'
       - 'modules/settings/**'
