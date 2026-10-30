@@ -109,5 +109,17 @@ plan owner 檢查與全部已取樣 frame owner 均釋放，reader 清單為空�
 CPU RSS 取樣峰值 107,122,688 B；暖機後首尾窗口 median 為 61,460,480／61,472,768 B，
 差 12,288 B。取樣範圍為切換循環，包含驗收程序本身的開銷，不是單獨 server 的
 工作集或整個初始驗證期間的峰值；這是有限次本機觀察，不宣稱沒有 leak。
-尚未完成的實際瀏覽器操作、browser 記憶體與原生 GPU 視覺對照，須另記結果；
-報告明確保留 `browser_visual`／`independent_renderer_comparison` 為 `not_run`。
+CPU matrix 程式不操作瀏覽器，因此其報告仍保留 `browser_visual`／
+`independent_renderer_comparison` 為 `not_run`；人工操作結果另列如下。
+
+
+## 2026-10-29 實際網頁操作
+
+在 VS Code 整合式 Chromium 中開啟本機服務，已確認中央預覽與八方向縮圖可見、
+播放／暫停、選擇 SOUTH 更新大圖、STANDARD 切換 WALK（4 格切為 6 格），以及
+Classic 切換 PUK1（105000）均正常，過程不需重新整理頁面。
+實際畫面檢查也發現固定預覽高度使縮圖超出一般桌面視窗，已改成隨視窗高度調整；
+1658×984 視窗可同時顯示預覽、控制列與完整八方向列。
+
+這是有限次互動與畫面檢查，尚未量測 browser process 記憶體，未做原生 GPU 獨立比對；
+亦不代表已驗證使用者 Chrome profile 的穩定性或解決先前 BSOD。
