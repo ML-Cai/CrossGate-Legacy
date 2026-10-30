@@ -6,6 +6,7 @@
 #include "cgl/assets/palette_reader.h"
 #include <algorithm>
 #include <stdexcept>
+#include <limits>
 
 namespace cgl {
 namespace {
@@ -57,6 +58,7 @@ AnimationDecoder::Plan AnimationDecoder::prepare(const AnimationRequest& request
         {DirectionTypes(request.direction), MotionTypes(request.motion)});
     require(motion != description_->motionMap.end(), "Requested direction/motion is unavailable for this character");
     const auto& clip = motion->second;
+    const bool mirrorX=(clip.extendedFlags&0x00010000u)!=0;
     require(!clip.motionGraphicsSerialNums.empty() && clip.duration > 0, "Animation has no frames or duration");
 
     // Plan from small metadata first. No decoded pixels or palette reads until
@@ -72,6 +74,12 @@ AnimationDecoder::Plan AnimationDecoder::prepare(const AnimationRequest& request
             "Could not find animation frame info");
         require(info.width > 0 && info.height > 0 && info.width <= 4096 && info.height <= 4096,
                 "Invalid animation frame dimensions");
+        if(mirrorX) {
+            const int64_t reflected=-int64_t(info.offsetX)-info.width;
+            require(reflected>=std::numeric_limits<int32_t>::min() && reflected<=std::numeric_limits<int32_t>::max(),
+                    "Mirrored animation offset is outside int32");
+            info.offsetX=int32_t(reflected);
+        }
         left = std::min(left, int64_t(info.offsetX));
         top = std::min(top, int64_t(info.offsetY));
         right = std::max(right, int64_t(info.offsetX) + info.width);
@@ -85,7 +93,7 @@ AnimationDecoder::Plan AnimationDecoder::prepare(const AnimationRequest& request
     require(requiredBytes<=MaxBytes,"Animation exceeds per-clip texture memory limit");
     const auto frameCount=uint32_t(frames.size());
     return {{uint32_t(width),uint32_t(height),frameCount,clip.duration,
-             int32_t(left),int32_t(top),{}},std::move(frames),requiredBytes,request};
+             int32_t(left),int32_t(top),{}},std::move(frames),requiredBytes,request,mirrorX};
 }
 uint64_t AnimationDecoder::requiredBytes(const AnimationRequest& request,const AnimationReaders& readers,const std::atomic_bool* cancelled) {
     return prepare(request,readers,cancelled).bytes;
@@ -139,7 +147,8 @@ AnimationPixels AnimationDecoder::render(const Plan& plan,const AnimationReaders
         for (int y = 0; y < data.height; ++y) {
             checkCancellation();
             for (int x = 0; x < data.width; ++x) {
-                const auto index = data.pData[(data.height - 1 - y) * size_t(data.width) + x];
+                const auto sourceX=plan.mirrorX?data.width-1-x:x;
+                const auto index = data.pData[(data.height - 1 - y) * size_t(data.width) + sourceX];
                 if(!data.pPaletteData && hiddenPalette.pPaletteData)
                     require(size_t(index)*3+2<hiddenPalette.paletteBytes,"Animation palette is too short for frame indices");
                 const size_t dstX = size_t(int64_t(info.offsetX) - left + x);

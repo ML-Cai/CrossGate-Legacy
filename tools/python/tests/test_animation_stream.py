@@ -82,6 +82,17 @@ class AnimationStreamTests(unittest.TestCase):
             else:
                 with self.assertRaisesRegex(RuntimeError,"too short"):self.session.decode_animation_frame(plan,0)
 
+    def test_extended_horizontal_mirror_reflects_pixels_and_anchor(self):
+        frames=[]
+        for flags in [0,0x10000]:
+            self.session.invalidate_resources()
+            self.write("AnimeInfo_4.bin",struct.pack("<IIHH",100000,0,1,1))
+            self.write("Anime_4.bin",struct.pack("<HHIIII",0,0,101,1,flags,0xffffffff)+struct.pack("<I6s",100,bytes(6)))
+            plan=self.session.plan_animation(V,100000,cgl.DirectionTypes.DIRECTION_NORTH,cgl.MotionTypes.STANDARD)
+            frames.append(self.session.decode_animation_frame(plan,0))
+            self.assertEqual(plan.metadata["offset_x"],-2 if flags else 0)
+        np.testing.assert_array_equal(frames[1],frames[0][:,::-1])
+
     def test_extended_header_truncation_and_sentinel_failure_recover(self):
         data=struct.pack("<HHIIII",0,0,101,1,0,0xffffffff)+struct.pack("<I6s",100,bytes(6))
         self.write("AnimeInfo_4.bin",struct.pack("<IIHH",100000,0,1,1))

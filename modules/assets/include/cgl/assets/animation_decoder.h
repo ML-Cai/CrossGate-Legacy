@@ -54,12 +54,13 @@ public:
         uint64_t requiredBytes() const noexcept { return bytes; }
     private:
         friend class AnimationDecoder;
-        Plan(AnimationPixels value,std::vector<GraphicsResourceInfo> infos,uint64_t size,AnimationRequest source)
-            :canvas(std::move(value)),frames(std::move(infos)),bytes(size),request(source) {}
+        Plan(AnimationPixels value,std::vector<GraphicsResourceInfo> infos,uint64_t size,AnimationRequest source,bool mirror)
+            :canvas(std::move(value)),frames(std::move(infos)),bytes(size),request(source),mirrorX(mirror) {}
         AnimationPixels canvas;
         std::vector<GraphicsResourceInfo> frames;
         uint64_t bytes;
         AnimationRequest request;
+        bool mirrorX;
     };
     // Owned metadata, no readers or pixels retained. Decode only the requested frame.
     Plan prepare(const AnimationRequest&,const AnimationReaders&,const std::atomic_bool* cancelled=nullptr);

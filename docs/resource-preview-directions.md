@@ -50,8 +50,9 @@ Session 或 reader 繼續存活。`trim_cache` 不更換 reader，plan 可繼續
 
 既有 reader 固定讀 12-byte header，會把部分 PUK 的延伸 header 當成 frame ID。
 現在保留 index 的 format flags，bit 0 表示 20-byte motion header，額外驗證 sentinel；
-標準格式不靠 frame payload 的偶然位元組猜格式。未知 extension payload 以
-`extended_flags` 保留，不猜測鏡像、倒播或遊戲事件的完整語意。
+標準格式不靠 frame payload 的偶然位元組猜格式。`extended_flags` bit 16 依對稱
+方向重用圖號的樣本作水平鏡像，連同錨點 X offset 一起反射；其他位元保留，不
+自行倒播或猜測全部遊戲事件語意。合成非對稱圖與實際共用影格的方向對均有驗證。
 
 配色優先順序為影格內嵌 palette、動畫 palette、Daytime。PUK2_V2／PUK3_V1 的
 動畫 palette 由 PUK2_V1 圖資提供，安裝資料需包含該組檔案；PUK4 組使用自身圖資。
@@ -87,7 +88,7 @@ psutil 時欄位為 null，不當成零。程序 RSS 平穩與 weakref 都不等
 ## 2026-10-29 本機結果
 
 Windows x64、Python 3.12.10、NumPy 2.4.1、Pillow 12.1.0：八個版本的代表素材均通過
-CPU／HTTP matrix，共 9 個角色／動作組、817 張 PNG；128 次跨版本切換後，991 次
+CPU／HTTP matrix，共 9 個角色／動作組、817 張 PNG，另驗證 9 組鏡像方向對；128 次跨版本切換後，991 次
 plan owner 檢查與全部已取樣 frame owner 均釋放，reader 清單為空。
 
 | 版本 | 實際 catalog IDs（去重後） | 代表角色 |
@@ -102,11 +103,11 @@ plan owner 檢查與全部已取樣 frame owner 均釋放，reader 清單為空�
 | PUK4_V3 | 57 | 104854 |
 
 101406 STANDARD 的整段 payload 超過舊 8 MiB，但單格 streaming 成功，不提高整段
-預算。PNG cache 觀察峰值 1,073,128 B。該次 HTTP PNG median 7.66 ms、max 34.66 ms，
+預算。PNG cache 觀察峰值 1,073,128 B。該次 HTTP PNG median 7.49 ms、max 55.17 ms，
 不含初始 catalog／plan、browser decode／paint，不當作端到端 UI 延遲或 FPS。
 
-CPU RSS 取樣峰值 107,724,800 B；暖機後首尾窗口 median 為 61,169,664／61,845,504 B，
-差 675,840 B。取樣範圍為切換循環，包含驗收程序本身的開銷，不是單獨 server 的
+CPU RSS 取樣峰值 107,122,688 B；暖機後首尾窗口 median 為 61,460,480／61,472,768 B，
+差 12,288 B。取樣範圍為切換循環，包含驗收程序本身的開銷，不是單獨 server 的
 工作集或整個初始驗證期間的峰值；這是有限次本機觀察，不宣稱沒有 leak。
 尚未完成的實際瀏覽器操作、browser 記憶體與原生 GPU 視覺對照，須另記結果；
 報告明確保留 `browser_visual`／`independent_renderer_comparison` 為 `not_run`。

@@ -34,7 +34,7 @@ def verify(preview, versions, cycles=32, require_memory=False):
     if not 1<=cycles<=1000:
         preview.close()
         raise ValueError("cycles must be 1..1000")
-    report=dict(versions=[],groups=0,png_frames=0,plan_owner_checks=0,cache_peak_bytes=0,
+    report=dict(versions=[],groups=0,png_frames=0,mirror_pairs_checked=0,plan_owner_checks=0,cache_peak_bytes=0,
                 browser_visual="not_run",independent_renderer_comparison="not_run")
     server=thread=None
     targets=[];plan_refs=[];frame_refs=[];latencies=[];rss_samples=[];monitor=None
@@ -94,6 +94,24 @@ def verify(preview, versions, cycles=32, require_memory=False):
                                 raise AssertionError("PNG cache exceeded bounds")
                             report["cache_peak_bytes"]=max(report["cache_peak_bytes"],preview.png_bytes)
                         del plan
+                    # Real paired directions can share frame IDs and differ only in mirror bit.
+                    with preview.lock:
+                        bundle=preview.session.acquire_anime_resource(preview.version,serial)
+                        descriptions={int(d):bundle.acquire(d,m) for d,m in bundle.keys() if int(m)==int(group["motion"])}
+                        ids=sorted(descriptions)
+                        for pos,a in enumerate(ids):
+                            for b in ids[pos+1:]:
+                                da,db=descriptions[a],descriptions[b]
+                                if (getattr(da,"extended_flags",0)^getattr(db,"extended_flags",0))==0x10000 and list(da.motionGraphicsSerialNums)==list(db.motionGraphicsSerialNums):
+                                    left=preview.session.decode_animation_frame(preview.plans[str(a)],0)
+                                    right=preview.session.decode_animation_frame(preview.plans[str(b)],0)
+                                    np.testing.assert_array_equal(right,left[:,::-1])
+                                    ma,mb=preview.plans[str(a)].metadata,preview.plans[str(b)].metadata
+                                    if mb["offset_x"]!=-ma["offset_x"]-ma["width"]:
+                                        raise AssertionError("Mirrored canvas anchor differs")
+                                    report["mirror_pairs_checked"]+=1
+                                    del left,right
+                        del bundle,descriptions
                 row["status"]="passed"
             except Exception as error:
                 row["error"]=str(error)

@@ -46,7 +46,8 @@ Ctrl+C 停止服務，等待 worker 結束再清空資料與關閉 Session。
   限制。增加它不會繞過每格上限，不把這些 payload cap 當程序或 VRAM cap。
 
 未增加 palette 編輯／選擇；使用共用 decoder 的內嵌、動畫專用 palette 與 Daytime。
-未知擴充 flags 保留為 metadata，不宣稱完整遊戲事件、鏡像或倒播效果已還原。
+擴充 flags 的水平鏡像會同步反射像素與錨點；其他位元保留為 metadata，不宣稱
+完整遊戲事件或倒播效果已還原。
 
 ## 驗收
 

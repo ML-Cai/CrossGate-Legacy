@@ -162,7 +162,7 @@ struct AnimeMotionDesc {
     cgl::MotionTypes motion;
     uint32_t duration;
     std::vector<uint32_t> motionGraphicsSerialNums;
-    uint32_t extendedFlags = 0; // Preserve extension payload without guessing its semantics.
+    uint32_t extendedFlags = 0; // Raw payload; bit 16 is horizontal mirroring.
 };
 
 
