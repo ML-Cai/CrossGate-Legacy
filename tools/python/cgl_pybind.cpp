@@ -210,9 +210,10 @@ private:
             acquireReader<cgl::IGraphicsInfoReader>(infoReaderMap_,version),
             acquireReader<cgl::IGraphicsDataReader>(dataReaderMap_,version),
             acquirePaletteReader(cgl::EnvironmentPaletteTypes::Daytime)};
-        if(version==cgl::CrossGateVersion::CG_VERSION_PUK2_V2 || version==cgl::CrossGateVersion::CG_VERSION_PUK3_V1) {
-            readers.hiddenPaletteInfo=acquireReader<cgl::IGraphicsInfoReader>(infoReaderMap_,cgl::CrossGateVersion::CG_VERSION_PUK2_V1);
-            readers.hiddenPaletteData=acquireReader<cgl::IGraphicsDataReader>(dataReaderMap_,cgl::CrossGateVersion::CG_VERSION_PUK2_V1);
+        const auto paletteVersion=cgl::AnimationPaletteVersion(version);
+        if(paletteVersion!=version) {
+            readers.hiddenPaletteInfo=acquireReader<cgl::IGraphicsInfoReader>(infoReaderMap_,paletteVersion);
+            readers.hiddenPaletteData=acquireReader<cgl::IGraphicsDataReader>(dataReaderMap_,paletteVersion);
         }
         return readers;
     }

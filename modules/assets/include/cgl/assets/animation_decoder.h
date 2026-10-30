@@ -32,7 +32,15 @@ struct AnimationPixels {
     int32_t offsetX = 0, offsetY = 0;
     std::vector<uint8_t> rgba;
 };
-// Non-owning readers for exactly request.version. Caller serializes all access and
+// PUK2_V2 / PUK3_V1 store animation palette markers in the PUK2_V1 graphics files.
+// Keep native and tool reader adapters on the same version rule.
+constexpr CrossGateVersion AnimationPaletteVersion(CrossGateVersion version) noexcept {
+    return version==CrossGateVersion::CG_VERSION_PUK2_V2 || version==CrossGateVersion::CG_VERSION_PUK3_V1
+        ? CrossGateVersion::CG_VERSION_PUK2_V1 : version;
+}
+// Non-owning frame readers for request.version. Separate palette readers use the
+// version selected above and are required when it differs from request.version.
+// Caller serializes all access and
 // keeps readers alive for the call; clear decoder before destroying/replacing them.
 struct AnimationReaders {
     IAnimeInfoReader* animeInfo=nullptr;
