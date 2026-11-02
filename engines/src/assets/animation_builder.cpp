@@ -5,8 +5,14 @@ namespace {
 AnimationReaders selectReaders(const AnimationRequest& request,component::AssetsReaderState& readers) {
     if(request.version>=CrossGateVersion::COUNT) throw std::runtime_error("Invalid animation resource version");
     const auto v=request.version;
-    return {readers.pAnimeInfoReader[v].get(),readers.pAnimeDataReader[v].get(),
+    AnimationReaders selected{readers.pAnimeInfoReader[v].get(),readers.pAnimeDataReader[v].get(),
             readers.pGfxInfoReader[v].get(),readers.pGfxDataReader[v].get(),readers.pPaletteReader.get()};
+    const auto paletteVersion=AnimationPaletteVersion(v);
+    if(paletteVersion!=v) {
+        selected.hiddenPaletteInfo=readers.pGfxInfoReader[paletteVersion].get();
+        selected.hiddenPaletteData=readers.pGfxDataReader[paletteVersion].get();
+    }
+    return selected;
 }
 }
 uint64_t AnimationBuilder::requiredBytes(const AnimationRequest& request,component::AssetsReaderState& readers,const std::atomic_bool* cancelled) {

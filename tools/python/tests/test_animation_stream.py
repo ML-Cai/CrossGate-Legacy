@@ -82,6 +82,28 @@ class AnimationStreamTests(unittest.TestCase):
             else:
                 with self.assertRaisesRegex(RuntimeError,"too short"):self.session.decode_animation_frame(plan,0)
 
+    def test_cross_version_palette_source_matches_full_and_streamed_pixels(self):
+        palette=bytearray(768);palette[18*3:18*3+3]=bytes([7,8,9])
+        marker=struct.pack("<2sBBiiII",b"RD",2,0,4,1,24+len(palette),len(palette))+bytes(4)+palette
+        self.write("GraphicInfoV3_19.bin",self.index+struct.pack("<IIIiiiiBB6sI",101,len(self.graphics),len(marker),0,0,4,1,1,1,bytes(6),100000))
+        self.write("GraphicV3_19.bin",self.graphics+marker)
+        for version,folder,suffix,anime_suffix in [
+            (cgl.CrossGateVersion.CG_VERSION_PUK2_V2,"Puk2","PUK2_2","PUK2_4"),
+            (cgl.CrossGateVersion.CG_VERSION_PUK3_V1,"Puk3","PUK3_1","PUK3_2")]:
+            self.session.invalidate_resources()
+            (self.root/"bin"/folder).mkdir(exist_ok=True)
+            self.write(f"{folder}/GraphicInfo_{suffix}.bin",self.index)
+            self.write(f"{folder}/Graphic_{suffix}.bin",self.graphics)
+            self.write(f"{folder}/AnimeInfo_{anime_suffix}.bin",struct.pack("<IIHH",100000,0,1,1))
+            self.write(f"{folder}/Anime_{anime_suffix}.bin",struct.pack("<HHIIII",0,0,101,1,0,0xffffffff)+struct.pack("<I6s",100,bytes(6)))
+            plan=self.session.plan_animation(version,100000,cgl.DirectionTypes.DIRECTION_NORTH,cgl.MotionTypes.STANDARD)
+            frame=self.session.decode_animation_frame(plan,0)
+            full=self.session.acquire_animation_pixels(version,100000,cgl.DirectionTypes.DIRECTION_NORTH,cgl.MotionTypes.STANDARD)
+            np.testing.assert_array_equal(frame[0,0],[9,8,7,255])
+            np.testing.assert_array_equal(frame,full["rgba"][0])
+        self.session.close()
+        self.assertEqual(int(frame[0,0,0]),9)
+
     def test_extended_horizontal_mirror_reflects_pixels_and_anchor(self):
         frames=[]
         for flags in [0,0x10000]:

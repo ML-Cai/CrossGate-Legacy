@@ -20,6 +20,7 @@ protected:
         for (int i = 0; i < width; ++i) bytes.push_back(uint8_t(value >> (i * 8)));
     }
     void write(const char* name, const std::vector<uint8_t>& bytes) {
+        std::filesystem::create_directories((dir / "bin" / name).parent_path());
         std::ofstream f(dir / "bin" / name, std::ios::binary);
         f.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
     }
@@ -75,7 +76,80 @@ protected:
         readers.pGfxInfoReader[version]->close(); write("GraphicInfo_66.bin", index);
         ASSERT_EQ(readers.pGfxInfoReader[version]->load(), cgl::Results::Success);
     }
+    void loadAlternate(cgl::CrossGateVersion v,const char* info,const char* data,const char* animeInfo,const char* animeData) {
+        std::filesystem::create_directories((dir/"bin"/info).parent_path());
+        for(const auto& pair : {std::pair{"GraphicInfo_66.bin",info}, {"Graphic_66.bin",data},
+                               {"AnimeInfo_4.bin",animeInfo}, {"Anime_4.bin",animeData}})
+            std::filesystem::copy_file(dir/"bin"/pair.first,dir/"bin"/pair.second,std::filesystem::copy_options::overwrite_existing);
+        readers.pAnimeInfoReader[v]=cgl::IAnimeInfoReader::create({&settings,v});
+        readers.pAnimeDataReader[v]=cgl::IAnimeDataReader::create({&settings,v,0});
+        readers.pGfxInfoReader[v]=cgl::IGraphicsInfoReader::create({&settings,v});
+        readers.pGfxDataReader[v]=cgl::IGraphicsDataReader::create({&settings,v,0});
+        ASSERT_EQ(readers.pAnimeInfoReader[v]->load(),cgl::Results::Success);
+        ASSERT_EQ(readers.pAnimeDataReader[v]->load(),cgl::Results::Success);
+        ASSERT_EQ(readers.pGfxInfoReader[v]->load(),cgl::Results::Success);
+        ASSERT_EQ(readers.pGfxDataReader[v]->load(),cgl::Results::Success);
+    }
+    void sharedPalette(size_t size=768) {
+        const auto v=cgl::CrossGateVersion::CG_VERSION_PUK2_V1;
+        std::vector<uint8_t> colors(size,0),marker{'R','D',2,0};
+        if(size>=57) {colors[54]=7;colors[55]=8;colors[56]=9;}
+        word(marker,4);word(marker,1);word(marker,uint32_t(24+size));word(marker,uint32_t(size));
+        marker.insert(marker.end(),4,0);marker.insert(marker.end(),colors.begin(),colors.end());
+        auto indices=index,bytes=graphics;
+        word(indices,102);word(indices,uint32_t(bytes.size()));word(indices,uint32_t(marker.size()));
+        word(indices,0);word(indices,0);word(indices,4);word(indices,1);
+        indices.insert(indices.end(),8,0);word(indices,100000);
+        bytes.insert(bytes.end(),marker.begin(),marker.end());
+        if(readers.pGfxInfoReader[v]) readers.pGfxInfoReader[v]->close();
+        if(readers.pGfxDataReader[v]) readers.pGfxDataReader[v]->close();
+        write("GraphicInfoV3_19.bin",indices);write("GraphicV3_19.bin",bytes);
+        readers.pGfxInfoReader[v]=cgl::IGraphicsInfoReader::create({&settings,v});
+        readers.pGfxDataReader[v]=cgl::IGraphicsDataReader::create({&settings,v,0});
+        ASSERT_EQ(readers.pGfxInfoReader[v]->load(),cgl::Results::Success);
+        ASSERT_EQ(readers.pGfxDataReader[v]->load(),cgl::Results::Success);
+    }
 };
+TEST_F(AnimationBuilderTest, UsesSharedPaletteForPuk2V2AndPuk3WithoutChangingFrameVersion) {
+    sharedPalette();
+    loadAlternate(cgl::CrossGateVersion::CG_VERSION_PUK2_V2,"Puk2/GraphicInfo_PUK2_2.bin","Puk2/Graphic_PUK2_2.bin",
+                  "Puk2/AnimeInfo_PUK2_4.bin","Puk2/Anime_PUK2_4.bin");
+    loadAlternate(cgl::CrossGateVersion::CG_VERSION_PUK3_V1,"Puk3/GraphicInfo_PUK3_1.bin","Puk3/Graphic_PUK3_1.bin",
+                  "Puk3/AnimeInfo_PUK3_2.bin","Puk3/Anime_PUK3_2.bin");
+    for(const auto v : {cgl::CrossGateVersion::CG_VERSION_PUK2_V2,cgl::CrossGateVersion::CG_VERSION_PUK3_V1}) {
+        auto alternate=request;alternate.version=v;
+        EXPECT_EQ(builder.requiredBytes(alternate,readers),128);
+        const auto pixels=builder.build(alternate,readers);
+        EXPECT_EQ(pixels.width,4);EXPECT_EQ(pixels.height,4);EXPECT_EQ(pixels.offsetX,-1);EXPECT_EQ(pixels.offsetY,-2);
+        EXPECT_EQ(pixels.rgba[0],9);EXPECT_EQ(pixels.rgba[1],8);EXPECT_EQ(pixels.rgba[2],7);EXPECT_EQ(pixels.rgba[3],255);
+        EXPECT_EQ(pixels.rgba[7],0);
+        EXPECT_EQ(pixels.durationMs,100);
+    }
+    EXPECT_GT(readers.pGfxDataReader[cgl::CrossGateVersion::CG_VERSION_PUK2_V1]->cacheStatistics().fileReadCalls,0);
+    EXPECT_EQ(builder.build(request,readers).rgba[0],90); // Classic keeps its original Daytime palette.
+}
+TEST_F(AnimationBuilderTest, MissingSharedPaletteReadersFailsAtDecodeAndCanRecover) {
+    const auto v=cgl::CrossGateVersion::CG_VERSION_PUK2_V2;
+    loadAlternate(v,"Puk2/GraphicInfo_PUK2_2.bin","Puk2/Graphic_PUK2_2.bin",
+                  "Puk2/AnimeInfo_PUK2_4.bin","Puk2/Anime_PUK2_4.bin");
+    auto alternate=request;alternate.version=v;
+    EXPECT_EQ(builder.requiredBytes(alternate,readers),128); // Metadata admission needs no palette pixels.
+    EXPECT_THROW(builder.build(alternate,readers),std::runtime_error);
+    sharedPalette();
+    const auto source=cgl::CrossGateVersion::CG_VERSION_PUK2_V1;
+    auto data=std::move(readers.pGfxDataReader[source]);
+    EXPECT_THROW(builder.build(alternate,readers),std::runtime_error);
+    readers.pGfxDataReader[source]=std::move(data);
+    auto info=std::move(readers.pGfxInfoReader[source]);
+    EXPECT_THROW(builder.build(alternate,readers),std::runtime_error);
+    readers.pGfxInfoReader[source]=std::move(info);
+    const auto previous=builder.build(alternate,readers);
+    sharedPalette(3);
+    EXPECT_THROW(builder.build(alternate,readers),std::runtime_error);
+    EXPECT_EQ(previous.rgba[0],9); // Previously returned pixels remain owned and unchanged.
+    sharedPalette();
+    EXPECT_EQ(builder.build(alternate,readers).rgba,previous.rgba);
+}
 TEST_F(AnimationBuilderTest, AlignsBottomUpFramesAndPreservesTransparencyAndColors) {
     auto result = builder.build(request, readers, 128);
     EXPECT_EQ(result.width, 4); EXPECT_EQ(result.height, 4); EXPECT_EQ(result.frameCount, 2);
