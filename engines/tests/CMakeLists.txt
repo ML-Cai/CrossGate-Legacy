@@ -35,7 +35,7 @@ gtest_discover_tests(test_map_hover WORKING_DIRECTORY ${CGL_BIN_PATH}
     PROPERTIES LABELS "unit" TIMEOUT 60)
 
 # CPU-only assembly: deliberately links no renderer, Vulkan, or window library.
-add_executable(test_animation_builder test_animation_builder.cpp ../src/assets/animation_builder.cpp)
+add_executable(test_animation_builder test_animation_builder.cpp test_animation_preview.cpp ../src/assets/animation_builder.cpp)
 target_include_directories(test_animation_builder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 target_link_libraries(test_animation_builder PRIVATE GTest::gtest_main Threads::Threads cgl::assets cgl::settings cgl::common)
 set_target_properties(test_animation_builder PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CGL_BIN_PATH})
