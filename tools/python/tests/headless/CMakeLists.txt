@@ -28,6 +28,7 @@ add_subdirectory("${root}/third_party/googletest" googletest EXCLUDE_FROM_ALL)
 find_package(Threads REQUIRED)
 include(GoogleTest)
 add_executable(test_animation_builder "${root}/engines/tests/test_animation_builder.cpp"
+    "${root}/engines/tests/test_animation_preview.cpp"
     "${root}/engines/src/assets/animation_builder.cpp")
 target_include_directories(test_animation_builder PRIVATE "${root}/engines/src")
 target_link_libraries(test_animation_builder PRIVATE GTest::gtest_main Threads::Threads

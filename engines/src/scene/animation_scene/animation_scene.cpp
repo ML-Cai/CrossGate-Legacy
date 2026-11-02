@@ -1,5 +1,6 @@
 #include "scene/scene_components.h"
 #include "scene/scene_animation_load.h"
+#include "scene/animation_scene/animation_preview.h"
 #include "animation/animation_components.h"
 #include "animation/animation_system.h"
 #include "assets/assets_components.h"
@@ -25,8 +26,11 @@ public:
             if (!std::isfinite(scale) || scale <= 0)
                 throw std::runtime_error("ViewportScale must be positive and finite");
             scale_=scale;
+            request_=cgl::AnimationPreviewRequest(settings.animation.Version,settings.animation.SerialNum,
+                settings.animation.Direction,settings.animation.Motion);
+            paused_=settings.animation.Paused;startFrame_=settings.animation.StartFrame;
             cgl::AnimationBuilder planner;
-            load_.begin({{settings.animation.SerialNum,settings.animation.Direction,settings.animation.Motion}},library_.usage().budgetBytes,
+            load_.begin({request_},library_.usage().budgetBytes,
                 [&](const auto& request){return planner.requiredBytes(request,*world->getSingleton<cgl::component::AssetsReaderState>());});
             world->addSingleton<cgl::component::SceneLoadProgress>(0,uint32_t(load_.total()),load_.requiredBytes(),false);
             advanceEntry(world);
@@ -73,15 +77,24 @@ private:
             return library_.acquireForScene(request,*world->getSingleton<cgl::component::AssetsReaderState>(),render.pDevice.get(),pass);
         })) {
             const auto& clip=load_.clip(0);auto* window=world->getSingleton<cgl::component::WindowHandle>();
+            const auto start=cgl::AnimationPreviewStartTime(startFrame_,clip->frameCount,clip->durationMs);
             entities_.reserve(2);
             for(int i=0;i<2;++i) {
                 const auto entity=world->createEntity();entities_.push_back(entity);
                 world->addComponent<cgl::component::Transform2D>(entity,window->width*(i?0.75f:0.25f)-clip->width*scale_/2,
                     (window->height-clip->height*scale_)/2,scale_);
                 world->addComponent<cgl::component::Sprite>(entity,clip);
-                world->addComponent<cgl::component::AnimationPlayer>(entity,i?clip->durationMs/2.0:0.0,1.0);
+                world->addComponent<cgl::component::AnimationPlayer>(entity,
+                    start+(!paused_&&i?clip->durationMs/2.0:0.0),1.0);
+                world->getComponent<cgl::component::AnimationPlayer>(entity)->playing=!paused_;
             }
-            cgl::UpdateAnimations(*world,0);ready_=true;window->pendingTitle="CGL";
+            cgl::UpdateAnimations(*world,0);ready_=true;
+            window->pendingTitle="CGL | v"+std::to_string(uint32_t(request_.version))+" serial "+std::to_string(request_.serial)+
+                " dir "+std::to_string(request_.direction)+" motion "+std::to_string(request_.motion)+
+                (paused_?" | paused frame "+std::to_string(startFrame_):" | playing");
+            LOGI("Animation preview ready: version="<<uint32_t(request_.version)<<", serial="<<request_.serial
+                <<", direction="<<request_.direction<<", motion="<<request_.motion<<", frame="
+                <<world->getComponent<cgl::component::AnimationPlayer>(entities_.front())->frame<<", paused="<<paused_);
             LOGI("Animation scene entered");
         } else if(lastProgress_!=load_.completed()) {
             world->getSingleton<cgl::component::WindowHandle>()->pendingTitle="CGL | Loading "+
@@ -90,6 +103,9 @@ private:
         *world->getSingleton<cgl::component::SceneLoadProgress>()={uint32_t(load_.completed()),uint32_t(load_.total()),load_.requiredBytes(),ready_};
     }
     cgl::SceneAnimationLoad load_;
+    cgl::AnimationRequest request_;
+    bool paused_=false;
+    uint32_t startFrame_=0;
     double scale_=1;
     size_t lastProgress_=std::numeric_limits<size_t>::max();
     bool ready_=false;

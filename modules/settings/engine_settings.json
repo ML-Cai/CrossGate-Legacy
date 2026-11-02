@@ -11,11 +11,32 @@
         ],
         "Animation" : [
             {
+                "Name" : "Version",
+                "Type" : "uint32_t",
+                "Default" : "0",
+                "ExportToINI" : true,
+                "Description" : "Standalone animation preview version: 0 Classic, 1 PUK1, 2 PUK2_V1, 3 PUK2_V2, 4 PUK3_V1, 5 PUK4_V1, 6 PUK4_V2, 7 PUK4_V3. Map avatar version is unchanged."
+            },
+            {
+                "Name" : "Paused",
+                "Type" : "bool",
+                "Default" : "false",
+                "ExportToINI" : true,
+                "Description" : "Pause both standalone preview sprites at StartFrame for visual comparison."
+            },
+            {
+                "Name" : "StartFrame",
+                "Type" : "uint32_t",
+                "Default" : "0",
+                "ExportToINI" : true,
+                "Description" : "Zero-based initial frame in standalone animation preview; must exist in the selected clip."
+            },
+            {
                 "Name" : "SerialNum",
                 "Type" : "uint32_t",
                 "Default" : "101406",
                 "ExportToINI" : true,
-                "Description" : "Classic character animation resource serial number."
+                "Description" : "Character animation resource serial number (map avatar remains Classic)."
             },
             {
                 "Name" : "Direction",

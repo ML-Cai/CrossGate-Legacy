@@ -47,7 +47,7 @@ if(CGL_WITH_TEST)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/startup.cmake)
     set_tests_properties(cgl_client_invalid_resources PROPERTIES
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT ${startup_test_timeout} LABELS "desktop;assets;integration" RESOURCE_LOCK cgl_desktop)
-    foreach(CASE direction serial scale)
+    foreach(CASE direction serial scale version frame)
         add_test(NAME cgl_client_invalid_animation_${CASE}
             COMMAND ${CMAKE_COMMAND}
                 -DCLIENT=$<TARGET_FILE:cgl-client> ${startup_options}
@@ -56,8 +56,18 @@ if(CGL_WITH_TEST)
         set_tests_properties(cgl_client_invalid_animation_${CASE} PROPERTIES
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT ${startup_test_timeout} LABELS "desktop;assets;integration" RESOURCE_LOCK cgl_desktop)
     endforeach()
+    foreach(CASE classic puk2 puk3)
+        add_test(NAME cgl_client_animation_reference_${CASE}
+            COMMAND ${CMAKE_COMMAND} -DCLIENT=$<TARGET_FILE:cgl-client> ${startup_options}
+                -DANIMATION_REFERENCE=${CASE} -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/startup.cmake)
+        set_tests_properties(cgl_client_animation_reference_${CASE} PROPERTIES
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT ${startup_test_timeout}
+            LABELS "desktop;assets;integration" RESOURCE_LOCK cgl_desktop)
+    endforeach()
 endif()
 
 # Runnable local snapshot demo; external game assets remain user-provided.
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/configs/server-demo100.ini
     ${CGL_BIN_PATH}/server-demo100.ini COPYONLY)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/configs/animation-reference.ini
+    ${CGL_BIN_PATH}/animation-reference.ini COPYONLY)

@@ -8,6 +8,8 @@ on:
       - 'engines/src/assets/map_builder.*'
       - 'engines/src/assets/animation_builder.*'
       - 'engines/tests/test_animation_builder.cpp'
+      - 'engines/src/scene/animation_scene/**'
+      - 'engines/tests/test_animation_preview.cpp'
       - 'modules/assets/**'
       - 'modules/common/**'
       - 'modules/settings/**'
